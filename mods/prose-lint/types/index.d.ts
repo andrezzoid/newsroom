@@ -13,6 +13,8 @@ export type ProseAlert = {
   // The match within `text`: 1-based, inclusive, in characters.
   start: number
   end: number
+  // The words Vale matched, whole even when they run onto the next line.
+  match: string
   // Vale's rule as Style.Rule, such as AiTells.Dash.
   check: string
   // Vale's message, which quotes the match.
@@ -21,6 +23,11 @@ export type ProseAlert = {
   severity: 'error' | 'warning' | 'suggestion'
   // The whole line at the time of the edit; a later edit doesn't change it.
   text: string
+  // Set when the turn that wrote it ends: gone from the file (by Claude's
+  // hand or the user's) or still there. A kept one turns fixed when a later
+  // turn's end finds it gone. Unset until the first verdict, and for an alert
+  // past the note's cut, which no turn resolves.
+  status?: 'fixed' | 'kept'
 }
 
 // Where the prose sits: a document's text, or the comments in code.
@@ -51,9 +58,20 @@ export type DayStats = {
   examples: Record<string, string[]>
 }
 
-// An alert Claude wrote this session, waiting for its turn to end to count
-// as fixed or kept.
+// An alert Claude wrote this session that isn't fixed yet: waiting for its
+// turn to end, or kept then and watched for a later fix.
 export type OpenAlert = {
+  // The tool_use_id of the Write or Edit that wrote it, whose transcript row
+  // shows it as fixed or kept once resolved.
+  id: string
+  // Its position among that row's alerts.
+  index: number
+  // 'kept' once a turn's end found it still there; the stats count it then
+  // and never again, while the row can still turn it fixed.
+  status?: 'kept'
+  // The file's modification time at that check, in Unix milliseconds: an
+  // unchanged file can't have fixed it, so the next check skips the lint.
+  checkedMs?: number
   // The written file's absolute path, as the Write or Edit named it.
   file: string
   // Vale's rule as Style.Rule.

@@ -26,6 +26,10 @@ const noConfig = failure('no config file found', 'E100')
 // without it, Vale searched for the project's or the user's own.
 const isBundled = (argv: readonly string[]) => argv.includes('--config')
 
+// The run that lints the file as it stood before an edit, piped in, to tell
+// carried tells from new ones.
+const isPiped = (argv: readonly string[]) => argv.some(arg => arg.startsWith('--ext='))
+
 const dir = { value: { kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false } }
 
 const editRecord = {
@@ -47,6 +51,7 @@ test('missing styles are synced before the first bundled lint', async ($, on) =>
   on('fs.stat', () => ({ deny: 'ENOENT' }))
   on('process.run', (_, e) => {
     if (!isBundled(e.argv)) return noConfig
+    if (isPiped(e.argv)) return vale([])
     calls.push(e.argv.includes('sync') ? 'sync' : 'lint')
     return vale(e.argv.includes('sync') ? [] : [alert(2, 'just')])
   })
@@ -60,7 +65,9 @@ test('missing styles are synced before the first bundled lint', async ($, on) =>
 
 test('an Edit hands Claude the alerts on the lines it added, not the ones already there', async ($, on) => {
   on('fs.stat', () => dir)
-  on('process.run', (_, e) => (isBundled(e.argv) ? vale([alert(2, 'just'), alert(3, 'just')]) : noConfig))
+  on('process.run', (_, e) =>
+    !isBundled(e.argv) ? noConfig : isPiped(e.argv) ? vale([]) : vale([alert(2, 'just'), alert(3, 'just')]),
+  )
   on('tool.call', { tool: 'Edit' }, () => ({ result: editRecord }))
 
   const ran = await $.tool.call(edit)
@@ -68,6 +75,51 @@ test('an Edit hands Claude the alerts on the lines it added, not the ones alread
   expect(ran.context?.length).toBe(1)
   expect(ran.context?.[0]).toContain("- 2:1 Filler adverb 'just'")
   expect(ran.context?.[0]).not.toContain('- 3:1')
+})
+
+test('an Edit that rewords a line reports only the tells it added, not the ones the line had', async ($, on) => {
+  on('fs.stat', () => dir)
+  // Vale finds "just" in the removed line, and "just" and "really" in the new one.
+  on('process.run', (_, e) =>
+    !isBundled(e.argv)
+      ? noConfig
+      : isPiped(e.argv)
+        ? vale([alert(2, 'just')])
+        : vale([alert(2, 'just'), alert(2, 'really')]),
+  )
+  on('tool.call', { tool: 'Edit' }, () => ({
+    result: {
+      ...editRecord,
+      // The old line had "just"; the new one adds "really".
+      structuredPatch: [{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 2, lines: [' a', '-It just works.', '+It just really works.'] }],
+    },
+  }))
+
+  const ran = await $.tool.call(edit)
+
+  expect(ran.context?.[0]).toContain("Filler adverb 'really'")
+  expect(ran.context?.[0]).not.toContain("Filler adverb 'just'")
+})
+
+test("a tell that only changed case or wrapping counts as carried, not new", async ($, on) => {
+  const negParallel = { ...alert(2, "It's not just a tool, it's"), Check: 'AiTells.NegParallel' }
+  on('fs.stat', () => dir)
+  // In the removed lines, Vale matched the same words in lower case, across the wrap.
+  const before = { ...negParallel, Match: "it's not just a\ntool, it's" }
+  on('process.run', (_, e) => (!isBundled(e.argv) ? noConfig : isPiped(e.argv) ? vale([before]) : vale([negParallel])))
+  on('tool.call', { tool: 'Edit' }, () => ({
+    result: {
+      ...editRecord,
+      // A dash became a full stop, so the next sentence now starts with "It's".
+      structuredPatch: [
+        { oldStart: 1, oldLines: 2, newStart: 1, newLines: 2, lines: [' a', "-Fast — it's not just a", "-tool, it's new.", "+Fast. It's not just a tool, it's new."] },
+      ],
+    },
+  }))
+
+  const ran = await $.tool.call(edit)
+
+  expect(ran.context).toBeUndefined()
 })
 
 test('a Write of a new file hands Claude every alert', async ($, on) => {
@@ -88,6 +140,7 @@ test('the bundled rules run when Vale finds no config of the project or user', a
   on('fs.stat', () => dir)
   on('process.run', (_, e) => {
     if (!isBundled(e.argv)) return noConfig
+    if (isPiped(e.argv)) return vale([])
     argv = e.argv
     return vale([alert(2, 'just')])
   })
@@ -105,7 +158,7 @@ test("a project's .vale.ini wins, and the row names it", async ($, on) => {
   on('fs.stat', (_, e) => (e.path === '/repo/.vale.ini' ? dir : { deny: 'ENOENT' }))
   on('process.run', (_, e) => {
     runs.push(e.argv.join(' '))
-    return vale([alert(2, 'just')])
+    return vale(isPiped(e.argv) ? [] : [alert(2, 'just')])
   })
   on('tool.call', { tool: 'Edit' }, () => ({ result: editRecord }))
 
@@ -216,18 +269,34 @@ test("the turn's end counts what Claude fixed and what it kept", async ($, on) =
   on('process.run', (_, e) => {
     if (!isBundled(e.argv)) return noConfig
     lints++
-    // The edit's lint finds both; the turn's end finds only "just" left.
-    return vale(lints === 1 ? [alert(1, 'just'), alert(1, 'really')] : [alert(1, 'just')])
+    // The edit's lint finds both; the turn's end finds only "just" left. Real
+    // spans in "It just really works.", so the row can match its alerts.
+    const just = { ...alert(1, 'just'), Span: [4, 7] }
+    const really = { ...alert(1, 'really'), Span: [9, 14] }
+    return vale(lints === 1 ? [just, really] : [just])
   })
   on('tool.call', { tool: 'Write' }, created('/work/newsroom/notes.md'))
   on('turn.complete', () => ({ text: '' }))
+  on('ui.render', { component: 'ToolResult' }, () => ({ type: 'engine', ref: 0 }))
 
-  await $.tool.call({ tool: 'Write', file_path: '/work/newsroom/notes.md', content: '...' })
+  await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/work/newsroom/notes.md', content: '...' })
   await $.turn.complete({ answer: '', durationMs: 0, isAborted: false, turnId: 't1', reason: 'answer' })
 
   expect(store.get(STATS)).toMatchObject({
     rules: { 'AiTells.Adverb': { docs: { written: 2, fixed: 1, kept: 1 } } },
   })
+  // The terminal row strikes out the fixed match and keeps the other underlined.
+  const ui = await $.ui.mount({
+    plugin: 'prose-lint',
+    surface: 'terminal',
+    component: 'ToolResult',
+    requestId: 'w1',
+    props: { tool_use_id: 'w1', tool: 'Write', output: {}, isErrored: false },
+  })
+  const struck = (await ui.findAll({ type: 'Text' })).filter(element => element.props.strikethrough === true)
+  expect(struck.map(element => element.text)).toContain('really')
+  expect(struck.map(element => element.text)).not.toContain('just')
+  expect((await ui.find({ type: 'Text', text: '1 fixed' })) !== undefined).toBe(true)
 })
 
 test("a subagent's or an interrupted turn leaves the alerts open for the next answer", async ($, on) => {
@@ -246,6 +315,38 @@ test("a subagent's or an interrupted turn leaves the alerts open for the next an
 
   await $.turn.complete({ ...ended, reason: 'answer' })
   expect(store.get(STATS)).toMatchObject({ rules: { 'AiTells.Adverb': { docs: { written: 1, fixed: 0, kept: 1 } } } })
+})
+
+test('a kept alert fixed in a later turn turns fixed on its row, and its stats stay as first counted', async ($, on) => {
+  let mtimeMs = 1
+  let isFixed = false
+  const store = session(on)
+  on('fs.stat', () => ({ value: { ...dir.value, mtimeMs } }))
+  on('fs.read', () => ({ value: 'It just works.\n' }))
+  on('process.run', (_, e) =>
+    isBundled(e.argv) ? vale(isFixed ? [] : [{ ...alert(1, 'just'), Span: [4, 7] }]) : noConfig,
+  )
+  on('tool.call', { tool: 'Write' }, created('/work/newsroom/notes.md'))
+  on('turn.complete', () => ({ text: '' }))
+  on('ui.render', { component: 'ToolResult' }, () => ({ type: 'engine', ref: 0 }))
+  const answered = { answer: '', durationMs: 0, isAborted: false, turnId: 't1', reason: 'answer' } as const
+
+  await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/work/newsroom/notes.md', content: '...' })
+  await $.turn.complete(answered)
+  // The next turn fixes it: the file changes and Vale finds nothing.
+  isFixed = true
+  mtimeMs = 2
+  await $.turn.complete({ ...answered, turnId: 't2' })
+
+  expect(store.get(STATS)).toMatchObject({ rules: { 'AiTells.Adverb': { docs: { written: 1, fixed: 0, kept: 1 } } } })
+  const ui = await $.ui.mount({
+    plugin: 'prose-lint',
+    surface: 'terminal',
+    component: 'ToolResult',
+    requestId: 'w1',
+    props: { tool_use_id: 'w1', tool: 'Write', output: {}, isErrored: false },
+  })
+  expect((await ui.find({ type: 'Text', text: 'all fixed' })) !== undefined).toBe(true)
 })
 
 // Two days of writing in two projects, for the stats view.
