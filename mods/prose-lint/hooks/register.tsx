@@ -1,5 +1,5 @@
 import { atom, memberOf, read, update } from 'claude-code'
-import type { EngineInterface, ProcessRunResult, Register } from 'claude-code'
+import type { EngineInterface, ProcessRunResult, Register, RenderElement, RenderInput } from 'claude-code'
 
 import type { ProseAlert, ProseReport } from '../types'
 
@@ -81,72 +81,88 @@ export const register: Register = on => {
     return ran.deny !== undefined || ran.isError || ran.result.staged ? ran : withAlerts($, ran, e.tool_use_id, ran.result)
   })
 
-  // Draws Claude Code's own row, then each flagged line with its matches
-  // underlined and the messages boxed under it. The whole row, not the
-  // ToolResult block: a call inside a group of calls (the desktop app groups
-  // them) draws its result inline and raises no ToolResult.
-  on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
-    if ((e.props.tool !== 'Edit' && e.props.tool !== 'Write') || e.props.isRunning || e.props.isErrored) return next(e)
+  // Each surface draws an Edit's or Write's diff in a different place: the
+  // terminal as a ToolResult block under the call's row, the desktop app
+  // inside the ToolUse row, with no ToolResult. The docs say neither; both
+  // come from trying it. Each hook adds the alerts under the diff where its
+  // surface draws it.
+  on('ui.render', { component: 'ToolResult' }, ($, e, next) =>
+    e.surface === 'terminal' ? annotate($, e, () => next(e)) : next(e),
+  )
+  on('ui.render', { component: 'ToolUse' }, ($, e, next) =>
+    e.surface === 'terminal' ? next(e) : annotate($, e, () => next(e)),
+  )
+}
 
-    const { configLabel, alerts: list } = await read($, memberOf(reports, e))
-    if (list.length === 0) return next(e)
+// Claude Code's own drawing (`engine`), then each flagged line of the call
+// with its matches underlined and the messages boxed under it. The engine's
+// drawing alone when the call has no alerts.
+const annotate = async (
+  $: EngineInterface,
+  e: RenderInput<'ToolUse'> | RenderInput<'ToolResult'>,
+  engine: () => Promise<RenderElement>,
+): Promise<RenderElement> => {
+  const isRunning = 'isRunning' in e.props && e.props.isRunning
+  if ((e.props.tool !== 'Edit' && e.props.tool !== 'Write') || isRunning || e.props.isErrored) return engine()
 
-    const { Box, Text } = $.ui.resolve(e)
-    const lines = [...new Set(list.map(a => a.line))].sort((a, b) => a - b)
-    const gutter = String(lines.at(-1)).length
-    // Where a line's text starts, past the "12 │ " gutter; its box aligns to it.
-    const textColumn = gutter + 3
+  const { configLabel, alerts: list } = await read($, memberOf(reports, e))
+  if (list.length === 0) return engine()
 
-    // Indented to line up with the text of Claude Code's own result block.
-    return (
-      <Box flexDirection="column">
-        {await next(e)}
-        <Box flexDirection="column" marginTop={1} marginLeft={5}>
-          <Text>
-            <Text bold>prose-lint</Text>
-            <Text dimColor>
-              {' '}
-              · {list.length} issue{list.length === 1 ? '' : 's'} · {configLabel}
-            </Text>
+  const { Box, Text } = $.ui.resolve(e)
+  const lines = [...new Set(list.map(a => a.line))].sort((a, b) => a - b)
+  const gutter = String(lines.at(-1)).length
+  // Where a line's text starts, past the "12 │ " gutter; its box aligns to it.
+  const textColumn = gutter + 3
+
+  // Indented to line up with the text of Claude Code's own result block.
+  return (
+    <Box flexDirection="column">
+      {await engine()}
+      <Box flexDirection="column" marginTop={1} marginLeft={5}>
+        <Text>
+          <Text bold>prose-lint</Text>
+          <Text dimColor>
+            {' '}
+            · {list.length} issue{list.length === 1 ? '' : 's'} · {configLabel}
           </Text>
-          {lines.map(line => {
-            const onLine = list.filter(a => a.line === line).sort((a, b) => a.start - b.start)
-            return (
-              <Box flexDirection="column" marginTop={1}>
-                <Text>
-                  <Text dimColor>{String(line).padStart(gutter)} │ </Text>
-                  {runs(onLine[0]?.text ?? '', onLine).map(run =>
-                    run.severity ? (
-                      <Text underline color={COLOR[run.severity]}>
-                        {run.text}
-                      </Text>
-                    ) : (
-                      run.text
-                    ),
-                  )}
-                </Text>
-                <Box
-                  flexDirection="column"
-                  borderStyle="round"
-                  borderColor="gray"
-                  borderDimColor
-                  marginLeft={textColumn}
-                  paddingX={1}
-                >
-                  {onLine.map(a => (
-                    <Text>
-                      <Text color={COLOR[a.severity]}>● </Text>
-                      {a.message} <Text dimColor>{a.check.slice(a.check.indexOf('.') + 1)}</Text>
+        </Text>
+        {lines.map(line => {
+          const onLine = list.filter(a => a.line === line).sort((a, b) => a.start - b.start)
+          return (
+            <Box flexDirection="column" marginTop={1}>
+              <Text>
+                <Text dimColor>{String(line).padStart(gutter)} │ </Text>
+                {runs(onLine[0]?.text ?? '', onLine).map(run =>
+                  run.severity ? (
+                    <Text underline color={COLOR[run.severity]}>
+                      {run.text}
                     </Text>
-                  ))}
-                </Box>
+                  ) : (
+                    run.text
+                  ),
+                )}
+              </Text>
+              <Box
+                flexDirection="column"
+                borderStyle="round"
+                borderColor="gray"
+                borderDimColor
+                marginLeft={textColumn}
+                paddingX={1}
+              >
+                {onLine.map(a => (
+                  <Text>
+                    <Text color={COLOR[a.severity]}>● </Text>
+                    {a.message} <Text dimColor>{a.check.slice(a.check.indexOf('.') + 1)}</Text>
+                  </Text>
+                ))}
               </Box>
-            )
-          })}
-        </Box>
+            </Box>
+          )
+        })}
       </Box>
-    )
-  })
+    </Box>
+  )
 }
 
 const RANK = { suggestion: 1, warning: 2, error: 3 } as const

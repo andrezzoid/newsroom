@@ -5,6 +5,14 @@ A Claude Code plugin that runs [Vale](https://vale.sh) over the prose Claude wri
 - After each Write or Edit, it lints the file and keeps the alerts on the lines Claude added. Claude reads them and rewrites what it got wrong. The transcript shows them under the diff, with each match underlined.
 - `/prose-lint <file or folder>…` lints whole files. Claude reads the output too, so "fix these" works after it.
 
+## What it looks like
+
+The same file, written in the terminal and in the Code tab of the Claude Desktop app:
+
+![A Write row in the Claude Code terminal: the new file's six lines, then "prose-lint · 3 issues · bundled rules". Line 3 has its em dash underlined in red, with the Dash message boxed under it. Line 6 has "really" and "serves as a" underlined in blue, with the Adverb and CopulaInflation messages boxed under it.](https://raw.githubusercontent.com/andrezzoid/newsroom/main/static/cc_terminal.png)
+
+![The same file in the Claude Desktop app: the diff of the new file, then the same three issues on lines 3 and 6, underlined and boxed the same way.](https://raw.githubusercontent.com/andrezzoid/newsroom/main/static/cc_desktop.png)
+
 ## Install
 
 It needs Claude Code v2.1.287 or later, which runs mods, and Vale on your `PATH` (`brew install vale`). Then, in your shell:
