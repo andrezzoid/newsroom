@@ -1,4 +1,5 @@
-import { expect, test } from 'claude-code/testing'
+import type { On } from 'claude-code'
+import { expect, mock, test } from 'claude-code/testing'
 
 const alert = (Line: number, Match: string) => ({
   Check: 'AiTells.Adverb',
@@ -162,6 +163,181 @@ test('errors come first, as must-fix, ahead of earlier suggestions', async ($, o
   const ran = await $.tool.call({ tool: 'Write', file_path: '/repo/notes.md', content: '...' })
 
   expect(ran.context?.[0]).toMatch(/Must fix:\n- 3:1 Em\/en dash.*\nFix, or tell the user why not:\n- 1:1 /)
+})
+
+// Noon on 9 October 2026, local time, and the day the stats file it under.
+const NOON = new Date(2026, 9, 9, 12).getTime()
+const STATS = 'stats/2026-10-09/newsroom/s1'
+
+// The plugin's store, in a Map the test reads back.
+const storeIn = (on: On, memory = new Map<string, unknown>()) => {
+  on('store.get', (_, e) => ({ value: memory.get(e.key) }))
+  on('store.set', (_, e) => (memory.set(e.key, e.value), { value: undefined }))
+  on('store.delete', (_, e) => (memory.delete(e.key), { value: undefined }))
+  on('store.keys', () => ({ value: [...memory.keys()] }))
+  return memory
+}
+
+// A session in a repo named newsroom, with the store and clock in memory.
+const session = (on: On) => {
+  mock.clock(on, { now: NOON })
+  on('session.root', () => ({ value: '/work/newsroom' }))
+  on('session.id', () => ({ value: 's1' }))
+  return storeIn(on)
+}
+
+const created = (filePath: string) => () => ({
+  result: { type: 'create', filePath, content: '...', structuredPatch: [], originalFile: null },
+})
+
+test('a flagged Write adds its words and alerts to the day\'s stats', async ($, on) => {
+  const store = session(on)
+  on('fs.stat', () => dir)
+  on('fs.read', () => ({ value: '# Notes\n\nIt just works.\n' }))
+  on('process.run', (_, e) => (isBundled(e.argv) ? vale([alert(3, 'just')]) : noConfig))
+  on('tool.call', { tool: 'Write' }, created('/work/newsroom/notes.md'))
+
+  await $.tool.call({ tool: 'Write', file_path: '/work/newsroom/notes.md', content: '...' })
+
+  expect(store.get(STATS)).toEqual({
+    configs: ['bundled rules'],
+    words: { docs: 4 },
+    rules: { 'AiTells.Adverb': { docs: { written: 1, fixed: 0, kept: 0 } } },
+    fixEdits: 0,
+    examples: { 'AiTells.Adverb': ['just'] },
+  })
+})
+
+test("the turn's end counts what Claude fixed and what it kept", async ($, on) => {
+  let lints = 0
+  const store = session(on)
+  on('fs.stat', () => dir)
+  on('fs.read', () => ({ value: 'It just really works.\n' }))
+  on('process.run', (_, e) => {
+    if (!isBundled(e.argv)) return noConfig
+    lints++
+    // The edit's lint finds both; the turn's end finds only "just" left.
+    return vale(lints === 1 ? [alert(1, 'just'), alert(1, 'really')] : [alert(1, 'just')])
+  })
+  on('tool.call', { tool: 'Write' }, created('/work/newsroom/notes.md'))
+  on('turn.complete', () => ({ text: '' }))
+
+  await $.tool.call({ tool: 'Write', file_path: '/work/newsroom/notes.md', content: '...' })
+  await $.turn.complete({ answer: '', durationMs: 0, isAborted: false, turnId: 't1', reason: 'answer' })
+
+  expect(store.get(STATS)).toMatchObject({
+    rules: { 'AiTells.Adverb': { docs: { written: 2, fixed: 1, kept: 1 } } },
+  })
+})
+
+test("a subagent's or an interrupted turn leaves the alerts open for the next answer", async ($, on) => {
+  const store = session(on)
+  on('fs.stat', () => dir)
+  on('fs.read', () => ({ value: 'It just works.\n' }))
+  on('process.run', (_, e) => (isBundled(e.argv) ? vale([alert(1, 'just')]) : noConfig))
+  on('tool.call', { tool: 'Write' }, created('/work/newsroom/notes.md'))
+  on('turn.complete', () => ({ text: '' }))
+  const ended = { answer: '', durationMs: 0, isAborted: false, turnId: 't1' } as const
+
+  await $.tool.call({ tool: 'Write', file_path: '/work/newsroom/notes.md', content: '...' })
+  await $.turn.complete({ ...ended, reason: 'answer', agentId: 'subagent' })
+  await $.turn.complete({ ...ended, reason: 'aborted', isAborted: true })
+  expect(store.get(STATS)).toMatchObject({ rules: { 'AiTells.Adverb': { docs: { written: 1, fixed: 0, kept: 0 } } } })
+
+  await $.turn.complete({ ...ended, reason: 'answer' })
+  expect(store.get(STATS)).toMatchObject({ rules: { 'AiTells.Adverb': { docs: { written: 1, fixed: 0, kept: 1 } } } })
+})
+
+// Two days of writing in two projects, for the stats view.
+const history = () =>
+  new Map<string, unknown>([
+    [
+      'stats/2026-10-08/newsroom',
+      {
+        configs: ['bundled rules'],
+        words: { docs: 1000 },
+        rules: { 'AiTells.Adverb': { docs: { written: 10, fixed: 8, kept: 2 } } },
+        fixEdits: 2,
+        examples: { 'AiTells.Adverb': ['just', 'really'] },
+      },
+    ],
+    [
+      'stats/2026-10-09/other/s1',
+      {
+        configs: ['bundled rules'],
+        words: { comments: 500 },
+        rules: { 'AiTells.Dash': { comments: { written: 5, fixed: 5, kept: 0 } } },
+        fixEdits: 1,
+        examples: { 'AiTells.Dash': ['—'] },
+      },
+    ],
+  ])
+
+const stats = (args: string) =>
+  ({
+    command: 'prose-lint',
+    args,
+    origin: { kind: 'composer' },
+    presentation: { isFullscreen: false, columns: 100 },
+  }) as const
+
+test('/prose-lint stats sums every project, by week, rule and kind', async ($, on) => {
+  storeIn(on, history())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(stats('stats'))
+
+  // s1's record, in the other project, is this session's.
+  expect(ran.text).toContain(
+    '**This session** · 500 words · 10.0 tells and 2.0 fix edits per 1,000 words · 5 written, 5 fixed, 0 kept',
+  )
+  expect(ran.text).toContain('1,500 words · 10.0 tells and 2.0 fix edits per 1,000 words')
+  expect(ran.text).toContain('| 2026-10-05 | 1,500 | 10.0 |')
+  expect(ran.text).toContain('| Adverb | 10 | 20% | "just", "really" |')
+  expect(ran.text).toContain('| comments | 500 | 10.0 |')
+})
+
+test("/prose-lint stats with a project counts only that project, and this session only if it wrote there", async ($, on) => {
+  storeIn(on, history())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(stats('stats newsroom'))
+
+  expect(ran.text).toContain('1,000 words · 10.0 tells')
+  expect(ran.text).not.toContain('Dash')
+  expect(ran.text).not.toContain('This session')
+})
+
+test("a session's start folds earlier days into one record per day and project", async ($, on) => {
+  const day = (written: number) => ({
+    configs: ['bundled rules'],
+    words: { docs: 100 },
+    rules: { 'AiTells.Dash': { docs: { written, fixed: written, kept: 0 } } },
+    fixEdits: 1,
+    examples: { 'AiTells.Dash': ['—'] },
+  })
+  const store = storeIn(
+    on,
+    new Map<string, unknown>([
+      ['stats/2026-10-08/newsroom/s0', day(2)],
+      ['stats/2026-10-08/newsroom/s9', day(3)],
+      [STATS, day(1)],
+    ]),
+  )
+  mock.clock(on, { now: NOON })
+  on('command.register', () => ({ deny: 'not in this test' }))
+  on('session.start', () => ({ cwd: '/work/newsroom' }))
+
+  await $.session.start({ cwd: '/work/newsroom', surface: 'terminal', isInteractive: true }).catch(() => {})
+
+  expect([...store.keys()].sort()).toEqual(['stats/2026-10-08/newsroom', STATS])
+  expect(store.get('stats/2026-10-08/newsroom')).toMatchObject({
+    words: { docs: 200 },
+    rules: { 'AiTells.Dash': { docs: { written: 5, fixed: 5, kept: 0 } } },
+    fixEdits: 2,
+  })
 })
 
 test('a vale failure leaves the result alone', async ($, on) => {

@@ -4,6 +4,7 @@ A Claude Code plugin that runs [Vale](https://vale.sh) over the prose Claude wri
 
 - After each Write or Edit, it lints the file and keeps the alerts on the lines Claude added. Claude reads them and rewrites what it got wrong. The transcript shows them under the diff, with each match underlined.
 - `/prose-lint <file or folder>…` lints whole files. Claude reads the output too, so "fix these" works after it.
+- `/prose-lint stats [project]` shows Claude's writing in this session and the last 30 days: tells per 1,000 words by week, the rules it trips most with how often it kept their alerts, and docs against code comments. The plugin keeps these counts on your machine, in its own store, with no text but a few example matches per rule.
 
 ## What it looks like
 
