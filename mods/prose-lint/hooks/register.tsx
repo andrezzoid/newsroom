@@ -221,7 +221,7 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
   await update($, memberOf(reports, { requestId: id }), () => kept)
 
   $.ui.toast(`prose-lint: ${found.length} tell${found.length === 1 ? '' : 's'} in ${basename(path)}`)
-  return { ...ran, context: [...(ran.context ?? []), describe(path, found, linted.configLabel)] }
+  return { ...ran, context: [...(ran.context ?? []), describe(found, linted.configLabel)] }
 }
 
 // Every alert Vale reports for the paths (files or folders), keyed by file;
@@ -376,21 +376,23 @@ const report = (linted: Linted[], cwd: string): string => {
   return lines.join('\n')
 }
 
-// The note Claude reads after the tool result: what to do with the alerts,
-// then one row per alert, in file order.
-const describe = (path: string, found: ValeAlert[], configLabel: string): string => {
-  const rows = found
-    .sort(byPosition)
+// The note Claude reads after a flagged edit, terse because it costs context
+// each time. Errors encode hard rules, so they have no way out; Claude keeps
+// any other alert only by telling the user why, so a quiet reply means it
+// fixed them all. Errors sort first, so the MAX_ALERTS cut never hides one.
+const describe = (found: ValeAlert[], configLabel: string): string => {
+  const shown = [...found]
+    .sort((a, b) => Number(b.Severity === 'error') - Number(a.Severity === 'error') || byPosition(a, b))
     .slice(0, MAX_ALERTS)
-    .map(a => `- ${a.Line}:${a.Span[0]} ${a.Check}: ${a.Message}`)
+  const row = (a: ValeAlert) => `- ${a.Line}:${a.Span[0]} ${a.Message}`
+  const errors = shown.filter(a => a.Severity === 'error').map(row)
+  const others = shown.filter(a => a.Severity !== 'error').map(row)
   const more = found.length > MAX_ALERTS ? `\n(${found.length - MAX_ALERTS} more not shown)` : ''
 
-  // "Do not mention" keeps Claude from narrating the check in its reply, the
-  // kind of filler the mod exists to cut.
   return [
-    `Vale (${configLabel}) flagged prose you just wrote in ${path}.`,
-    'Rewrite the real ones. Ignore false positives such as code, quotes, names or a match that is the precise word, and do not mention this check to the user unless you change something because of it.',
-    ...rows,
+    `Vale (${configLabel}). Don't mention fixes.`,
+    ...(errors.length > 0 ? ['Must fix:', ...errors] : []),
+    ...(others.length > 0 ? ['Fix, or tell the user why not:', ...others] : []),
   ].join('\n') + more
 }
 

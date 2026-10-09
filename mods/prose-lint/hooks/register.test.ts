@@ -65,7 +65,7 @@ test('an Edit hands Claude the alerts on the lines it added, not the ones alread
   const ran = await $.tool.call(edit)
 
   expect(ran.context?.length).toBe(1)
-  expect(ran.context?.[0]).toContain("- 2:1 AiTells.Adverb: Filler adverb 'just'")
+  expect(ran.context?.[0]).toContain("- 2:1 Filler adverb 'just'")
   expect(ran.context?.[0]).not.toContain('- 3:1')
 })
 
@@ -95,7 +95,7 @@ test('the bundled rules run when Vale finds no config of the project or user', a
   const ran = await $.tool.call(edit)
 
   expect(argv.join(' ')).toMatch(/--config \S*\/prose-lint\/vale\/\.vale\.ini /)
-  expect(ran.context?.[0]).toContain('Vale (bundled rules)')
+  expect(ran.context?.[0]).toContain('(bundled rules)')
 })
 
 test("a project's .vale.ini wins, and the row names it", async ($, on) => {
@@ -111,7 +111,7 @@ test("a project's .vale.ini wins, and the row names it", async ($, on) => {
   const ran = await $.tool.call(edit)
 
   expect(runs.some(run => run.includes('--config') || run.includes('sync'))).toBe(false)
-  expect(ran.context?.[0]).toContain('Vale (/repo/.vale.ini)')
+  expect(ran.context?.[0]).toContain('(/repo/.vale.ini)')
 })
 
 test("a project's broken config fails loudly instead of falling back to the bundled rules", async ($, on) => {
@@ -149,6 +149,19 @@ test('/prose-lint lists every alert of the files it names', async ($, on) => {
   expect(ran.text).toContain('prose-lint · 3 tells in 2 files · bundled rules')
   expect(ran.text).toMatch(/`README.md`\n- 1:1 .*\n- 3:1 /)
   expect(ran.text).toContain('`notes.md`')
+})
+
+test('errors come first, as must-fix, ahead of earlier suggestions', async ($, on) => {
+  const dash = { ...alert(3, '—'), Check: 'AiTells.Dash', Severity: 'error', Message: 'Em/en dash: recast.' }
+  on('fs.stat', () => dir)
+  on('process.run', (_, e) => (isBundled(e.argv) ? vale([alert(1, 'just'), dash], 1) : noConfig))
+  on('tool.call', { tool: 'Write' }, () => ({
+    result: { type: 'create', filePath: '/repo/notes.md', content: '...', structuredPatch: [], originalFile: null },
+  }))
+
+  const ran = await $.tool.call({ tool: 'Write', file_path: '/repo/notes.md', content: '...' })
+
+  expect(ran.context?.[0]).toMatch(/Must fix:\n- 3:1 Em\/en dash.*\nFix, or tell the user why not:\n- 1:1 /)
 })
 
 test('a vale failure leaves the result alone', async ($, on) => {
