@@ -1,0 +1,12 @@
+{
+  "name": "newsroom",
+  "owner": { "name": "André Jonas" },
+  "description": "André Jonas's Claude Code harness: mods and skills, each installable on its own",
+  "plugins": [
+    {
+      "name": "prose-lint",
+      "source": "./mods/prose-lint",
+      "description": "Lints the prose Claude writes with Vale and hands the findings back to Claude"
+    }
+  ]
+}

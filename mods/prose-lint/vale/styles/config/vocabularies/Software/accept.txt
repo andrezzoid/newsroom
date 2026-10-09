@@ -1,0 +1,23 @@
+(?i)implement
+(?i)evaluate
+(?i)modify
+(?i)multiple
+(?i)aggregate
+(?i)maximum
+(?i)minimum
+(?i)monitor
+(?i)validate
+(?i)terminate
+(?i)transmit
+(?i)initiate
+(?i)allocate
+(?i)acquire
+(?i)retain
+(?i)consolidate
+(?i)indicate
+(?i)equivalent
+(?i)requirement
+(?i)shall
+(?i)satisfy
+(?i)type of
+(?i)magnitude
