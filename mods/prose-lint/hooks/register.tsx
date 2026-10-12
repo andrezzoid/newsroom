@@ -293,7 +293,7 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
   }
   await update($, memberOf(reports, { requestId: id }), () => kept)
 
-  $.ui.toast(`prose-lint: ${found.length} tell${found.length === 1 ? '' : 's'} in ${basename(path)}`)
+  $.ui.toast(`prose-lint: ${found.length} alert${found.length === 1 ? '' : 's'} in ${basename(path)}`)
   return { ...ran, context: [...(ran.context ?? []), describe(found, linted.configLabel)] }
 }
 
