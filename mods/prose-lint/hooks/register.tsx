@@ -159,7 +159,7 @@ const annotate = async (
           <Text bold>prose-lint</Text>
           <Text dimColor>
             {' '}
-            · {list.length} alert{list.length === 1 ? '' : 's'}
+            · {plural(list.length, 'alert')}
             {fixed > 0 ? ` · ${fixed === list.length ? 'all' : fixed} fixed` : ''} · {configLabel}
           </Text>
         </Text>
@@ -293,7 +293,7 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
   }
   await update($, memberOf(reports, { requestId: id }), () => kept)
 
-  $.ui.toast(`prose-lint: ${found.length} alert${found.length === 1 ? '' : 's'} in ${basename(path)}`)
+  $.ui.toast(`prose-lint: ${plural(found.length, 'alert')} in ${basename(path)}`)
   return { ...ran, context: [...(ran.context ?? []), describe(found, linted.configLabel)] }
 }
 
@@ -759,6 +759,8 @@ const writtenOf = (stats: DayStats): number =>
 const per1000 = (count: number, words: number): string => (words > 0 ? ((1000 * count) / words).toFixed(1) : '–')
 // 1234567 as "1,234,567" whatever the machine's locale, unlike toLocaleString.
 const thousands = (n: number): string => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+// 1 as "1 alert", 3 as "3 alerts".
+const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`
 
 const emptyStats = (): DayStats => ({ configs: [], words: {}, rules: {}, fixEdits: 0, examples: {} })
 
@@ -864,7 +866,7 @@ const report = (linted: Linted[], cwd: string): string => {
   if (total === 0) return `prose-lint: no alerts found (${configs}).`
 
   const lines = [
-    `prose-lint · ${total} alert${total === 1 ? '' : 's'} in ${files.length} file${files.length === 1 ? '' : 's'} · ${configs}`,
+    `prose-lint · ${plural(total, 'alert')} in ${plural(files.length, 'file')} · ${configs}`,
   ]
   let shown = 0
   for (const [file, found] of files) {
