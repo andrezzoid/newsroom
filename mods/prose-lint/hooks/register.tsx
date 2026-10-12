@@ -693,7 +693,7 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
   const sessionLine =
     wordsOf(current) > 0
       ? [
-          `**This session** · ${thousands(wordsOf(current))} words · ${per1000(session.written, wordsOf(current))} tells and ` +
+          `**This session** · ${thousands(wordsOf(current))} words · ${per1000(session.written, wordsOf(current))} alerts and ` +
             `${per1000(current.fixEdits, wordsOf(current))} fix edits per 1,000 words · ` +
             `${session.written} written, ${session.fixed} fixed, ${session.kept} kept`,
           '',
@@ -710,10 +710,10 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
     ...sessionLine,
     `**prose-lint stats** · last ${STATS_DAYS} days · ${scope}`,
     '',
-    `${thousands(words)} words · ${per1000(writtenOf(total), words)} tells and ` +
+    `${thousands(words)} words · ${per1000(writtenOf(total), words)} alerts and ` +
       `${per1000(total.fixEdits, words)} fix edits per 1,000 words · rules: ${total.configs.join(', ')}`,
     '',
-    '| Week of | Words | Tells per 1,000 |',
+    '| Week of | Words | Alerts per 1,000 |',
     '| - | - | - |',
     ...[...weeks]
       .sort(([a], [b]) => a.localeCompare(b))
@@ -727,7 +727,7 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
         `${(total.examples[rule.check] ?? []).map(match => `"${match}"`).join(', ')} |`,
     ),
     '',
-    '| Where | Words | Tells per 1,000 |',
+    '| Where | Words | Alerts per 1,000 |',
     '| - | - | - |',
     ...(['docs', 'comments'] as const).map(kind => {
       const written = sumCounts(Object.values(total.rules).map(byKind => byKind[kind])).written
