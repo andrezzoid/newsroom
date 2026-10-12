@@ -33,8 +33,8 @@ claude -p --plugin-dir "$REPO/mods/prose-lint" "/prose-lint sample.md"
 claude -p --plugin-dir "$REPO/mods/prose-lint" "/prose-lint stats"
 ```
 
-The first prints `prose-lint · 4 tells in 1 file · bundled rules` and one
-`line:col Rule: message` per tell. Neither costs a model turn.
+The first prints `prose-lint · 4 alerts in 1 file · bundled rules` and one
+`line:col Rule: message` per alert. Neither costs a model turn.
 
 The Write and Edit hooks need a turn. The note they hand Claude never shows in
 stream-json, so ask Claude to quote it; the toast does show, as `ui_toast`:
@@ -48,14 +48,14 @@ Then do not edit anything. Reply with every note you received about draft.md aft
   | jq -r 'select(.subtype == "ui_toast" or .type == "result") | .text // .result'
 ```
 
-Expect `prose-lint: 4 tells in draft.md`, then the note: `Vale (bundled
+Expect `prose-lint: 4 alerts in draft.md`, then the note: `Vale (bundled
 rules)`, the dash under `Must fix:`, the other three under `Fix, or tell the
 user why not:`.
 
 ## Run (agent path): the terminal transcript row
 
 `driver.py` starts an interactive `claude` in a pseudo-terminal, plays scripted
-steps, and saves each screen as text. This run writes a draft with four tells,
+steps, and saves each screen as text. This run writes a draft with four alerts,
 then fixes the dash so the turn's end strikes it out:
 
 ```bash
@@ -76,7 +76,7 @@ error, `y` warning, `b` suggestion) and `-` under struck-through ones.
 `fixed.txt` shows:
 
 ```text
-     prose-lint · 4 issues · 1 fixed · bundled rules
+     prose-lint · 4 alerts · 1 fixed · bundled rules
 
      1 │ This tool really serves as a bridge — it is crucial.
                    bbbbbb bbbbbbbbbbb        - yyyyy
@@ -106,7 +106,7 @@ claude plugin validate .
 claude plugin test mods/prose-lint
 ```
 
-Both pass: validate warns that `plugin.json` has no `version`; test runs 18.
+Both pass: validate warns that `plugin.json` has no `version`; test runs 22.
 
 ## Gotchas
 
@@ -142,3 +142,9 @@ Both pass: validate warns that `plugin.json` has no `version`; test runs 18.
 - **pip: `SSLCertVerificationError('OSStatus -26276')`**: pip can't reach the
   macOS keychain from the sandbox. `--use-deprecated=legacy-certs` (in the
   Prerequisites line) makes it use its own certificates.
+- **`prose-lint: Vale did not run; the toast says why`** in a fresh worktree:
+  the bundled packages (`AiTells`, `write-good`) are git-ignored, so the mod
+  runs `vale sync`, and inside the sandbox Vale's download fails with `x509:
+  OSStatus -26276`. Copy them from a checkout that has them:
+  `cp -R <main checkout>/mods/prose-lint/vale/styles/{AiTells,write-good}
+  mods/prose-lint/vale/styles/`.
