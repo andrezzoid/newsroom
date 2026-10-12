@@ -860,10 +860,10 @@ const report = (linted: Linted[], cwd: string): string => {
     .flatMap(one => Object.entries(one.byFile))
     .filter(([, found]) => found.length > 0)
   const total = files.reduce((sum, [, found]) => sum + found.length, 0)
-  if (total === 0) return `prose-lint: no tells found (${configs}).`
+  if (total === 0) return `prose-lint: no alerts found (${configs}).`
 
   const lines = [
-    `prose-lint · ${total} tell${total === 1 ? '' : 's'} in ${files.length} file${files.length === 1 ? '' : 's'} · ${configs}`,
+    `prose-lint · ${total} alert${total === 1 ? '' : 's'} in ${files.length} file${files.length === 1 ? '' : 's'} · ${configs}`,
   ]
   let shown = 0
   for (const [file, found] of files) {
