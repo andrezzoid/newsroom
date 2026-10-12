@@ -271,6 +271,15 @@ test("a Write's row with one new alert says alert", async ($, on) => {
   expect(await ui.find({ type: 'Text', text: 'prose-lint · 1 alert · bundled rules' })).toBeDefined()
 })
 
+test('a flagged Write toasts its count of new alerts', async ($, on) => {
+  const toasts: string[] = []
+  on('ui.toast', (_, e) => (toasts.push(e.text), { value: undefined }))
+
+  await rowOf($, on, [alert(1, 'just'), alert(2, 'really'), alert(3, 'very')])
+
+  expect(toasts).toEqual(['prose-lint: 3 alerts in notes.md'])
+})
+
 test('a flagged Write adds its words and alerts to the day\'s stats', async ($, on) => {
   const store = session(on)
   on('fs.stat', () => dir)
