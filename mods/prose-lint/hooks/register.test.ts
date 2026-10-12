@@ -443,12 +443,15 @@ test('/prose-lint stats sums every project, by week, rule and kind', async ($, o
 
   // s1's record, in the other project, is this session's.
   expect(ran.text).toContain(
-    '**This session** · 500 words · 10.0 tells and 2.0 fix edits per 1,000 words · 5 written, 5 fixed, 0 kept',
+    '**This session** · 500 words · 10.0 alerts and 2.0 fix edits per 1,000 words · 5 written, 5 fixed, 0 kept',
   )
-  expect(ran.text).toContain('1,500 words · 10.0 tells and 2.0 fix edits per 1,000 words')
+  expect(ran.text).toContain('1,500 words · 10.0 alerts and 2.0 fix edits per 1,000 words')
   expect(ran.text).toContain('| 2026-10-05 | 1,500 | 10.0 |')
   expect(ran.text).toContain('| Adverb | 10 | 20% | "just", "really" |')
   expect(ran.text).toContain('| comments | 500 | 10.0 |')
+  expect(ran.text).toContain('| Week of | Words | Alerts per 1,000 |')
+  expect(ran.text).toContain('| Where | Words | Alerts per 1,000 |')
+  expect(ran.text).not.toMatch(/tells/i)
 })
 
 test("/prose-lint stats with a project counts only that project, and this session only if it wrote there", async ($, on) => {
@@ -458,7 +461,7 @@ test("/prose-lint stats with a project counts only that project, and this sessio
 
   const ran = await $.command.run(stats('stats newsroom'))
 
-  expect(ran.text).toContain('1,000 words · 10.0 tells')
+  expect(ran.text).toContain('1,000 words · 10.0 alerts')
   expect(ran.text).not.toContain('Dash')
   expect(ran.text).not.toContain('This session')
 })
