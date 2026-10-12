@@ -208,7 +208,7 @@ test('/prose-lint lists every alert of the files it names', async ($, on) => {
 test('/prose-lint on a file with no alerts says so', async ($, on) => {
   on('fs.stat', () => dir)
   on('session.cwd', () => ({ value: '/repo' }))
-  on('process.run', (_, e) => (isBundled(e.argv) ? result(0, JSON.stringify({ [e.argv.at(-1) ?? '']: [] })) : noConfig))
+  on('process.run', (_, e) => (isBundled(e.argv) ? vale([]) : noConfig))
 
   const ran = await $.command.run({
     command: 'prose-lint',
@@ -258,13 +258,18 @@ const created = (filePath: string) => () => ({
   result: { type: 'create', filePath, content: '...', structuredPatch: [], originalFile: null },
 })
 
-// The terminal row of the Write w1, once a Write with these alerts drew it.
-const rowOf = async ($: Engine, on: On, alerts: unknown[]) => {
+// A Write, w1, of a new /repo/notes.md in which Vale finds these alerts.
+const writeWith = async ($: Engine, on: On, alerts: unknown[]) => {
   on('fs.stat', () => dir)
   on('process.run', (_, e) => (isBundled(e.argv) ? vale(alerts, 1) : noConfig))
   on('tool.call', { tool: 'Write' }, created('/repo/notes.md'))
-  on('ui.render', { component: 'ToolResult' }, () => ({ type: 'engine', ref: 0 }))
   await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/repo/notes.md', content: '...' })
+}
+
+// The terminal row of the Write w1, once a Write with these alerts drew it.
+const rowOf = async ($: Engine, on: On, alerts: unknown[]) => {
+  on('ui.render', { component: 'ToolResult' }, () => ({ type: 'engine', ref: 0 }))
+  await writeWith($, on, alerts)
   return $.ui.mount({
     plugin: 'prose-lint',
     surface: 'terminal',
@@ -290,7 +295,7 @@ test('a flagged Write toasts its count of new alerts', async ($, on) => {
   const toasts: string[] = []
   on('ui.toast', (_, e) => (toasts.push(e.text), { value: undefined }))
 
-  await rowOf($, on, [alert(1, 'just'), alert(2, 'really'), alert(3, 'very')])
+  await writeWith($, on, [alert(1, 'just'), alert(2, 'really'), alert(3, 'very')])
 
   expect(toasts).toEqual(['prose-lint: 3 alerts in notes.md'])
 })
@@ -348,7 +353,7 @@ test("the turn's end counts what Claude fixed and what it kept", async ($, on) =
   const struck = (await ui.findAll({ type: 'Text' })).filter(element => element.props.strikethrough === true)
   expect(struck.map(element => element.text)).toContain('really')
   expect(struck.map(element => element.text)).not.toContain('just')
-  expect((await ui.find({ type: 'Text', text: '1 fixed' })) !== undefined).toBe(true)
+  expect(await ui.find({ type: 'Text', text: 'prose-lint · 2 alerts · 1 fixed · bundled rules' })).toBeDefined()
 })
 
 test("a subagent's or an interrupted turn leaves the alerts open for the next answer", async ($, on) => {
@@ -451,7 +456,7 @@ test('/prose-lint stats sums every project, by week, rule and kind', async ($, o
   expect(ran.text).toContain('| comments | 500 | 10.0 |')
   expect(ran.text).toContain('| Week of | Words | Alerts per 1,000 |')
   expect(ran.text).toContain('| Where | Words | Alerts per 1,000 |')
-  expect(ran.text).not.toMatch(/tells/i)
+  expect(ran.text).not.toMatch(/\btells\b/i)
 })
 
 test("/prose-lint stats with a project counts only that project, and this session only if it wrote there", async ($, on) => {
