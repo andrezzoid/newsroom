@@ -27,7 +27,7 @@ const noConfig = failure('no config file found', 'E100')
 const isBundled = (argv: readonly string[]) => argv.includes('--config')
 
 // The run that lints the file as it stood before an edit, piped in, to tell
-// carried tells from new ones.
+// existing alerts from new ones.
 const isPiped = (argv: readonly string[]) => argv.some(arg => arg.startsWith('--ext='))
 
 const dir = { value: { kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false } }
@@ -77,7 +77,7 @@ test('an Edit hands Claude the alerts on the lines it added, not the ones alread
   expect(ran.context?.[0]).not.toContain('- 3:1')
 })
 
-test('an Edit that rewords a line reports only the tells it added, not the ones the line had', async ($, on) => {
+test('an Edit that rewords a line reports only its new alerts, not the ones the line had', async ($, on) => {
   on('fs.stat', () => dir)
   // Vale finds "just" in the removed line, and "just" and "really" in the new one.
   on('process.run', (_, e) =>
@@ -101,7 +101,7 @@ test('an Edit that rewords a line reports only the tells it added, not the ones 
   expect(ran.context?.[0]).not.toContain("Filler adverb 'just'")
 })
 
-test("a tell that only changed case or wrapping counts as carried, not new", async ($, on) => {
+test("an alert that only changed case or wrapping counts as existing, not new", async ($, on) => {
   const negParallel = { ...alert(2, "It's not just a tool, it's"), Check: 'AiTells.NegParallel' }
   on('fs.stat', () => dir)
   // In the removed lines, Vale matched the same words in lower case, across the wrap.

@@ -30,7 +30,7 @@ type ValeAlert = {
 // the project's or the user's own, else --config with the bundled one.
 type Linted = { configLabel: string; configArgs: string[]; byFile: Record<string, ValeAlert[]> }
 
-// Caps the alerts Claude reads per edit, so a file full of tells costs a short
+// Caps the alerts Claude reads per edit, so a file full of alerts costs a short
 // note, not a page of context. The transcript row still shows them all.
 const MAX_ALERTS = 20
 
@@ -261,7 +261,7 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
   const linted = await lint($, [path], dirname(path))
   if (!linted) return ran
   const removed = structuredPatch.flatMap(hunk => hunk.lines.filter(l => l.startsWith('-')).map(l => l.slice(1)))
-  const found = await newTells(
+  const found = await newAlerts(
     $,
     (Object.values(linted.byFile)[0] ?? []).filter(a => lines === undefined || lines.has(a.Line)),
     written,
@@ -269,8 +269,8 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
   )
 
   const text = (await $.fs.read(path).catch(() => '')).split(/\r?\n/)
-  // An old file too large to diff would count all its words and old tells as
-  // Claude's; only a new one can count whole.
+  // An old file too large to diff would count all its words and the alerts it
+  // already had as Claude's; only a new one can count whole.
   if (lines !== undefined || written.type === 'create') {
     const added = lines === undefined ? text : [...lines].map(line => text[line - 1] ?? '')
     // Stats must never cost Claude its alerts, so this drops a failure there.
@@ -301,10 +301,10 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
 // Vale omits files without alerts. Vale itself picks the config, from `dir`:
 // a .vale.ini there or in a folder above, else the user's global one, the
 // same search a team's own `vale` runs make. Only when it finds neither do
-// the bundled rules run. A team's config wins because it states their goals
+// the bundled rules run. A project config wins because it states the team's goals
 // for the prose in their repo, and their git hook or CI can run the same file
 // over what this mod never sees, such as files Claude writes through Bash.
-// Never throws: a failure (Vale missing, a team config with unsynced styles,
+// Never throws: a failure (Vale missing, a project config with unsynced styles,
 // a failed download) shows a toast and returns undefined, so a lint problem
 // never fails Claude's edit.
 const lint = async ($: EngineInterface, paths: string[], dir: string): Promise<Linted | undefined> => {
@@ -434,17 +434,17 @@ const sync = ($: EngineInterface, config: string, styles: string): Promise<void>
     throw err
   }))
 
-// The alerts an edit wrote, not ones it carried along: a diff shows a reworded
-// line as removed and added whole, so the tells it already had land on an
-// added line too. Vale lints the whole pre-edit file, so code blocks and
+// The new alerts of an edit, without its existing ones: a diff shows a
+// reworded line as removed and added whole, so the alerts it already had land
+// on an added line too. Vale lints the whole pre-edit file, so code blocks and
 // comment delimiters read as they did, and each alert on a
-// removed line cancels one of the same tell on an added line of the same
-// hunk. A line that goes from one "just" to two still reports the new one,
-// and a "just" removed in one section never hides one added in another. When
-// that lint fails, nothing cancels: better a repeated alert than a hidden one.
-// Vale names piped text stdin.<ext>, so a team config whose sections match
-// paths (docs/*.md) lints none of it, and the edit's old tells repeat.
-const newTells = async (
+// removed line cancels one of the same alert on an added line of the same
+// hunk. A line that goes from one "just" to two still reports the new
+// one, and a "just" removed in one section never hides one added in another.
+// When that lint fails, nothing cancels: better a repeated alert than a hidden
+// one. Vale names piped text stdin.<ext>, so a project config whose sections
+// match paths (docs/*.md) lints none of it, and the existing alerts repeat.
+const newAlerts = async (
   $: EngineInterface,
   found: ValeAlert[],
   written: { filePath: string; originalFile: string | null; structuredPatch: readonly Hunk[] },
@@ -471,27 +471,27 @@ const newTells = async (
     }
   })
 
-  const carried = new Map<string, number>()
+  const existing = new Map<string, number>()
   for (const alert of before) {
     const hunk = removedIn.get(alert.Line)
     if (hunk === undefined) continue
-    const key = `${hunk}\n${tellKey(alert.Check, alert.Match)}`
-    carried.set(key, (carried.get(key) ?? 0) + 1)
+    const key = `${hunk}\n${alertKey(alert.Check, alert.Match)}`
+    existing.set(key, (existing.get(key) ?? 0) + 1)
   }
   return found.filter(alert => {
-    const key = `${addedIn.get(alert.Line)}\n${tellKey(alert.Check, alert.Match)}`
-    const left = carried.get(key) ?? 0
+    const key = `${addedIn.get(alert.Line)}\n${alertKey(alert.Check, alert.Match)}`
+    const left = existing.get(key) ?? 0
     if (left === 0) return true
-    carried.set(key, left - 1)
+    existing.set(key, left - 1)
     return false
   })
 }
 
-// What makes two alerts, in two versions of a file, the same tell: the rule
+// What makes two alerts, in two versions of a file, the same alert: the rule
 // and the words it matched, ignoring case and spacing, since a reworded
 // sentence can capitalize its first word ("it's" becomes "It's") or wrap
 // differently. Every comparison between versions keys on this.
-const tellKey = (check: string, match: string): string => `${check}\n${sameWords(match)}`
+const alertKey = (check: string, match: string): string => `${check}\n${sameWords(match)}`
 
 const sameWords = (text: string): string => text.toLowerCase().replace(/\s+/g, ' ').trim()
 
@@ -545,11 +545,12 @@ const recordEdit = async (
   if (opened.length > 0) await update($, open, list => [...list, ...opened])
 }
 
-// Lints each file with open alerts again and counts how often each tell (rule
-// and words) still shows up there: open alerts of that tell take those as
-// kept, in the order Claude wrote them, and the rest count as fixed. Matching
-// by tell, not line, survives the line shifts edits cause; the cost is that a
-// match the file already had before counts a new one as kept too.
+// Lints each file with open alerts again and counts how often each alert
+// (rule and words) still shows up there: open alerts of that rule and words
+// take those as kept, in the order Claude wrote them, and the rest count as
+// fixed. Matching by rule and words, not line, survives the line shifts edits
+// cause; the cost is that a match the file already had before counts a new
+// one as kept too.
 //
 // A newly resolved alert counts in the stats once. A kept one stays open, so
 // a later fix still strikes it out on its row; its file's modification time
@@ -581,10 +582,10 @@ const resolveOpen = async ($: EngineInterface): Promise<void> => {
       }
       const left = new Map<string, number>()
       for (const a of Object.values(linted.byFile)[0] ?? []) {
-        left.set(tellKey(a.Check, a.Match), (left.get(tellKey(a.Check, a.Match)) ?? 0) + 1)
+        left.set(alertKey(a.Check, a.Match), (left.get(alertKey(a.Check, a.Match)) ?? 0) + 1)
       }
       for (const alert of ofFile) {
-        const key = tellKey(alert.check, alert.match)
+        const key = alertKey(alert.check, alert.match)
         const count = left.get(key) ?? 0
         left.set(key, count - 1)
         verdicts.set(alert, { status: count > 0 ? 'kept' : 'fixed', checkedMs })
