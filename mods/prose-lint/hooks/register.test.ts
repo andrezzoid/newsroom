@@ -200,9 +200,24 @@ test('/prose-lint lists every alert of the files it names', async ($, on) => {
     presentation: { isFullscreen: false, columns: 100 },
   })
 
-  expect(ran.text).toContain('prose-lint · 3 tells in 2 files · bundled rules')
+  expect(ran.text).toContain('prose-lint · 3 alerts in 2 files · bundled rules')
   expect(ran.text).toMatch(/`README.md`\n- 1:1 .*\n- 3:1 /)
   expect(ran.text).toContain('`notes.md`')
+})
+
+test('/prose-lint on a file with no alerts says so', async ($, on) => {
+  on('fs.stat', () => dir)
+  on('session.cwd', () => ({ value: '/repo' }))
+  on('process.run', (_, e) => (isBundled(e.argv) ? result(0, JSON.stringify({ [e.argv.at(-1) ?? '']: [] })) : noConfig))
+
+  const ran = await $.command.run({
+    command: 'prose-lint',
+    args: 'README.md',
+    origin: { kind: 'composer' },
+    presentation: { isFullscreen: false, columns: 100 },
+  })
+
+  expect(ran.text).toBe('prose-lint: no alerts found (bundled rules).')
 })
 
 test('errors come first, as must-fix, ahead of earlier suggestions', async ($, on) => {
