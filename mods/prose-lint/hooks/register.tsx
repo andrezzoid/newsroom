@@ -301,9 +301,9 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
 // Vale omits files without alerts. Vale itself picks the config, from `dir`:
 // a .vale.ini there or in a folder above, else the user's global one, the
 // same search a team's own `vale` runs make. Only when it finds neither do
-// the bundled rules run. A project config wins because it states the team's goals
-// for the prose in their repo, and their git hook or CI can run the same file
-// over what this mod never sees, such as files Claude writes through Bash.
+// the bundled rules run. A project config wins because it states the team's
+// goals for the prose in their repo, and their git hook or CI can run the same
+// file over what this mod never sees, such as files Claude writes through Bash.
 // Never throws: a failure (Vale missing, a project config with unsynced styles,
 // a failed download) shows a toast and returns undefined, so a lint problem
 // never fails Claude's edit.
