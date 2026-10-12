@@ -1,5 +1,5 @@
 import type { On } from 'claude-code'
-import { expect, mock, test } from 'claude-code/testing'
+import { type Engine, expect, mock, test } from 'claude-code/testing'
 
 const alert = (Line: number, Match: string) => ({
   Check: 'AiTells.Adverb',
@@ -241,6 +241,34 @@ const session = (on: On) => {
 
 const created = (filePath: string) => () => ({
   result: { type: 'create', filePath, content: '...', structuredPatch: [], originalFile: null },
+})
+
+// The terminal row of the Write w1, once a Write with these alerts drew it.
+const rowOf = async ($: Engine, on: On, alerts: unknown[]) => {
+  on('fs.stat', () => dir)
+  on('process.run', (_, e) => (isBundled(e.argv) ? vale(alerts, 1) : noConfig))
+  on('tool.call', { tool: 'Write' }, created('/repo/notes.md'))
+  on('ui.render', { component: 'ToolResult' }, () => ({ type: 'engine', ref: 0 }))
+  await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/repo/notes.md', content: '...' })
+  return $.ui.mount({
+    plugin: 'prose-lint',
+    surface: 'terminal',
+    component: 'ToolResult',
+    requestId: 'w1',
+    props: { tool_use_id: 'w1', tool: 'Write', output: {}, isErrored: false },
+  })
+}
+
+test("a Write's row counts its new alerts", async ($, on) => {
+  const ui = await rowOf($, on, [alert(1, 'just'), alert(2, 'really'), alert(3, 'very')])
+
+  expect(await ui.find({ type: 'Text', text: 'prose-lint · 3 alerts · bundled rules' })).toBeDefined()
+})
+
+test("a Write's row with one new alert says alert", async ($, on) => {
+  const ui = await rowOf($, on, [alert(1, 'just')])
+
+  expect(await ui.find({ type: 'Text', text: 'prose-lint · 1 alert · bundled rules' })).toBeDefined()
 })
 
 test('a flagged Write adds its words and alerts to the day\'s stats', async ($, on) => {
