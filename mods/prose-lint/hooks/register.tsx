@@ -159,7 +159,7 @@ const annotate = async (
           <Text bold>prose-lint</Text>
           <Text dimColor>
             {' '}
-            · {list.length} issue{list.length === 1 ? '' : 's'}
+            · {list.length} alert{list.length === 1 ? '' : 's'}
             {fixed > 0 ? ` · ${fixed === list.length ? 'all' : fixed} fixed` : ''} · {configLabel}
           </Text>
         </Text>
