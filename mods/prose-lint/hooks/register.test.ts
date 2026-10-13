@@ -1,5 +1,5 @@
 import type { On } from 'claude-code'
-import { expect, mock, test } from 'claude-code/testing'
+import { type Engine, expect, mock, test } from 'claude-code/testing'
 
 const alert = (Line: number, Match: string) => ({
   Check: 'AiTells.Adverb',
@@ -27,7 +27,7 @@ const noConfig = failure('no config file found', 'E100')
 const isBundled = (argv: readonly string[]) => argv.includes('--config')
 
 // The run that lints the file as it stood before an edit, piped in, to tell
-// carried tells from new ones.
+// existing alerts from new ones.
 const isPiped = (argv: readonly string[]) => argv.some(arg => arg.startsWith('--ext='))
 
 const dir = { value: { kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false } }
@@ -77,7 +77,7 @@ test('an Edit hands Claude the alerts on the lines it added, not the ones alread
   expect(ran.context?.[0]).not.toContain('- 3:1')
 })
 
-test('an Edit that rewords a line reports only the tells it added, not the ones the line had', async ($, on) => {
+test('an Edit that rewords a line reports only its new alerts, not the ones the line had', async ($, on) => {
   on('fs.stat', () => dir)
   // Vale finds "just" in the removed line, and "just" and "really" in the new one.
   on('process.run', (_, e) =>
@@ -101,7 +101,7 @@ test('an Edit that rewords a line reports only the tells it added, not the ones 
   expect(ran.context?.[0]).not.toContain("Filler adverb 'just'")
 })
 
-test("a tell that only changed case or wrapping counts as carried, not new", async ($, on) => {
+test("an alert that only changed case or wrapping counts as existing, not new", async ($, on) => {
   const negParallel = { ...alert(2, "It's not just a tool, it's"), Check: 'AiTells.NegParallel' }
   on('fs.stat', () => dir)
   // In the removed lines, Vale matched the same words in lower case, across the wrap.
@@ -200,9 +200,24 @@ test('/prose-lint lists every alert of the files it names', async ($, on) => {
     presentation: { isFullscreen: false, columns: 100 },
   })
 
-  expect(ran.text).toContain('prose-lint · 3 tells in 2 files · bundled rules')
+  expect(ran.text).toContain('prose-lint · 3 alerts in 2 files · bundled rules')
   expect(ran.text).toMatch(/`README.md`\n- 1:1 .*\n- 3:1 /)
   expect(ran.text).toContain('`notes.md`')
+})
+
+test('/prose-lint on a file with no alerts says so', async ($, on) => {
+  on('fs.stat', () => dir)
+  on('session.cwd', () => ({ value: '/repo' }))
+  on('process.run', (_, e) => (isBundled(e.argv) ? vale([]) : noConfig))
+
+  const ran = await $.command.run({
+    command: 'prose-lint',
+    args: 'README.md',
+    origin: { kind: 'composer' },
+    presentation: { isFullscreen: false, columns: 100 },
+  })
+
+  expect(ran.text).toBe('prose-lint: no alerts found (bundled rules).')
 })
 
 test('errors come first, as must-fix, ahead of earlier suggestions', async ($, on) => {
@@ -241,6 +256,48 @@ const session = (on: On) => {
 
 const created = (filePath: string) => () => ({
   result: { type: 'create', filePath, content: '...', structuredPatch: [], originalFile: null },
+})
+
+// A Write, w1, of a new /repo/notes.md in which Vale finds these alerts.
+const writeWith = async ($: Engine, on: On, alerts: unknown[]) => {
+  on('fs.stat', () => dir)
+  on('process.run', (_, e) => (isBundled(e.argv) ? vale(alerts, 1) : noConfig))
+  on('tool.call', { tool: 'Write' }, created('/repo/notes.md'))
+  await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/repo/notes.md', content: '...' })
+}
+
+// The terminal row of the Write w1, once a Write with these alerts drew it.
+const rowOf = async ($: Engine, on: On, alerts: unknown[]) => {
+  on('ui.render', { component: 'ToolResult' }, () => ({ type: 'engine', ref: 0 }))
+  await writeWith($, on, alerts)
+  return $.ui.mount({
+    plugin: 'prose-lint',
+    surface: 'terminal',
+    component: 'ToolResult',
+    requestId: 'w1',
+    props: { tool_use_id: 'w1', tool: 'Write', output: {}, isErrored: false },
+  })
+}
+
+test("a Write's row counts its new alerts", async ($, on) => {
+  const ui = await rowOf($, on, [alert(1, 'just'), alert(2, 'really'), alert(3, 'very')])
+
+  expect(await ui.find({ type: 'Text', text: 'prose-lint · 3 alerts · bundled rules' })).toBeDefined()
+})
+
+test("a Write's row with one new alert says alert", async ($, on) => {
+  const ui = await rowOf($, on, [alert(1, 'just')])
+
+  expect(await ui.find({ type: 'Text', text: 'prose-lint · 1 alert · bundled rules' })).toBeDefined()
+})
+
+test('a flagged Write toasts its count of new alerts', async ($, on) => {
+  const toasts: string[] = []
+  on('ui.toast', (_, e) => (toasts.push(e.text), { value: undefined }))
+
+  await writeWith($, on, [alert(1, 'just'), alert(2, 'really'), alert(3, 'very')])
+
+  expect(toasts).toEqual(['prose-lint: 3 alerts in notes.md'])
 })
 
 test('a flagged Write adds its words and alerts to the day\'s stats', async ($, on) => {
@@ -296,7 +353,7 @@ test("the turn's end counts what Claude fixed and what it kept", async ($, on) =
   const struck = (await ui.findAll({ type: 'Text' })).filter(element => element.props.strikethrough === true)
   expect(struck.map(element => element.text)).toContain('really')
   expect(struck.map(element => element.text)).not.toContain('just')
-  expect((await ui.find({ type: 'Text', text: '1 fixed' })) !== undefined).toBe(true)
+  expect(await ui.find({ type: 'Text', text: 'prose-lint · 2 alerts · 1 fixed · bundled rules' })).toBeDefined()
 })
 
 test("a subagent's or an interrupted turn leaves the alerts open for the next answer", async ($, on) => {
@@ -391,12 +448,15 @@ test('/prose-lint stats sums every project, by week, rule and kind', async ($, o
 
   // s1's record, in the other project, is this session's.
   expect(ran.text).toContain(
-    '**This session** · 500 words · 10.0 tells and 2.0 fix edits per 1,000 words · 5 written, 5 fixed, 0 kept',
+    '**This session** · 500 words · 10.0 alerts and 2.0 fix edits per 1,000 words · 5 written, 5 fixed, 0 kept',
   )
-  expect(ran.text).toContain('1,500 words · 10.0 tells and 2.0 fix edits per 1,000 words')
+  expect(ran.text).toContain('1,500 words · 10.0 alerts and 2.0 fix edits per 1,000 words')
   expect(ran.text).toContain('| 2026-10-05 | 1,500 | 10.0 |')
   expect(ran.text).toContain('| Adverb | 10 | 20% | "just", "really" |')
   expect(ran.text).toContain('| comments | 500 | 10.0 |')
+  expect(ran.text).toContain('| Week of | Words | Alerts per 1,000 |')
+  expect(ran.text).toContain('| Where | Words | Alerts per 1,000 |')
+  expect(ran.text).not.toMatch(/\btells\b/i)
 })
 
 test("/prose-lint stats with a project counts only that project, and this session only if it wrote there", async ($, on) => {
@@ -406,7 +466,7 @@ test("/prose-lint stats with a project counts only that project, and this sessio
 
   const ran = await $.command.run(stats('stats newsroom'))
 
-  expect(ran.text).toContain('1,000 words · 10.0 tells')
+  expect(ran.text).toContain('1,000 words · 10.0 alerts')
   expect(ran.text).not.toContain('Dash')
   expect(ran.text).not.toContain('This session')
 })

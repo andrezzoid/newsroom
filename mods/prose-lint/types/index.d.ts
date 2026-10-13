@@ -26,7 +26,7 @@ export type ProseAlert = {
   // Set when the turn that wrote it ends: gone from the file (by Claude's
   // hand or the user's) or still there. A kept one turns fixed when a later
   // turn's end finds it gone. Unset until the first verdict, and for an alert
-  // past the note's cut, which no turn resolves.
+  // past the note's cut, which never gets one.
   status?: 'fixed' | 'kept'
 }
 
@@ -62,16 +62,16 @@ export type DayStats = {
 // turn to end, or kept then and watched for a later fix.
 export type OpenAlert = {
   // The tool_use_id of the Write or Edit that wrote it, whose transcript row
-  // shows it as fixed or kept once resolved.
+  // shows it as fixed or kept once it has a verdict.
   id: string
   // Its position among that row's alerts.
   index: number
   // 'kept' once a turn's end found it still there; the stats count it then
   // and never again, while the row can still turn it fixed.
   status?: 'kept'
-  // The file's modification time at that check, in Unix milliseconds: an
-  // unchanged file can't have fixed it, so the next check skips the lint.
-  checkedMs?: number
+  // The file's modification time at that lint, in Unix milliseconds: an
+  // unchanged file can't have fixed it, so the next turn's end skips the lint.
+  lintedMs?: number
   // The written file's absolute path, as the Write or Edit named it.
   file: string
   // Vale's rule as Style.Rule.

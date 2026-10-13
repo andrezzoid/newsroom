@@ -4,19 +4,19 @@ A Claude Code plugin that runs [Vale](https://vale.sh) over the prose Claude wri
 
 - After each Write or Edit, it lints the file and keeps the alerts on the lines Claude added. Claude reads them and rewrites what it got wrong. The transcript shows them under the diff, with each match underlined. When the turn ends, the alerts that got fixed, by Claude or by you, show struck through.
 - `/prose-lint <file or folder>…` lints whole files. Claude reads the output too, so "fix these" works after it.
-- `/prose-lint stats [project]` shows Claude's writing in this session and the last 30 days: tells per 1,000 words by week, the rules it trips most with how often it kept their alerts, and docs against code comments. The plugin keeps these counts on your machine, in its own store, with no text but a few example matches per rule.
+- `/prose-lint stats [project]` shows Claude's writing in this session and the last 30 days: alerts per 1,000 words by week, the rules it trips most with how often it kept their alerts, and docs against code comments. The plugin keeps these counts on your machine, in its own store, with no text but a few example matches per rule.
 
 ## What it looks like
 
 The same file, written in the terminal and in the Code tab of the Claude Desktop app:
 
-![A Write row in the Claude Code terminal: the new file's six lines, then "prose-lint · 3 issues · bundled rules". Line 3 has its em dash underlined in red, with the Dash message boxed under it. Line 6 has "really" and "serves as a" underlined in blue, with the Adverb and CopulaInflation messages boxed under it.](https://raw.githubusercontent.com/andrezzoid/newsroom/main/static/cc_terminal.png)
+![A Write row in the Claude Code terminal: the new file's six lines, then "prose-lint · 3 alerts · bundled rules". Line 3 has its em dash underlined in red, with the Dash message boxed under it. Line 6 has "really" and "serves as a" underlined in blue, with the Adverb and CopulaInflation messages boxed under it.](https://raw.githubusercontent.com/andrezzoid/newsroom/main/static/cc_terminal.png)
 
-![The same file in the Claude Desktop app: the diff of the new file, then the same three issues on lines 3 and 6, underlined and boxed the same way.](https://raw.githubusercontent.com/andrezzoid/newsroom/main/static/cc_desktop.png)
+![The same file in the Claude Desktop app: the diff of the new file, then the same three alerts on lines 3 and 6, underlined and boxed the same way.](https://raw.githubusercontent.com/andrezzoid/newsroom/main/static/cc_desktop.png)
 
 When the turn ends, the row strikes out what got fixed. Here Claude fixed the dash in a second edit, which raised no alerts of its own:
 
-![The same Write row after a follow-up edit: the header reads "3 issues · 1 fixed", and the Dash message on line 3 has a green check and a line through it, while line 6 keeps its two open alerts. Below it, the Update row replaces the dash with a comma and shows no prose-lint block.](https://raw.githubusercontent.com/andrezzoid/newsroom/main/static/cc_terminal_fix.png)
+![The same Write row after a follow-up edit: the header reads "3 alerts · 1 fixed", and the Dash message on line 3 has a green check and a line through it, while line 6 keeps its two open alerts. Below it, the Update row replaces the dash with a comma and shows no prose-lint block.](https://raw.githubusercontent.com/andrezzoid/newsroom/main/static/cc_terminal_fix.png)
 
 ## Install
 
@@ -33,7 +33,7 @@ The plugin uses the first config it finds:
 
 1. A `.vale.ini` in the edited file's folder or a folder above it: the project's own rules.
 2. Your global `~/.config/vale/.vale.ini`.
-3. The bundled rules in `vale/.vale.ini`: most of [AiTells](https://github.com/krishnasunkam/vale-ai-tells), which flags the tells of machine-written prose, and part of [write-good](https://github.com/vale-cli/write-good). The comments in that file say which rules are off and why. The plugin downloads these packages on first use.
+3. The bundled rules in `vale/.vale.ini`: most of [AiTells](https://github.com/krishnasunkam/vale-ai-tells), which flags the habits of machine-written prose, and part of [write-good](https://github.com/vale-cli/write-good). The comments in that file say which rules are off and why. The plugin downloads these packages on first use.
 
 The transcript row and Claude's note name the config that ran. A project's styles are the project's to download: run `vale sync` in the repo if Vale reports them missing.
 

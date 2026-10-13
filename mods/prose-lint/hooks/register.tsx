@@ -30,7 +30,7 @@ type ValeAlert = {
 // the project's or the user's own, else --config with the bundled one.
 type Linted = { configLabel: string; configArgs: string[]; byFile: Record<string, ValeAlert[]> }
 
-// Caps the alerts Claude reads per edit, so a file full of tells costs a short
+// Caps the alerts Claude reads per edit, so a file full of alerts costs a short
 // note, not a page of context. The transcript row still shows them all.
 const MAX_ALERTS = 20
 
@@ -44,7 +44,7 @@ const BUNDLED = 'bundled rules'
 // The report of each flagged Edit or Write, for its transcript row.
 const reports = atom({ plugin: 'prose-lint', key: 'reports' } as const, { configLabel: '', alerts: [] })
 
-// The alerts Claude wrote in the current turn, resolved when it ends.
+// The alerts Claude wrote in the current turn, given a verdict when it ends.
 const open = atom({ plugin: 'prose-lint', key: 'open' } as const, [] as OpenAlert[])
 
 // The window /prose-lint stats reads, in days, today included.
@@ -73,7 +73,7 @@ export const register: Register = on => {
   // answered turn.
   on('turn.complete', async ($, e, next) => {
     const ended = await next(e)
-    if (!e.agentId && e.reason === 'answer') await resolveOpen($).catch(() => {})
+    if (!e.agentId && e.reason === 'answer') await lintOpen($).catch(() => {})
     return ended
   })
 
@@ -159,7 +159,7 @@ const annotate = async (
           <Text bold>prose-lint</Text>
           <Text dimColor>
             {' '}
-            · {list.length} issue{list.length === 1 ? '' : 's'}
+            · {plural(list.length, 'alert')}
             {fixed > 0 ? ` · ${fixed === list.length ? 'all' : fixed} fixed` : ''} · {configLabel}
           </Text>
         </Text>
@@ -261,7 +261,7 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
   const linted = await lint($, [path], dirname(path))
   if (!linted) return ran
   const removed = structuredPatch.flatMap(hunk => hunk.lines.filter(l => l.startsWith('-')).map(l => l.slice(1)))
-  const found = await newTells(
+  const found = await newAlerts(
     $,
     (Object.values(linted.byFile)[0] ?? []).filter(a => lines === undefined || lines.has(a.Line)),
     written,
@@ -269,8 +269,8 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
   )
 
   const text = (await $.fs.read(path).catch(() => '')).split(/\r?\n/)
-  // An old file too large to diff would count all its words and old tells as
-  // Claude's; only a new one can count whole.
+  // An old file too large to diff would count all its words and the alerts it
+  // already had as Claude's; only a new one can count whole.
   if (lines !== undefined || written.type === 'create') {
     const added = lines === undefined ? text : [...lines].map(line => text[line - 1] ?? '')
     // Stats must never cost Claude its alerts, so this drops a failure there.
@@ -293,7 +293,7 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
   }
   await update($, memberOf(reports, { requestId: id }), () => kept)
 
-  $.ui.toast(`prose-lint: ${found.length} tell${found.length === 1 ? '' : 's'} in ${basename(path)}`)
+  $.ui.toast(`prose-lint: ${plural(found.length, 'alert')} in ${basename(path)}`)
   return { ...ran, context: [...(ran.context ?? []), describe(found, linted.configLabel)] }
 }
 
@@ -301,10 +301,10 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
 // Vale omits files without alerts. Vale itself picks the config, from `dir`:
 // a .vale.ini there or in a folder above, else the user's global one, the
 // same search a team's own `vale` runs make. Only when it finds neither do
-// the bundled rules run. A team's config wins because it states their goals
-// for the prose in their repo, and their git hook or CI can run the same file
-// over what this mod never sees, such as files Claude writes through Bash.
-// Never throws: a failure (Vale missing, a team config with unsynced styles,
+// the bundled rules run. A project config wins because it states the team's
+// goals for the prose in their repo, and their git hook or CI can run the same
+// file over what this mod never sees, such as files Claude writes through Bash.
+// Never throws: a failure (Vale missing, a project config with unsynced styles,
 // a failed download) shows a toast and returns undefined, so a lint problem
 // never fails Claude's edit.
 const lint = async ($: EngineInterface, paths: string[], dir: string): Promise<Linted | undefined> => {
@@ -434,17 +434,17 @@ const sync = ($: EngineInterface, config: string, styles: string): Promise<void>
     throw err
   }))
 
-// The alerts an edit wrote, not ones it carried along: a diff shows a reworded
-// line as removed and added whole, so the tells it already had land on an
-// added line too. Vale lints the whole pre-edit file, so code blocks and
+// The new alerts of an edit, without its existing ones: a diff shows a
+// reworded line as removed and added whole, so the alerts it already had land
+// on an added line too. Vale lints the whole pre-edit file, so code blocks and
 // comment delimiters read as they did, and each alert on a
-// removed line cancels one of the same tell on an added line of the same
-// hunk. A line that goes from one "just" to two still reports the new one,
-// and a "just" removed in one section never hides one added in another. When
-// that lint fails, nothing cancels: better a repeated alert than a hidden one.
-// Vale names piped text stdin.<ext>, so a team config whose sections match
-// paths (docs/*.md) lints none of it, and the edit's old tells repeat.
-const newTells = async (
+// removed line cancels one of the same alert on an added line of the same
+// hunk. A line that goes from one "just" to two still reports the new
+// one, and a "just" removed in one section never hides one added in another.
+// When that lint fails, nothing cancels: better a repeated alert than a hidden
+// one. Vale names piped text stdin.<ext>, so a project config whose sections
+// match paths (docs/*.md) lints none of it, and the existing alerts repeat.
+const newAlerts = async (
   $: EngineInterface,
   found: ValeAlert[],
   written: { filePath: string; originalFile: string | null; structuredPatch: readonly Hunk[] },
@@ -471,27 +471,27 @@ const newTells = async (
     }
   })
 
-  const carried = new Map<string, number>()
+  const existing = new Map<string, number>()
   for (const alert of before) {
     const hunk = removedIn.get(alert.Line)
     if (hunk === undefined) continue
-    const key = `${hunk}\n${tellKey(alert.Check, alert.Match)}`
-    carried.set(key, (carried.get(key) ?? 0) + 1)
+    const key = `${hunk}\n${alertKey(alert.Check, alert.Match)}`
+    existing.set(key, (existing.get(key) ?? 0) + 1)
   }
   return found.filter(alert => {
-    const key = `${addedIn.get(alert.Line)}\n${tellKey(alert.Check, alert.Match)}`
-    const left = carried.get(key) ?? 0
+    const key = `${addedIn.get(alert.Line)}\n${alertKey(alert.Check, alert.Match)}`
+    const left = existing.get(key) ?? 0
     if (left === 0) return true
-    carried.set(key, left - 1)
+    existing.set(key, left - 1)
     return false
   })
 }
 
-// What makes two alerts, in two versions of a file, the same tell: the rule
+// What makes two alerts, in two versions of a file, the same alert: the rule
 // and the words it matched, ignoring case and spacing, since a reworded
 // sentence can capitalize its first word ("it's" becomes "It's") or wrap
 // differently. Every comparison between versions keys on this.
-const tellKey = (check: string, match: string): string => `${check}\n${sameWords(match)}`
+const alertKey = (check: string, match: string): string => `${check}\n${sameWords(match)}`
 
 const sameWords = (text: string): string => text.toLowerCase().replace(/\s+/g, ' ').trim()
 
@@ -511,7 +511,8 @@ const addedLines = (patch: readonly Hunk[]): Set<number> => {
 // Adds one Write or Edit to today's stats: the prose words it added, every
 // alert on them, and a fix edit when it removed words an open alert matched
 // in that file. Opens only the alerts Claude's note shows, for the turn's end
-// to resolve; one past the note's cut counts as written and stays unresolved.
+// to give a verdict; one past the note's cut counts as written and never
+// gets one.
 // Files whose kind it can't tell don't count.
 const recordEdit = async (
   $: EngineInterface,
@@ -545,17 +546,19 @@ const recordEdit = async (
   if (opened.length > 0) await update($, open, list => [...list, ...opened])
 }
 
-// Lints each file with open alerts again and counts how often each tell (rule
-// and words) still shows up there: open alerts of that tell take those as
-// kept, in the order Claude wrote them, and the rest count as fixed. Matching
-// by tell, not line, survives the line shifts edits cause; the cost is that a
-// match the file already had before counts a new one as kept too.
+// Lints each file with open alerts again and counts how often each alert
+// (rule and words) still shows up there: open alerts of that rule and words
+// take those as kept, in the order Claude wrote them, and the rest count as
+// fixed. Matching by rule and words, not line, survives the line shifts edits
+// cause; the cost is that a match the file already had before counts a new
+// one as kept too.
 //
-// A newly resolved alert counts in the stats once. A kept one stays open, so
-// a later fix still strikes it out on its row; its file's modification time
-// skips the lint while the file hasn't changed. Alerts in a file that no
-// longer exists, or that Vale failed on, wait unresolved for the next turn.
-const resolveOpen = async ($: EngineInterface): Promise<void> => {
+// An alert counts in the stats once, at its first verdict. A kept one stays
+// open, so a later fix still strikes it out on its row; its file's
+// modification time skips the lint while the file hasn't changed. Alerts in a
+// file that no longer exists, or that Vale failed on, wait deferred for the
+// next turn.
+const lintOpen = async ($: EngineInterface): Promise<void> => {
   // Taken and cleared in one step, so an edit that lands meanwhile opens its
   // alerts for the next turn rather than losing them to this one.
   let opened: OpenAlert[] = []
@@ -564,30 +567,30 @@ const resolveOpen = async ($: EngineInterface): Promise<void> => {
   opened = opened.filter(alert => alert.id !== undefined)
   if (opened.length === 0) return
 
-  const verdicts = new Map<OpenAlert, { status: 'fixed' | 'kept'; checkedMs: number }>()
-  const unresolved: OpenAlert[] = []
+  const verdicts = new Map<OpenAlert, { status: 'fixed' | 'kept'; lintedMs: number }>()
+  const deferred: OpenAlert[] = []
   await Promise.all(
     [...new Set(opened.map(alert => alert.file))].map(async file => {
       const ofFile = opened.filter(alert => alert.file === file)
-      const checkedMs = await $.fs.stat(file).then(stat => stat.mtimeMs, () => undefined)
-      if (checkedMs !== undefined && ofFile.every(alert => alert.status === 'kept' && alert.checkedMs === checkedMs)) {
-        unresolved.push(...ofFile)
+      const mtimeMs = await $.fs.stat(file).then(stat => stat.mtimeMs, () => undefined)
+      if (mtimeMs !== undefined && ofFile.every(alert => alert.status === 'kept' && alert.lintedMs === mtimeMs)) {
+        deferred.push(...ofFile)
         return
       }
-      const linted = checkedMs === undefined ? undefined : await lint($, [file], dirname(file))
-      if (!linted || checkedMs === undefined) {
-        unresolved.push(...ofFile)
+      const linted = mtimeMs === undefined ? undefined : await lint($, [file], dirname(file))
+      if (!linted || mtimeMs === undefined) {
+        deferred.push(...ofFile)
         return
       }
       const left = new Map<string, number>()
       for (const a of Object.values(linted.byFile)[0] ?? []) {
-        left.set(tellKey(a.Check, a.Match), (left.get(tellKey(a.Check, a.Match)) ?? 0) + 1)
+        left.set(alertKey(a.Check, a.Match), (left.get(alertKey(a.Check, a.Match)) ?? 0) + 1)
       }
       for (const alert of ofFile) {
-        const key = tellKey(alert.check, alert.match)
+        const key = alertKey(alert.check, alert.match)
         const count = left.get(key) ?? 0
         left.set(key, count - 1)
-        verdicts.set(alert, { status: count > 0 ? 'kept' : 'fixed', checkedMs })
+        verdicts.set(alert, { status: count > 0 ? 'kept' : 'fixed', lintedMs: mtimeMs })
       }
     }),
   )
@@ -601,8 +604,8 @@ const resolveOpen = async ($: EngineInterface): Promise<void> => {
 
   const stillKept = [...verdicts]
     .filter(([, verdict]) => verdict.status === 'kept')
-    .map(([alert, verdict]): OpenAlert => ({ ...alert, status: 'kept', checkedMs: verdict.checkedMs }))
-  if (stillKept.length > 0 || unresolved.length > 0) await update($, open, list => [...unresolved, ...stillKept, ...list])
+    .map(([alert, verdict]): OpenAlert => ({ ...alert, status: 'kept', lintedMs: verdict.lintedMs }))
+  if (stillKept.length > 0 || deferred.length > 0) await update($, open, list => [...deferred, ...stillKept, ...list])
 
   // Each row whose alerts got a new verdict: a first one, or kept turned fixed.
   const changed = [...verdicts].filter(([alert, verdict]) => alert.status !== verdict.status)
@@ -693,7 +696,7 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
   const sessionLine =
     wordsOf(current) > 0
       ? [
-          `**This session** · ${thousands(wordsOf(current))} words · ${per1000(session.written, wordsOf(current))} tells and ` +
+          `**This session** · ${thousands(wordsOf(current))} words · ${per1000(session.written, wordsOf(current))} alerts and ` +
             `${per1000(current.fixEdits, wordsOf(current))} fix edits per 1,000 words · ` +
             `${session.written} written, ${session.fixed} fixed, ${session.kept} kept`,
           '',
@@ -710,10 +713,10 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
     ...sessionLine,
     `**prose-lint stats** · last ${STATS_DAYS} days · ${scope}`,
     '',
-    `${thousands(words)} words · ${per1000(writtenOf(total), words)} tells and ` +
+    `${thousands(words)} words · ${per1000(writtenOf(total), words)} alerts and ` +
       `${per1000(total.fixEdits, words)} fix edits per 1,000 words · rules: ${total.configs.join(', ')}`,
     '',
-    '| Week of | Words | Tells per 1,000 |',
+    '| Week of | Words | Alerts per 1,000 |',
     '| - | - | - |',
     ...[...weeks]
       .sort(([a], [b]) => a.localeCompare(b))
@@ -727,7 +730,7 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
         `${(total.examples[rule.check] ?? []).map(match => `"${match}"`).join(', ')} |`,
     ),
     '',
-    '| Where | Words | Tells per 1,000 |',
+    '| Where | Words | Alerts per 1,000 |',
     '| - | - | - |',
     ...(['docs', 'comments'] as const).map(kind => {
       const written = sumCounts(Object.values(total.rules).map(byKind => byKind[kind])).written
@@ -758,6 +761,8 @@ const writtenOf = (stats: DayStats): number =>
 const per1000 = (count: number, words: number): string => (words > 0 ? ((1000 * count) / words).toFixed(1) : '–')
 // 1234567 as "1,234,567" whatever the machine's locale, unlike toLocaleString.
 const thousands = (n: number): string => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+// 1 as "1 alert", 3 as "3 alerts".
+const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`
 
 const emptyStats = (): DayStats => ({ configs: [], words: {}, rules: {}, fixEdits: 0, examples: {} })
 
@@ -860,10 +865,10 @@ const report = (linted: Linted[], cwd: string): string => {
     .flatMap(one => Object.entries(one.byFile))
     .filter(([, found]) => found.length > 0)
   const total = files.reduce((sum, [, found]) => sum + found.length, 0)
-  if (total === 0) return `prose-lint: no tells found (${configs}).`
+  if (total === 0) return `prose-lint: no alerts found (${configs}).`
 
   const lines = [
-    `prose-lint · ${total} tell${total === 1 ? '' : 's'} in ${files.length} file${files.length === 1 ? '' : 's'} · ${configs}`,
+    `prose-lint · ${plural(total, 'alert')} in ${plural(files.length, 'file')} · ${configs}`,
   ]
   let shown = 0
   for (const [file, found] of files) {
