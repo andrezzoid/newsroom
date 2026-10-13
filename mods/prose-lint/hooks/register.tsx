@@ -44,7 +44,7 @@ const BUNDLED = 'bundled rules'
 // The report of each flagged Edit or Write, for its transcript row.
 const reports = atom({ plugin: 'prose-lint', key: 'reports' } as const, { configLabel: '', alerts: [] })
 
-// The alerts Claude wrote in the current turn, resolved when it ends.
+// The alerts Claude wrote in the current turn, given a verdict when it ends.
 const open = atom({ plugin: 'prose-lint', key: 'open' } as const, [] as OpenAlert[])
 
 // The window /prose-lint stats reads, in days, today included.
@@ -73,7 +73,7 @@ export const register: Register = on => {
   // answered turn.
   on('turn.complete', async ($, e, next) => {
     const ended = await next(e)
-    if (!e.agentId && e.reason === 'answer') await resolveOpen($).catch(() => {})
+    if (!e.agentId && e.reason === 'answer') await lintOpen($).catch(() => {})
     return ended
   })
 
@@ -511,7 +511,8 @@ const addedLines = (patch: readonly Hunk[]): Set<number> => {
 // Adds one Write or Edit to today's stats: the prose words it added, every
 // alert on them, and a fix edit when it removed words an open alert matched
 // in that file. Opens only the alerts Claude's note shows, for the turn's end
-// to resolve; one past the note's cut counts as written and stays unresolved.
+// to give a verdict; one past the note's cut counts as written and never
+// gets one.
 // Files whose kind it can't tell don't count.
 const recordEdit = async (
   $: EngineInterface,
@@ -552,11 +553,12 @@ const recordEdit = async (
 // cause; the cost is that a match the file already had before counts a new
 // one as kept too.
 //
-// A newly resolved alert counts in the stats once. A kept one stays open, so
-// a later fix still strikes it out on its row; its file's modification time
-// skips the lint while the file hasn't changed. Alerts in a file that no
-// longer exists, or that Vale failed on, wait unresolved for the next turn.
-const resolveOpen = async ($: EngineInterface): Promise<void> => {
+// An alert counts in the stats once, at its first verdict. A kept one stays
+// open, so a later fix still strikes it out on its row; its file's
+// modification time skips the lint while the file hasn't changed. Alerts in a
+// file that no longer exists, or that Vale failed on, wait deferred for the
+// next turn.
+const lintOpen = async ($: EngineInterface): Promise<void> => {
   // Taken and cleared in one step, so an edit that lands meanwhile opens its
   // alerts for the next turn rather than losing them to this one.
   let opened: OpenAlert[] = []
@@ -565,19 +567,19 @@ const resolveOpen = async ($: EngineInterface): Promise<void> => {
   opened = opened.filter(alert => alert.id !== undefined)
   if (opened.length === 0) return
 
-  const verdicts = new Map<OpenAlert, { status: 'fixed' | 'kept'; checkedMs: number }>()
-  const unresolved: OpenAlert[] = []
+  const verdicts = new Map<OpenAlert, { status: 'fixed' | 'kept'; lintedMs: number }>()
+  const deferred: OpenAlert[] = []
   await Promise.all(
     [...new Set(opened.map(alert => alert.file))].map(async file => {
       const ofFile = opened.filter(alert => alert.file === file)
-      const checkedMs = await $.fs.stat(file).then(stat => stat.mtimeMs, () => undefined)
-      if (checkedMs !== undefined && ofFile.every(alert => alert.status === 'kept' && alert.checkedMs === checkedMs)) {
-        unresolved.push(...ofFile)
+      const mtimeMs = await $.fs.stat(file).then(stat => stat.mtimeMs, () => undefined)
+      if (mtimeMs !== undefined && ofFile.every(alert => alert.status === 'kept' && alert.lintedMs === mtimeMs)) {
+        deferred.push(...ofFile)
         return
       }
-      const linted = checkedMs === undefined ? undefined : await lint($, [file], dirname(file))
-      if (!linted || checkedMs === undefined) {
-        unresolved.push(...ofFile)
+      const linted = mtimeMs === undefined ? undefined : await lint($, [file], dirname(file))
+      if (!linted || mtimeMs === undefined) {
+        deferred.push(...ofFile)
         return
       }
       const left = new Map<string, number>()
@@ -588,7 +590,7 @@ const resolveOpen = async ($: EngineInterface): Promise<void> => {
         const key = alertKey(alert.check, alert.match)
         const count = left.get(key) ?? 0
         left.set(key, count - 1)
-        verdicts.set(alert, { status: count > 0 ? 'kept' : 'fixed', checkedMs })
+        verdicts.set(alert, { status: count > 0 ? 'kept' : 'fixed', lintedMs: mtimeMs })
       }
     }),
   )
@@ -602,8 +604,8 @@ const resolveOpen = async ($: EngineInterface): Promise<void> => {
 
   const stillKept = [...verdicts]
     .filter(([, verdict]) => verdict.status === 'kept')
-    .map(([alert, verdict]): OpenAlert => ({ ...alert, status: 'kept', checkedMs: verdict.checkedMs }))
-  if (stillKept.length > 0 || unresolved.length > 0) await update($, open, list => [...unresolved, ...stillKept, ...list])
+    .map(([alert, verdict]): OpenAlert => ({ ...alert, status: 'kept', lintedMs: verdict.lintedMs }))
+  if (stillKept.length > 0 || deferred.length > 0) await update($, open, list => [...deferred, ...stillKept, ...list])
 
   // Each row whose alerts got a new verdict: a first one, or kept turned fixed.
   const changed = [...verdicts].filter(([alert, verdict]) => alert.status !== verdict.status)

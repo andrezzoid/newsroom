@@ -18,8 +18,8 @@ An alert on a line an edit added that the lines it replaced already had.
 _Avoid_: Carried alert, duplicate, old alert
 
 **Fixed**:
-An alert's verdict when it's gone from the file at the check.
-_Avoid_: Resolved
+An alert's verdict when it's gone from the file as the turn that wrote it, or a later one, ends.
+_Avoid_: Resolved, resolve
 
 **Kept**:
 An alert's verdict when it's still in the file as the turn that wrote it ends.
