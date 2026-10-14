@@ -31,7 +31,7 @@ An edit that removes the words of an alert Claude hasn't fixed yet.
 ### Rules
 
 **Bundled rules**:
-The Vale config the mod ships, used where neither a project nor the user has one.
+The Vale config, rules and vocabulary the mod ships, used where neither a project nor the user has one.
 _Avoid_: Default config, our rules
 
 **Project config**:
