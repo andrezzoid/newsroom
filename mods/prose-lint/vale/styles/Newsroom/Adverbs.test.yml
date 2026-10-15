@@ -25,9 +25,9 @@
     > The tell: the test breaks when you refactor, and it delves into the details.
   want: |
     1:6:Newsroom.Adverbs:Adverb: cut 'really' and let the verb carry it.
-    1:20:Newsroom.EmDashes:Overuse of em dashes: use a period, comma, colon or parentheses.
-    1:33:Newsroom.Copulatives:Avoidance of basic copulatives: replace 'serves as a' with "is", "are" or "has".
-    1:48:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
+    1:19:Newsroom.EmDashes:Overuse of em dashes: use a period, comma, colon or parentheses.
+    1:28:Newsroom.Copulatives:Avoidance of basic copulatives: replace 'serves as a' with "is", "are" or "has".
+    1:44:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
     3:3:Newsroom.BoldLabels:Bold label: fold 'The tell:' into the sentence it introduces.
     3:55:Newsroom.AIVocabulary:AI vocabulary: replace 'delves' with a plainer word.
 

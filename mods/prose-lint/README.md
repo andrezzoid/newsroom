@@ -40,13 +40,13 @@ The plugin uses the first config it finds:
 | `EmDashes` | error | An em dash, or an en dash with a space on each side. "1–3" passes. |
 | `NeverTag` | error | A ", never X" tag: "keeps the hash, never the account number". |
 | `NegativeParallelisms` | warning | "Not just X, but Y", "it's not X, it's Y", "is X, not Y", "no X, no Y". |
-| `AIVocabulary` | warning | Wikipedia's AI vocabulary for each model era ("delve", "pivotal", "leverage"), plus "genuine", "meaningful", "actionable" and a few more. |
+| `AIVocabulary` | warning | Wikipedia's AI vocabulary for each model era ("delve", "pivotal", "crucial"), plus "genuine", "meaningful", "actionable" and a few more. |
 | `Copulatives` | warning | "Serves as a", "stands as a", "boasts a" in place of "is" or "has". |
 | `Adverbs` | warning | Filler adverbs: "really", "just", "very" and 33 more. |
 | `BoldLabels` | warning | A label and a colon in place of a sentence: "The tell: …". |
 | `Passive` | warning | Passive voice, in documents but not in code comments. |
 
-The rules skip blockquotes. `vale/styles/Newsroom/NOTICE` names the package each rule comes from. The bundled rules need Vale 3.18 or later: older versions read the `*.test.yml` files beside the rules as rules and fail.
+`vale/styles/Newsroom/NOTICE` names the package each rule comes from. Words in `vale/styles/config/vocabularies/Newsroom/accept.txt`, such as "leverage", never raise `AIVocabulary`, `Adverbs`, `Copulatives` or `Passive`. The bundled rules need Vale 3.18 or later: older versions read the `*.test.yml` files beside the rules as rules and fail.
 
 The transcript row and Claude's note name the config that ran. A project's styles are the project's to download: run `vale sync` in the repo if Vale reports them missing.
 

@@ -19,7 +19,8 @@ tokens:
   - intricate
   - intricacies
   - interplay
-  - key
+  # Only the adjective: "API key" and "cache key" name a thing.
+  - key(?=\s+(?:role|factor|point|question|insight|takeaway|element|aspect|feature|moment|turning\s+point|player|driver|component|part|step|idea|theme|area|challenge|difference|benefit|consideration|finding|lesson|principle|claim|assumption|stat|thing)s?\b)
   - landscape
   - meticulously
   - pivotal

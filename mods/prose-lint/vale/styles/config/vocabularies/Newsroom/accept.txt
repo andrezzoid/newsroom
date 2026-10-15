@@ -4,3 +4,4 @@
 (?i)lens
 (?i)harness
 (?i)ubiquitous
+(?i)leverage
