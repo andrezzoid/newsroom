@@ -41,6 +41,9 @@ const MAX_REPORTED = 200
 // isn't a team's unsynced styles.
 const BUNDLED = 'bundled rules'
 
+// What /prose-lint takes, for its hint and its usage line.
+const USAGE = '<file or folder>… | stats [project] | coach'
+
 // The report of each flagged Edit or Write, for its transcript row.
 const reports = atom({ plugin: 'prose-lint', key: 'reports' } as const, { configLabel: '', alerts: [] })
 
@@ -53,6 +56,9 @@ const STATS_DAYS = 30
 // How long the store keeps a day's stats: a year of trends, at about a
 // kilobyte per day and project, far below the store's 4 MiB limit.
 const KEEP_DAYS = 365
+
+// The rules /prose-lint stats lists, by written alerts.
+const STATS_RULES = 8
 
 // The rules /prose-lint coach lists, by written alerts.
 const COACH_RULES = 5
@@ -69,7 +75,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'prose-lint',
       description: 'Lint files or folders with Vale, `stats [project]` for your writing stats, or `coach` for changes to make from them',
-      argumentHint: '<file or folder>… | stats [project] | coach',
+      argumentHint: USAGE,
     })
     return next(e)
   })
@@ -90,7 +96,7 @@ export const register: Register = on => {
   // "fix these" can follow.
   on('command.run', { command: 'prose-lint' }, async ($, e) => {
     const paths = e.args.split(/\s+/).filter(Boolean)
-    if (paths.length === 0) return { text: 'Usage: /prose-lint <file or folder>… | stats [project] | coach' }
+    if (paths.length === 0) return { text: `Usage: /prose-lint ${USAGE}` }
     // `stats` alone, or with a project name (no slash), is the stats view;
     // ./stats lints a folder by that name, and `stats docs/` lints both.
     if (paths[0] === 'stats' && paths.length <= 2 && !paths[1]?.includes('/')) {
@@ -663,7 +669,7 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
 
   const sessionLine = wordsOf(current) > 0 ? [sessionSummary(current), ''] : []
 
-  const rules = topRules(total, 8)
+  const rules = topRules(total, STATS_RULES)
 
   return [
     ...sessionLine,
@@ -681,7 +687,7 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
     '| Rule | Written | Kept | Examples |',
     '| - | - | - | - |',
     ...rules.map(
-      rule => `| ${rule.check} | ${rule.written} | ${keptRate(rule)} | ${quoted(total.examples[rule.check])} |`,
+      rule => `| ${ruleCells(rule, total).join(' | ')} |`,
     ),
     '',
     '| Where | Words | Alerts per 1,000 |',
@@ -713,9 +719,7 @@ const coachReport = async ($: EngineInterface): Promise<{ text: string; context?
       '| Rule | Written | Kept | Examples | Config |',
       '| - | - | - | - | - |',
       ...topRules(total, COACH_RULES).map(
-        rule =>
-          `| ${rule.check} | ${rule.written} | ${keptRate(rule)} | ${quoted(total.examples[rule.check])} | ` +
-          `${[...(configs.get(rule.check) ?? [])].join(', ')} |`,
+        rule => `| ${[...ruleCells(rule, total), [...(configs.get(rule.check) ?? [])].join(', ')].join(' | ')} |`,
       ),
     ].join('\n'),
   }
@@ -734,18 +738,25 @@ const coaching = (bundled: string): string =>
     "- Many written alerts with a low kept rate mean a habit: add a line to your instructions (CLAUDE.md) that stops it.",
     "- Examples that are the project's own terms: add them to the vocabulary of the config that ran the rule.",
     'Find CLAUDE.md and the config files yourself. ' +
-      `"bundled rules" is the plugin's own config, ${bundled}, which a plugin update overwrites, so a change to it ` +
+      `"${BUNDLED}" is the plugin's own config, ${bundled}, which a plugin update overwrites, so a change to it ` +
       "starts by copying it and its styles folder to Vale's global config folder: `vale ls-dirs` names it. " +
       "A project's .vale.ini belongs to its team: say so when you propose a change to one.",
     'Number the proposals and ask the user which to apply. Apply only the changes the user picks, and change no file ' +
       'before they pick.',
   ].join('\n')
 
-// The share of a rule's alerts with a verdict that Claude kept.
-const keptRate = (c: Counts): string =>
-  c.kept + c.fixed > 0 ? `${Math.round((100 * c.kept) / (c.kept + c.fixed))}%` : '–'
-
-const quoted = (examples: string[] = []): string => examples.map(match => `"${match}"`).join(', ')
+// A rule's row in the stats and coach tables: the rule, its written alerts,
+// its kept rate (the share of its alerts with a verdict that Claude kept) and
+// its example matches.
+const ruleCells = (rule: { check: string } & Counts, stats: DayStats): string[] => {
+  const judged = rule.kept + rule.fixed
+  return [
+    rule.check,
+    String(rule.written),
+    judged > 0 ? `${Math.round((100 * rule.kept) / judged)}%` : '–',
+    (stats.examples[rule.check] ?? []).map(match => `"${match}"`).join(', '),
+  ]
+}
 
 // The `count` rules Claude wrote the most alerts of, with their counts summed
 // across kinds.
