@@ -2,13 +2,16 @@ import { atom, memberOf, read, update } from 'claude-code'
 import type { EngineInterface, ProcessRunResult, Register, RenderElement, RenderInput } from 'claude-code'
 
 import type { Counts, DayStats, Kind, OpenAlert, ProseAlert, ProseReport } from '../types'
+import { proseOf } from './command-prose'
 
 // After each Write or Edit, runs Vale over the file and keeps the alerts on
 // the lines Claude added. Claude reads them as context on the tool result, and
 // the call's transcript row shows them under the diff. A project's own
 // .vale.ini decides the rules when there is one; otherwise vale/.vale.ini
 // does. Each edit also feeds the day's stats: words written, alerts written,
-// and, when the turn ends, which alerts Claude fixed or kept.
+// and, when the turn ends, which alerts Claude fixed or kept. Before a git
+// commit or a gh pull request or issue command runs, the same rules lint the
+// prose it would publish, and an alert refuses the command once.
 // types/index.d.ts declares what the rows and the stats keep.
 
 type Hunk = { oldStart: number; newStart: number; lines: readonly string[] }
@@ -46,6 +49,13 @@ const reports = atom({ plugin: 'prose-lint', key: 'reports' } as const, { config
 
 // The alerts Claude wrote in the current turn, given a verdict when it ends.
 const open = atom({ plugin: 'prose-lint', key: 'open' } as const, [] as OpenAlert[])
+
+// The commands the mod refused, newest last, each as its text and its prose.
+// The same command with the same prose, sent again, runs unlinted once, so
+// Claude can keep alerts it has a reason for, as it can in a file. Keeps the
+// last REFUSED_KEPT, enough for the commands of a few parallel calls.
+const refused = atom({ plugin: 'prose-lint', key: 'refused' } as const, [] as string[])
+const REFUSED_KEPT = 10
 
 // The window /prose-lint stats reads, in days, today included.
 const STATS_DAYS = 30
@@ -93,9 +103,9 @@ export const register: Register = on => {
     const cwd = await $.session.cwd()
     const results: (Linted | undefined)[] = []
     for (const path of paths) {
-      const absolute = path.startsWith('/') ? path : `${cwd}/${path}`
-      const isDir = (await $.fs.stat(absolute).catch(() => undefined))?.kind === 'dir'
-      results.push(await lint($, [absolute], isDir ? absolute : dirname(absolute)))
+      const file = absolute(path, cwd)
+      const isDir = (await $.fs.stat(file).catch(() => undefined))?.kind === 'dir'
+      results.push(await lint($, [file], isDir ? file : dirname(file)))
     }
 
     const linted = results.filter(result => result !== undefined)
@@ -112,6 +122,14 @@ export const register: Register = on => {
   on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
     const ran = await next(e)
     return ran.deny !== undefined || ran.isError || ran.result.staged ? ran : withAlerts($, ran, e.tool_use_id, ran.result)
+  })
+
+  // Lints the prose a git or gh command will publish before it runs, and
+  // refuses the command when that prose has alerts, since a fix after the
+  // command costs an amend, a force push or an edit on GitHub.
+  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    const note = await refusal($, e.command)
+    return note === undefined ? next(e) : { deny: note }
   })
 
   // Each surface draws an Edit's or Write's diff in a different place: the
@@ -236,6 +254,38 @@ const runs = (text: string, onLine: ProseAlert[]): Run[] => {
   return out
 }
 
+// What Claude reads in place of a command's result when the mod refuses the
+// command, or undefined to let it run: a refused command sent again with the
+// same prose; a command with no prose the mod can read; or one whose prose
+// has no alerts. Never throws, so a lint problem never blocks a command.
+const refusal = async ($: EngineInterface, command: string): Promise<string | undefined> => {
+  try {
+    const prose = proseOf(command)
+    if (prose.length === 0) return undefined
+    const cwd = await $.session.cwd()
+    const texts = (await Promise.all(prose.map(piece => (typeof piece === 'string' ? piece : readFile($, absolute(piece.file, cwd)))))).filter(
+      text => text !== undefined,
+    )
+    if (texts.length === 0) return undefined
+    const text = texts.join('\n\n')
+    const key = `${command}\n\0${text}`
+    if ((await read($, refused)).includes(key)) {
+      await update($, refused, list => list.filter(other => other !== key))
+      return undefined
+    }
+    const linted = await lint($, { text, ext: 'md' }, cwd)
+    const found = Object.values(linted?.byFile ?? {})[0] ?? []
+    if (!linted || found.length === 0) return undefined
+    await update($, refused, list => [...list, key].slice(-REFUSED_KEPT))
+    return [
+      'This command did not run: prose-lint found alerts in its prose. Rewrite the prose, or run the same command again to send it as is.',
+      describe(found, linted.configLabel),
+    ].join('\n')
+  } catch {
+    return undefined
+  }
+}
+
 // Lints the written file and hands Claude the alerts on the lines the write
 // added, so it fixes its own prose and leaves the prose that was already there
 // alone. With no original to diff against (a new file, or an old one too large
@@ -297,8 +347,9 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
   return { ...ran, context: [...(ran.context ?? []), describe(found, linted.configLabel)] }
 }
 
-// Every alert Vale reports for the paths (files or folders), keyed by file;
-// Vale omits files without alerts. Vale itself picks the config, from `dir`:
+// Every alert Vale reports for the paths (files or folders), or for text
+// piped in as a file of type `ext`, keyed by file; Vale omits files without
+// alerts and names piped text stdin.<ext>. Vale itself picks the config, from `dir`:
 // a .vale.ini there or in a folder above, else the user's global one, the
 // same search a team's own `vale` runs make. Only when it finds neither do
 // the bundled rules run. A project config wins because it states the team's
@@ -307,7 +358,12 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
 // Never throws: a failure (Vale missing, a project config with unsynced
 // styles) shows a toast and returns undefined, so a lint problem never fails
 // Claude's edit.
-const lint = async ($: EngineInterface, paths: string[], dir: string): Promise<Linted | undefined> => {
+const lint = async (
+  $: EngineInterface,
+  input: string[] | { text: string; ext: string },
+  dir: string,
+): Promise<Linted | undefined> => {
+  const [targets, stdin] = Array.isArray(input) ? [input, undefined] : [[`--ext=.${input.ext}`], input.text]
   // The docs say `root` is the folder holding plugin.json, which could mean
   // .claude-plugin/ itself; the config sits beside .claude-plugin/ either way.
   const root = $.plugin.root.replace(/\/\.claude-plugin\/?$/, '')
@@ -317,12 +373,12 @@ const lint = async ($: EngineInterface, paths: string[], dir: string): Promise<L
   // it as a project's.
   const isOwnFile = dir === root || dir.startsWith(`${root}/`)
   if (!isOwnFile) {
-    const run = await vale($, ['--output', 'JSON', ...paths], dir)
+    const run = await vale($, ['--output', 'JSON', ...targets], dir, stdin)
     if (!run) return undefined
     if (!isNoConfig(run)) return parse($, run, await labelFor($, dir), [])
   }
 
-  const run = await vale($, ['--config', bundled, '--output', 'JSON', ...paths], dir)
+  const run = await vale($, ['--config', bundled, '--output', 'JSON', ...targets], dir, stdin)
   return run && parse($, run, BUNDLED, ['--config', bundled])
 }
 
@@ -348,11 +404,11 @@ const lintText = async (
   }
 }
 
-// Runs vale from `dir`; undefined, after a toast, when it can't start. Vale
+// Runs vale from `dir`, with `stdin` piped in when given; undefined, after a toast, when it can't start. Vale
 // lints one file in well under a second; the timeout only guards against a
 // hang holding Claude's edit, and leaves room for a folder.
-const vale = ($: EngineInterface, args: string[], dir: string): Promise<ProcessRunResult | undefined> =>
-  $.process.run(['vale', ...args], { cwd: dir, timeoutMs: 60_000 }).catch(err => {
+const vale = ($: EngineInterface, args: string[], dir: string, stdin?: string): Promise<ProcessRunResult | undefined> =>
+  $.process.run(['vale', ...args], { cwd: dir, timeoutMs: 60_000, stdin }).catch(err => {
     $.ui.toast(`prose-lint: vale did not run (${String(err).slice(0, 120)}). Is it installed? (brew install vale)`)
     return undefined
   })
@@ -884,6 +940,15 @@ const describe = (found: ValeAlert[], configLabel: string): string => {
 }
 
 const basename = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
+
+// A regular file's text, or undefined for anything else: a missing file, or
+// a pipe or device (/dev/tty), whose read would wait on input that never
+// comes and hold the command.
+const readFile = async ($: EngineInterface, path: string): Promise<string | undefined> =>
+  (await $.fs.stat(path).catch(() => undefined))?.kind === 'file' ? $.fs.read(path).catch(() => undefined) : undefined
+
+// `path` as an absolute path, a relative one taken from `cwd`.
+const absolute = (path: string, cwd: string): string => (path.startsWith('/') ? path : `${cwd}/${path}`)
 
 // The folder holding `path`: "/" for a file at the root, "." for a bare name.
 const dirname = (path: string): string => {
