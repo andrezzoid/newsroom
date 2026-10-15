@@ -581,7 +581,7 @@ test('a vale failure leaves the result alone', async ($, on) => {
   expect(ran.context).toBeUndefined()
 })
 
-// A session where Vale reports an alert on piped prose that says "just", and
+// A session where Vale reports an alert on piped prose with "just" in it, and
 // none on other prose. Without `hasConfig`, Vale finds no config of the
 // project's or user's, so only the bundled rules answer. `files` are the
 // regular files on disk, by path, read when the test runs; `others` are paths

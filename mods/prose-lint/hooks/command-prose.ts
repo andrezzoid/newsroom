@@ -42,7 +42,7 @@ const GH: Record<string, Flags> = {
 // A word's value, or null where it holds an expansion the reader can't run.
 type Word = string | null
 
-// One simple command: its words, and the heredoc on its standard input,
+// A simple command holds its words and the heredoc on its standard input,
 // null when the reader can't follow the input.
 type Simple = { words: Word[]; stdin?: Word }
 
@@ -51,7 +51,7 @@ type Simple = { words: Word[]; stdin?: Word }
 // joins its -m messages as paragraphs; gh keeps the last of each flag. A -F
 // path after an earlier command on the line, or under a git -C, may name
 // another file than the one the mod would read, so the reader can't follow
-// it. /dev/stdin reads the heredoc, never the session's own input.
+// it. /dev/stdin reads the heredoc and leaves the session's own input alone.
 const prosePieces = ({ words, stdin }: Simple, isFileUnknown: boolean): Piece[] => {
   const start = words.findIndex(word => word === null || !/^[A-Za-z_]\w*=/.test(word))
   const [program, ...rest] = start < 0 ? [] : words.slice(start)
@@ -106,7 +106,7 @@ const flagValues = (args: Word[], flags: Flags): { part: Part; value: Word }[] =
       continue
     }
     // A letter inside the cluster is part of another flag's attached value
-    // (the b in -lbug), never a flag of its own.
+    // (the b in -lbug), so it isn't a flag of its own.
     const first = flags[arg[1]!]
     const last = flags[arg.at(-1)!]
     if (first) found.push({ part: first, value: arg.slice(2) || (args[++i] ?? null) })
@@ -218,7 +218,7 @@ const readCommands = (line: string): Simple[] | undefined => {
       current.stdin = null
       heredocs.push({ simple: current, ...head })
     } else if ((char === '<' || char === '>') && line[i + 1] === '(') {
-      // A process substitution: a word the reader can't run.
+      // A process substitution reads as a word the reader can't run.
       i = closing(line, i + 1, '(', ')')
       current.words.push(null)
     } else if (char === '<' || char === '>') {
@@ -271,9 +271,10 @@ const heredocHead = (line: string, at: number): HeredocHead | undefined => {
   }
 }
 
-// A heredoc's body: its lines from `at` up to the one that holds only
-// `delimiter` (once leading tabs go, for <<-), and the index past that line.
-// The end of the input closes a heredoc that has no such line, as in bash.
+// Reads a heredoc's body from `at` up to the line that holds only
+// `delimiter` (once leading tabs go, for <<-), and returns it with the index
+// past that line. The end of the input closes a heredoc that has no such
+// line, as in bash.
 const heredocBody = (
   line: string,
   at: number,
