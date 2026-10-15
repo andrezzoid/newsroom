@@ -603,6 +603,19 @@ test('/prose-lint coach lists the five rules with the most written alerts, most 
   expect(ran.text).not.toContain('Copulatives')
 })
 
+test('/prose-lint coach shows each rule\'s written count, kept rate, examples and the config that ran it', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text).toContain('| Rule | Written | Kept | Examples | Config |')
+  expect(ran.text).toContain('| Newsroom.Passive | 20 | 90% | "was written" | bundled rules |')
+  expect(ran.text).toContain('| Newsroom.EmDashes | 8 | 0% |  | bundled rules |')
+  expect(ran.text).toContain('| Team.Terms | 5 | 80% | "newsroom", "Vale" | /repo/.vale.ini |')
+})
+
 test("a session's start folds earlier days into one record per day and project", async ($, on) => {
   const day = (written: number) => ({
     configs: ['bundled rules'],
