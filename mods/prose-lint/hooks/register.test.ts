@@ -662,6 +662,24 @@ test('/prose-lint coach under 1,000 words hands Claude nothing', async ($, on) =
   expect(ran.context).toBeUndefined()
 })
 
+// The test answers no fs or process call, so a coach that wrote a file or ran
+// a command would fail; the store is the one place it could still write.
+const coachChangesNothing = async ($: Engine, on: On, memory: Map<string, unknown>) => {
+  const before = JSON.stringify([...memory])
+  storeIn(on, memory)
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  await $.command.run(coach)
+
+  expect(JSON.stringify([...memory])).toBe(before)
+}
+
+test('/prose-lint coach changes nothing', ($, on) => coachChangesNothing($, on, coachHistory()))
+
+test('/prose-lint coach under 1,000 words changes nothing', ($, on) =>
+  coachChangesNothing($, on, new Map([[STATS, coachHistory().get(STATS)]])))
+
 test("a session's start folds earlier days into one record per day and project", async ($, on) => {
   const day = (written: number) => ({
     configs: ['bundled rules'],
