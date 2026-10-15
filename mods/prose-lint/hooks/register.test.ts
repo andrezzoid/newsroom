@@ -259,24 +259,28 @@ const created = (filePath: string) => () => ({
 })
 
 // A Write, w1, of a new /repo/notes.md in which Vale finds these alerts.
-const writeWith = async ($: Engine, on: On, alerts: unknown[]) => {
+const writeWith = ($: Engine, on: On, alerts: unknown[]) => {
   on('fs.stat', () => dir)
   on('process.run', (_, e) => (isBundled(e.argv) ? vale(alerts, 1) : noConfig))
   on('tool.call', { tool: 'Write' }, created('/repo/notes.md'))
-  await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/repo/notes.md', content: '...' })
+  return $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/repo/notes.md', content: '...' })
 }
 
-// The terminal row of the Write w1, once a Write with these alerts drew it.
-const rowOf = async ($: Engine, on: On, alerts: unknown[]) => {
-  on('ui.render', { component: 'ToolResult' }, () => ({ type: 'engine', ref: 0 }))
-  await writeWith($, on, alerts)
-  return $.ui.mount({
+// The terminal row of the Write w1 as it stands now.
+const mountRow = ($: Engine) =>
+  $.ui.mount({
     plugin: 'prose-lint',
     surface: 'terminal',
     component: 'ToolResult',
     requestId: 'w1',
     props: { tool_use_id: 'w1', tool: 'Write', output: {}, isErrored: false },
   })
+
+// The terminal row of the Write w1, once a Write with these alerts drew it.
+const rowOf = async ($: Engine, on: On, alerts: unknown[]) => {
+  on('ui.render', { component: 'ToolResult' }, () => ({ type: 'engine', ref: 0 }))
+  await writeWith($, on, alerts)
+  return mountRow($)
 }
 
 test("a Write's row counts its new alerts", async ($, on) => {
@@ -289,6 +293,24 @@ test("a Write's row with one new alert says alert", async ($, on) => {
   const ui = await rowOf($, on, [alert(1, 'just')])
 
   expect(await ui.find({ type: 'Text', text: 'prose-lint · 1 alert · bundled rules' })).toBeDefined()
+})
+
+// An alert of the Newsroom style, whose rule name says which style raised it.
+const emDash = { ...alert(1, '—'), Check: 'Newsroom.EmDashes', Message: 'Use a comma or a period, not an em dash.' }
+
+test("a Write's row names each open alert's rule in full after its message", async ($, on) => {
+  const ui = await rowOf($, on, [emDash])
+
+  expect(
+    await ui.find({ type: 'Text', text: /Use a comma or a period, not an em dash\. Newsroom\.EmDashes$/ }),
+  ).toBeDefined()
+})
+
+test("Claude's note gives an alert's message but not its rule, to cost fewer tokens", async ($, on) => {
+  const ran = await writeWith($, on, [emDash])
+
+  expect(ran.context?.[0]).toContain('Use a comma or a period, not an em dash.')
+  expect(ran.context?.[0]).not.toContain('EmDashes')
 })
 
 test('a flagged Write toasts its count of new alerts', async ($, on) => {
@@ -343,17 +365,33 @@ test("the turn's end counts what Claude fixed and what it kept", async ($, on) =
     rules: { 'AiTells.Adverb': { docs: { written: 2, fixed: 1, kept: 1 } } },
   })
   // The terminal row strikes out the fixed match and keeps the other underlined.
-  const ui = await $.ui.mount({
-    plugin: 'prose-lint',
-    surface: 'terminal',
-    component: 'ToolResult',
-    requestId: 'w1',
-    props: { tool_use_id: 'w1', tool: 'Write', output: {}, isErrored: false },
-  })
+  const ui = await mountRow($)
   const struck = (await ui.findAll({ type: 'Text' })).filter(element => element.props.strikethrough === true)
   expect(struck.map(element => element.text)).toContain('really')
   expect(struck.map(element => element.text)).not.toContain('just')
   expect(await ui.find({ type: 'Text', text: 'prose-lint · 2 alerts · 1 fixed · bundled rules' })).toBeDefined()
+})
+
+test("a fixed alert's row names its rule in full after the struck message", async ($, on) => {
+  let lints = 0
+  session(on)
+  on('fs.stat', () => dir)
+  on('fs.read', () => ({ value: 'It works — mostly.\n' }))
+  // The edit's lint finds the dash; the turn's end finds it gone.
+  on('process.run', (_, e) => (isBundled(e.argv) ? vale(++lints === 1 ? [{ ...emDash, Span: [10, 10] }] : []) : noConfig))
+  on('tool.call', { tool: 'Write' }, created('/work/newsroom/notes.md'))
+  on('turn.complete', () => ({ text: '' }))
+  on('ui.render', { component: 'ToolResult' }, () => ({ type: 'engine', ref: 0 }))
+
+  await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/work/newsroom/notes.md', content: '...' })
+  await $.turn.complete({ answer: '', durationMs: 0, isAborted: false, turnId: 't1', reason: 'answer' })
+
+  const ui = await mountRow($)
+  const struck = (await ui.findAll({ type: 'Text' })).filter(element => element.props.strikethrough === true)
+  expect(struck.map(element => element.text)).toContain('Use a comma or a period, not an em dash.')
+  expect(
+    await ui.find({ type: 'Text', text: /✓ Use a comma or a period, not an em dash\. Newsroom\.EmDashes$/ }),
+  ).toBeDefined()
 })
 
 test("a subagent's or an interrupted turn leaves the alerts open for the next answer", async ($, on) => {
@@ -396,13 +434,7 @@ test('a kept alert fixed in a later turn turns fixed on its row, and its stats s
   await $.turn.complete({ ...answered, turnId: 't2' })
 
   expect(store.get(STATS)).toMatchObject({ rules: { 'AiTells.Adverb': { docs: { written: 1, fixed: 0, kept: 1 } } } })
-  const ui = await $.ui.mount({
-    plugin: 'prose-lint',
-    surface: 'terminal',
-    component: 'ToolResult',
-    requestId: 'w1',
-    props: { tool_use_id: 'w1', tool: 'Write', output: {}, isErrored: false },
-  })
+  const ui = await mountRow($)
   expect((await ui.find({ type: 'Text', text: 'all fixed' })) !== undefined).toBe(true)
 })
 
@@ -452,11 +484,37 @@ test('/prose-lint stats sums every project, by week, rule and kind', async ($, o
   )
   expect(ran.text).toContain('1,500 words · 10.0 alerts and 2.0 fix edits per 1,000 words')
   expect(ran.text).toContain('| 2026-10-05 | 1,500 | 10.0 |')
-  expect(ran.text).toContain('| Adverb | 10 | 20% | "just", "really" |')
+  expect(ran.text).toContain('| AiTells.Adverb | 10 | 20% | "just", "really" |')
   expect(ran.text).toContain('| comments | 500 | 10.0 |')
   expect(ran.text).toContain('| Week of | Words | Alerts per 1,000 |')
   expect(ran.text).toContain('| Where | Words | Alerts per 1,000 |')
   expect(ran.text).not.toMatch(/\btells\b/i)
+})
+
+test('/prose-lint stats names each rule in full, so two styles with the same rule show apart', async ($, on) => {
+  const passive = (written: number) => ({ docs: { written, fixed: 0, kept: written } })
+  storeIn(
+    on,
+    new Map([
+      [
+        'stats/2026-10-09/newsroom/s1',
+        {
+          configs: ['bundled rules'],
+          words: { docs: 1000 },
+          rules: { 'AiTells.Passive': passive(3), 'write-good.Passive': passive(2) },
+          fixEdits: 0,
+          examples: {},
+        },
+      ],
+    ]),
+  )
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(stats('stats'))
+
+  expect(ran.text).toContain('| AiTells.Passive | 3 |')
+  expect(ran.text).toContain('| write-good.Passive | 2 |')
 })
 
 test("/prose-lint stats with a project counts only that project, and this session only if it wrote there", async ($, on) => {

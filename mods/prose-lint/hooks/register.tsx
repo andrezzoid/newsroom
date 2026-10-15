@@ -195,12 +195,12 @@ const annotate = async (
                   a.status === 'fixed' ? (
                     <Text dimColor>
                       <Text color="green">✓ </Text>
-                      <Text strikethrough>{a.message}</Text> {a.check.slice(a.check.indexOf('.') + 1)}
+                      <Text strikethrough>{a.message}</Text> {a.check}
                     </Text>
                   ) : (
                     <Text>
                       <Text color={COLOR[a.severity]}>● </Text>
-                      {a.message} <Text dimColor>{a.check.slice(a.check.indexOf('.') + 1)}</Text>
+                      {a.message} <Text dimColor>{a.check}</Text>
                     </Text>
                   ),
                 )}
@@ -726,7 +726,7 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
     '| - | - | - | - |',
     ...rules.map(
       rule =>
-        `| ${rule.check.slice(rule.check.indexOf('.') + 1)} | ${rule.written} | ${keptRate(rule)} | ` +
+        `| ${rule.check} | ${rule.written} | ${keptRate(rule)} | ` +
         `${(total.examples[rule.check] ?? []).map(match => `"${match}"`).join(', ')} |`,
     ),
     '',

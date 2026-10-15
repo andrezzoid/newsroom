@@ -21,8 +21,8 @@ u other) under each underlined cell, and `-` under each struck-through cell.
 NAME.ansi has the colours back; `cat` it in a terminal to see the screen.
 <out>/raw.log keeps every byte claude wrote.
 
-Needs pyte (pip install pyte). Exits 1 when a wait times out, after writing
-the screen to <out>/timeout.txt.
+Runs on any python3: pyte and wcwidth sit in vendor/. Exits 1 when a wait
+times out, after writing the screen to <out>/timeout.txt.
 """
 
 import argparse
@@ -37,7 +37,10 @@ import sys
 import termios
 import time
 
-import pyte
+# pyte and wcwidth live in vendor/, so the driver needs no venv and the sandbox
+# exclusion can name the plain python3 every machine has.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor"))
+import pyte  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KEYS = {"Enter": "\r", "Escape": "\x1b", "Up": "\x1b[A", "Down": "\x1b[B", "Tab": "\t", "CtrlC": "\x03"}

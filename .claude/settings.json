@@ -1,0 +1,8 @@
+{
+  "sandbox": {
+    "excludedCommands": [
+      "claude plugin test mods/prose-lint",
+      "python3 .claude/skills/run-newsroom/driver.py *"
+    ]
+  }
+}
