@@ -657,3 +657,19 @@ test('after a refusal, a rewritten command with no alerts runs', async ($, on) =
   expect(rewritten.deny).toBeUndefined()
   expect(ran).toEqual(['git commit -m "It works"'])
 })
+
+test("a git commit's -m messages reach Vale joined with a blank line", async ($, on) => {
+  const { piped } = bash(on)
+
+  await $.tool.call({ tool: 'Bash', command: `git commit -m "Add the flag" -m 'It reads the file.'` })
+
+  expect(piped.map(run => run.stdin)).toEqual(['Add the flag\n\nIt reads the file.'])
+})
+
+test("a git commit's message reaches Vale as Markdown", async ($, on) => {
+  const { piped } = bash(on)
+
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "M"' })
+
+  expect(piped.map(run => run.argv.find(arg => arg.startsWith('--ext=')))).toEqual(['--ext=.md'])
+})
