@@ -367,6 +367,34 @@ test("the turn's end counts what Claude fixed and what it kept", async ($, on) =
   expect(await ui.find({ type: 'Text', text: 'prose-lint · 2 alerts · 1 fixed · bundled rules' })).toBeDefined()
 })
 
+test("a fixed alert's row names its rule in full after the struck message", async ($, on) => {
+  let lints = 0
+  session(on)
+  on('fs.stat', () => dir)
+  on('fs.read', () => ({ value: 'It works — mostly.\n' }))
+  // The edit's lint finds the dash; the turn's end finds it gone.
+  on('process.run', (_, e) => (isBundled(e.argv) ? vale(++lints === 1 ? [{ ...emDash, Span: [10, 10] }] : []) : noConfig))
+  on('tool.call', { tool: 'Write' }, created('/work/newsroom/notes.md'))
+  on('turn.complete', () => ({ text: '' }))
+  on('ui.render', { component: 'ToolResult' }, () => ({ type: 'engine', ref: 0 }))
+
+  await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/work/newsroom/notes.md', content: '...' })
+  await $.turn.complete({ answer: '', durationMs: 0, isAborted: false, turnId: 't1', reason: 'answer' })
+
+  const ui = await $.ui.mount({
+    plugin: 'prose-lint',
+    surface: 'terminal',
+    component: 'ToolResult',
+    requestId: 'w1',
+    props: { tool_use_id: 'w1', tool: 'Write', output: {}, isErrored: false },
+  })
+  const struck = (await ui.findAll({ type: 'Text' })).filter(element => element.props.strikethrough === true)
+  expect(struck.map(element => element.text)).toContain('Use a comma or a period, not an em dash.')
+  expect(
+    await ui.find({ type: 'Text', text: /✓ Use a comma or a period, not an em dash\. Newsroom\.EmDashes$/ }),
+  ).toBeDefined()
+})
+
 test("a subagent's or an interrupted turn leaves the alerts open for the next answer", async ($, on) => {
   const store = session(on)
   on('fs.stat', () => dir)
