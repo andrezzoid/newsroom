@@ -9,14 +9,14 @@ claude plugin validate . &&
 # Every tracked file against the bundled rules, whoever wrote it, except
 # third-party code and the fixtures that hold slop on purpose. Any alert fails,
 # warnings too: Vale itself exits 1 only on errors. A line that quotes a rule
-# to explain it turns that rule off around itself, as the README does.
+# to explain it turns Vale off around itself, as the README does.
 alerts=$(git ls-files -z -- ':(exclude,glob)**/vendor/**' \
   ':(exclude,glob)mods/prose-lint/noise/*.md' ':(exclude)mods/prose-lint/vale/levels' |
   xargs -0 vale --no-global --config mods/prose-lint/vale/.vale.ini --output line)
 status=$?
 if [ -n "$alerts" ]; then
   printf '%s\n' "$alerts"
-  echo "gates: $(printf '%s\n' "$alerts" | wc -l | tr -d ' ') alerts in the prose above. Fix each one."
+  echo "gates: fix each Vale alert above."
   exit 1
 fi
 [ "$status" -eq 0 ] || { echo "gates: vale failed (xargs exit $status)"; exit 1; }

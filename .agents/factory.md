@@ -7,13 +7,14 @@ so a pull request cannot raise its own autonomy. Written by `/setup-factory`.
 - **Tracker:** GitHub Issues
 - **Max autonomy:** `pr`
 - **Merge method:** `squash`
-- **Gates:** `claude plugin validate .`, `claude plugin test mods/prose-lint`, `sh mods/prose-lint/vale/test.sh` (Vale 3.24 or later, and jq)
+- **Gates:** `sh scripts/gates.sh` (the claude CLI, Vale 3.24 or later, and jq)
 
 ## One-way doors
 
 A revert cannot undo a change here, so it never merges without a human.
 
 - `.claude-plugin/marketplace.json`: renaming or removing a plugin breaks existing installs until users reinstall
+- `scripts/gates.sh`: it holds the gates, so a pull request that edits it changes the checks its own merge has to pass
 
 ## Issue tracker
 
