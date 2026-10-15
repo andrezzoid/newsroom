@@ -2,7 +2,7 @@
   rule: BoldLabels.yml
   input: 'The tell: the test breaks when you refactor.'
   want: |
-    1:1:Newsroom.BoldLabels:Bold label: fold 'The tell:' into the sentence it introduces.
+    1:1:Newsroom.BoldLabels:Label instead of a sentence: work 'The tell:' into the sentence.
 
 - name: a longer label
   rule: BoldLabels.yml

@@ -2,7 +2,7 @@
   rule: Adverbs.yml
   input: It really works.
   want: |
-    1:4:Newsroom.Adverbs:Adverb: cut 'really' and let the verb carry it.
+    1:4:Newsroom.Adverbs:Filler adverb 'really': cut it or use a stronger verb.
 
 - name: in a code comment
   input: |
@@ -10,7 +10,7 @@
     const x = 1
   format: ts
   want: |
-    1:7:Newsroom.Adverbs:Adverb: cut 'really' and let the verb carry it.
+    1:7:Newsroom.Adverbs:Filler adverb 'really': cut it or use a stronger verb.
 
 - name: an adverb AIVocabulary also holds
   about: One word raises one alert, from AIVocabulary.
@@ -24,12 +24,12 @@
     >
     > The tell: the test breaks when you refactor, and it delves into the details.
   want: |
-    1:6:Newsroom.Adverbs:Adverb: cut 'really' and let the verb carry it.
-    1:19:Newsroom.EmDashes:Overuse of em dashes: use a period, comma, colon or parentheses.
-    1:28:Newsroom.Copulatives:Avoidance of basic copulatives: replace 'serves as a' with "is", "are" or "has".
-    1:44:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
-    3:3:Newsroom.BoldLabels:Bold label: fold 'The tell:' into the sentence it introduces.
-    3:55:Newsroom.AIVocabulary:AI vocabulary: replace 'delves' with a plainer word.
+    1:6:Newsroom.Adverbs:Filler adverb 'really': cut it or use a stronger verb.
+    1:19:Newsroom.EmDashes:Em dash overuse: use a period, comma, colon or parentheses.
+    1:28:Newsroom.Copulatives:'serves as a' avoids "is": use "is", "are" or "has".
+    1:44:Newsroom.NeverTag:Trailing "never X": cut it and keep the claim.
+    3:3:Newsroom.BoldLabels:Label instead of a sentence: work 'The tell:' into the sentence.
+    3:55:Newsroom.AIVocabulary:'delves' reads as AI: use a plainer word.
 
 - name: a GitHub callout
   input: |

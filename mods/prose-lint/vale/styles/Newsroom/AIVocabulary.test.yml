@@ -2,15 +2,15 @@
   rule: AIVocabulary.yml
   input: We delve into the intricate interplay.
   want: |
-    1:4:Newsroom.AIVocabulary:AI vocabulary: replace 'delve' with a plainer word.
-    1:19:Newsroom.AIVocabulary:AI vocabulary: replace 'intricate' with a plainer word.
-    1:29:Newsroom.AIVocabulary:AI vocabulary: replace 'interplay' with a plainer word.
+    1:4:Newsroom.AIVocabulary:'delve' reads as AI: use a plainer word.
+    1:19:Newsroom.AIVocabulary:'intricate' reads as AI: use a plainer word.
+    1:29:Newsroom.AIVocabulary:'interplay' reads as AI: use a plainer word.
 
 - name: one word raises one alert
   about: AiTells.Adverb also held "genuinely"; through the config, only AIVocabulary flags it.
   input: Each ticket genuinely gates the next.
   want: |
-    1:13:Newsroom.AIVocabulary:AI vocabulary: replace 'genuinely' with a plainer word.
+    1:13:Newsroom.AIVocabulary:'genuinely' reads as AI: use a plainer word.
 
 - name: underscore as a verb
   rule: AIVocabulary.yml
@@ -38,10 +38,10 @@
   about: One word raises one alert.
   input: The town boasts a vibrant scene, and it boasts vibrant parks.
   want: |
-    1:10:Newsroom.Copulatives:Avoidance of basic copulatives: replace 'boasts a' with "is", "are" or "has".
-    1:19:Newsroom.AIVocabulary:AI vocabulary: replace 'vibrant' with a plainer word.
-    1:41:Newsroom.AIVocabulary:AI vocabulary: replace 'boasts' with a plainer word.
-    1:48:Newsroom.AIVocabulary:AI vocabulary: replace 'vibrant' with a plainer word.
+    1:10:Newsroom.Copulatives:'boasts a' avoids "is": use "is", "are" or "has".
+    1:19:Newsroom.AIVocabulary:'vibrant' reads as AI: use a plainer word.
+    1:41:Newsroom.AIVocabulary:'boasts' reads as AI: use a plainer word.
+    1:48:Newsroom.AIVocabulary:'vibrant' reads as AI: use a plainer word.
 
 - name: the user's own terms
   input: Use the ubiquitous language of the glossary.
@@ -57,8 +57,8 @@
   rule: AIVocabulary.yml
   input: Answer the key questions and make the key point first.
   want: |
-    1:12:Newsroom.AIVocabulary:AI vocabulary: replace 'key' with a plainer word.
-    1:39:Newsroom.AIVocabulary:AI vocabulary: replace 'key' with a plainer word.
+    1:12:Newsroom.AIVocabulary:'key' reads as AI: use a plainer word.
+    1:39:Newsroom.AIVocabulary:'key' reads as AI: use a plainer word.
 
 - name: leverage, a term of the user's design vocabulary
   about: accept.txt lists it, as it does "seam" from the same glossary.

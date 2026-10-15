@@ -2,7 +2,7 @@
   rule: NeverTag.yml
   input: The log keeps the hash, never the account number itself.
   want: |
-    1:23:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
+    1:23:Newsroom.NeverTag:Trailing "never X": cut it and keep the claim.
 
 - name: a ", never X" tag after a place
   rule: NeverTag.yml
@@ -29,11 +29,11 @@
 
     The cache refreshes before each request, never in the background.
   want: |
-    1:37:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
-    3:28:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
-    5:31:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
-    7:13:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
-    9:40:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
+    1:37:Newsroom.NeverTag:Trailing "never X": cut it and keep the claim.
+    3:28:Newsroom.NeverTag:Trailing "never X": cut it and keep the claim.
+    5:31:Newsroom.NeverTag:Trailing "never X": cut it and keep the claim.
+    7:13:Newsroom.NeverTag:Trailing "never X": cut it and keep the claim.
+    9:40:Newsroom.NeverTag:Trailing "never X": cut it and keep the claim.
 
 - name: a tag whose object is code, a quote or starts with to-
   about: |
@@ -47,9 +47,9 @@
 
     Make a to-do list, never to-dos on paper.
   want: |
-    1:1:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
-    3:14:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
-    5:18:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
+    1:1:Newsroom.NeverTag:Trailing "never X": cut it and keep the claim.
+    3:14:Newsroom.NeverTag:Trailing "never X": cut it and keep the claim.
+    5:18:Newsroom.NeverTag:Trailing "never X": cut it and keep the claim.
 
 - name: a tag after a wrapped line, and after a condition
   about: |
@@ -62,5 +62,5 @@
 
     If it fails, never retry the call.
   want: |
-    2:12:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
-    4:12:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
+    2:12:Newsroom.NeverTag:Trailing "never X": cut it and keep the claim.
+    4:12:Newsroom.NeverTag:Trailing "never X": cut it and keep the claim.

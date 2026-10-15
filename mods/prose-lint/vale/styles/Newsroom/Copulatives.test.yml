@@ -2,7 +2,7 @@
   rule: Copulatives.yml
   input: Eviction serves as a safety net.
   want: |
-    1:10:Newsroom.Copulatives:Avoidance of basic copulatives: replace 'serves as a' with "is", "are" or "has".
+    1:10:Newsroom.Copulatives:'serves as a' avoids "is": use "is", "are" or "has".
 
 - name: stands as and boasts
   rule: Copulatives.yml
