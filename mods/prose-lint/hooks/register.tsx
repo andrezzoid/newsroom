@@ -681,11 +681,13 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
   ].join('\n')
 }
 
-// /prose-lint coach: this session's line, then hands Claude the stats to
-// propose changes from.
-const coachReport = async ($: EngineInterface): Promise<{ text: string }> => {
+// /prose-lint coach: this session's line and the rules Claude writes most, for
+// the user; for Claude alone, how to turn them into proposals.
+const coachReport = async ($: EngineInterface): Promise<{ text: string; context?: string[] }> => {
   const { total, current, configs } = await gather($)
+  const root = $.plugin.root.replace(/\/\.claude-plugin\/?$/, '')
   return {
+    context: [coaching(`${root}/vale/.vale.ini`)],
     text: [
       sessionSummary(current),
       '',
@@ -699,6 +701,24 @@ const coachReport = async ($: EngineInterface): Promise<{ text: string }> => {
     ].join('\n'),
   }
 }
+
+// What Claude reads after /prose-lint coach. The evidence decides the kind of
+// change: a rule Claude keeps is noise in the config, a rule Claude writes and
+// fixes is a habit for its instructions. `bundled` is the plugin's own config,
+// which an update overwrites.
+const coaching = (bundled: string): string =>
+  [
+    `The user ran /prose-lint coach. Its table lists the rules you wrote the most alerts of in the last ${STATS_DAYS} days, ` +
+      'across projects. Propose up to three changes the table supports, each with its evidence: the rule, its written ' +
+      'count, its kept rate and the examples. Each change is one of these:',
+    '- A high kept rate means the rule is noise: turn it off or down in the config that ran it.',
+    "- Many written alerts with a low kept rate mean a habit: add a line to your instructions (CLAUDE.md) that stops it.",
+    "- Examples that are the project's own terms: add them to the vocabulary of the config that ran the rule.",
+    'Find CLAUDE.md and the config files yourself. ' +
+      `"bundled rules" is the plugin's own config, ${bundled}, which a plugin update overwrites, so a change to it ` +
+      'starts by copying it and its styles folder to ~/.config/vale/. A project\'s .vale.ini belongs to its team: ' +
+      'say so when you propose a change to one.',
+  ].join('\n')
 
 // The share of a rule's alerts with a verdict that Claude kept.
 const keptRate = (c: Counts): string =>
