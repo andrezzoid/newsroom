@@ -788,3 +788,23 @@ test('a process substitution elsewhere on the line leaves the git commit linted'
 
   expect(piped.map(run => run.stdin)).toEqual(['M'])
 })
+
+for (const command of ['git -C sub commit -F msg.txt', 'cd sub && git commit -F msg.txt']) {
+  test(`${command} runs with no lint, since the mod can't tell which msg.txt it reads`, async ($, on) => {
+    const { ran, piped } = bash(on)
+    on('fs.read', () => ({ value: 'It just works.\n' }))
+
+    await $.tool.call({ tool: 'Bash', command })
+
+    expect(piped).toEqual([])
+    expect(ran).toEqual([command])
+  })
+}
+
+test("a heredoc with a backslashed delimiter in a git commit's -m reaches Vale as its text", async ($, on) => {
+  const { piped } = bash(on)
+
+  await $.tool.call({ tool: 'Bash', command: `git commit -m "$(cat <<\\EOF\nAdd the flag\nEOF\n)"` })
+
+  expect(piped.map(run => run.stdin)).toEqual(['Add the flag'])
+})
