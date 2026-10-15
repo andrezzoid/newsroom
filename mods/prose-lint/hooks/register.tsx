@@ -200,7 +200,7 @@ const annotate = async (
                   ) : (
                     <Text>
                       <Text color={COLOR[a.severity]}>● </Text>
-                      {a.message} <Text dimColor>{a.check.slice(a.check.indexOf('.') + 1)}</Text>
+                      {a.message} <Text dimColor>{a.check}</Text>
                     </Text>
                   ),
                 )}
