@@ -491,11 +491,37 @@ test('/prose-lint stats sums every project, by week, rule and kind', async ($, o
   )
   expect(ran.text).toContain('1,500 words · 10.0 alerts and 2.0 fix edits per 1,000 words')
   expect(ran.text).toContain('| 2026-10-05 | 1,500 | 10.0 |')
-  expect(ran.text).toContain('| Adverb | 10 | 20% | "just", "really" |')
+  expect(ran.text).toContain('| AiTells.Adverb | 10 | 20% | "just", "really" |')
   expect(ran.text).toContain('| comments | 500 | 10.0 |')
   expect(ran.text).toContain('| Week of | Words | Alerts per 1,000 |')
   expect(ran.text).toContain('| Where | Words | Alerts per 1,000 |')
   expect(ran.text).not.toMatch(/\btells\b/i)
+})
+
+test('/prose-lint stats names each rule in full, so two styles with the same rule show apart', async ($, on) => {
+  const passive = (written: number) => ({ docs: { written, fixed: 0, kept: written } })
+  storeIn(
+    on,
+    new Map([
+      [
+        'stats/2026-10-09/newsroom/s1',
+        {
+          configs: ['bundled rules'],
+          words: { docs: 1000 },
+          rules: { 'AiTells.Passive': passive(3), 'write-good.Passive': passive(2) },
+          fixEdits: 0,
+          examples: {},
+        },
+      ],
+    ]),
+  )
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(stats('stats'))
+
+  expect(ran.text).toContain('| AiTells.Passive | 3 |')
+  expect(ran.text).toContain('| write-good.Passive | 2 |')
 })
 
 test("/prose-lint stats with a project counts only that project, and this session only if it wrote there", async ($, on) => {
