@@ -718,6 +718,8 @@ const coaching = (bundled: string): string =>
       `"bundled rules" is the plugin's own config, ${bundled}, which a plugin update overwrites, so a change to it ` +
       'starts by copying it and its styles folder to ~/.config/vale/. A project\'s .vale.ini belongs to its team: ' +
       'say so when you propose a change to one.',
+    'Number the proposals and ask the user which to apply. Apply only the changes the user picks, and change no file ' +
+      'before they pick.',
   ].join('\n')
 
 // The share of a rule's alerts with a verdict that Claude kept.
