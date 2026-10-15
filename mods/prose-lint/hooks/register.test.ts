@@ -888,3 +888,11 @@ for (const command of ['cp other.txt msg.txt && git commit -F msg.txt', "printf 
     expect(ran).toEqual([command])
   })
 }
+
+test("a value attached to another short flag never reads as a gh command's prose", async ($, on) => {
+  const { piped } = bash(on)
+
+  await $.tool.call({ tool: 'Bash', command: 'gh issue create -t "Title" -b "Body" -lbug -Bstaging' })
+
+  expect(piped.map(run => run.stdin)).toEqual(['Title\n\nBody'])
+})
