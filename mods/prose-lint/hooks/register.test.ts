@@ -590,6 +590,18 @@ test('/prose-lint coach leads with this session\'s line', async ($, on) => {
   )
 })
 
+test("/prose-lint coach says when this session hasn't written yet", async ($, on) => {
+  const earlier = coachHistory()
+  earlier.delete(STATS)
+  storeIn(on, earlier)
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text?.split('\n')[0]).toBe('**This session** · no prose written yet')
+})
+
 test('/prose-lint coach lists the five rules with the most written alerts, most first', async ($, on) => {
   storeIn(on, coachHistory())
   mock.clock(on, { now: NOON })
