@@ -615,3 +615,22 @@ test("a refused git commit hands Claude the note with its message's alert", asyn
 
   expect(result.deny).toContain("- 1:1 Filler adverb 'just': let the verb carry it.")
 })
+
+test('a refused command runs when Claude sends the same text again', async ($, on) => {
+  const { ran } = bash(on)
+  const command = 'git commit -m "It just works"'
+
+  await $.tool.call({ tool: 'Bash', command })
+  const again = await $.tool.call({ tool: 'Bash', command })
+
+  expect(again.deny).toBeUndefined()
+  expect(ran).toEqual([command])
+})
+
+test('the note of a refused command tells Claude the same text runs as is', async ($, on) => {
+  bash(on)
+
+  const result = await $.tool.call({ tool: 'Bash', command: 'git commit -m "It just works"' })
+
+  expect(result.deny).toContain('same command')
+})
