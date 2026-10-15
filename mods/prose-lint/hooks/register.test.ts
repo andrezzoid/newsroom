@@ -302,6 +302,17 @@ test("a Write's row names each open alert's rule in full after its message", asy
   ).toBeDefined()
 })
 
+test("Claude's note gives an alert's message but not its rule, to cost fewer tokens", async ($, on) => {
+  on('fs.stat', () => dir)
+  on('process.run', (_, e) => (isBundled(e.argv) ? vale([emDash], 1) : noConfig))
+  on('tool.call', { tool: 'Write' }, created('/repo/notes.md'))
+
+  const ran = await $.tool.call({ tool: 'Write', file_path: '/repo/notes.md', content: '...' })
+
+  expect(ran.context?.[0]).toContain('Use a comma or a period, not an em dash.')
+  expect(ran.context?.[0]).not.toContain('EmDashes')
+})
+
 test('a flagged Write toasts its count of new alerts', async ($, on) => {
   const toasts: string[] = []
   on('ui.toast', (_, e) => (toasts.push(e.text), { value: undefined }))
