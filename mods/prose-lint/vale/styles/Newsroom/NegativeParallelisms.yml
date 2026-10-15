@@ -11,4 +11,4 @@ tokens:
   - '\bit[''’]?s\s+not\b[^.!?]{0,60},\s*it[''’]?s\b'
   - '\bisn[''’]?t\s+(?:just|only)\b[^.!?]{0,60}\bit[''’]?s\b'
   - '\b(?:is|are|was|were|reads?\s+as|stays?|remains?|becomes?)\s+(?:a\s+|an\s+|the\s+)?[\w’''-]+(?:\s+[\w’''-]+){0,2},\s+not\s+(?:a\s+|an\s+|the\s+)?[\w’''-]+'
-  - '\bno\s+(?!longer\b|sooner\b)[^,.;:!?]{2,},\s+no\s+[^.!?]+'
+  - '\bno\s+(?!longer\b|sooner\b|matter\b)[^,.;:!?]{2,},\s+no\s+(?!longer\b|sooner\b|matter\b)[^.!?]+'
