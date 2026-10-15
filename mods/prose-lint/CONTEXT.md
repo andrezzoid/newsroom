@@ -40,6 +40,9 @@ _Avoid_: False positive (one alert, where noise is the rule)
 **Habit**:
 A rule Claude writes many alerts of and fixes most of. The fix belongs in Claude's instructions, so it stops writing them.
 
+**Coach**:
+`/prose-lint coach`: the stats that matter, shown to the user, and Claude's proposals from them. It needs 1,000 words in the stats' window first.
+
 **Proposal**:
 A change the coach has Claude suggest from the stats, with its evidence: turn a noisy rule off or down, add a line against a habit to `CLAUDE.md`, or add a project's terms to a config's vocabulary. Claude applies only the proposals the user picks.
 
