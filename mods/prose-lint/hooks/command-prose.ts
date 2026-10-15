@@ -153,7 +153,7 @@ const readCommands = (line: string): Simple[] | undefined => {
         while (line[i] !== '"') {
           if (i >= line.length) return undefined
           const inner = line[i]!
-          if (inner === '\\' && '$`"\\\n'.includes(line[i + 1] ?? '')) {
+          if (inner === '\\' && i + 1 < line.length && '$`"\\\n'.includes(line[i + 1]!)) {
             if (line[i + 1] !== '\n') value += line[i + 1]
             i += 2
           } else if (inner === '$' || inner === '`') {
@@ -213,11 +213,13 @@ const readCommands = (line: string): Simple[] | undefined => {
       current.stdin = null
       heredocs.push({ simple: current, delimiter: match[1] ?? match[2] ?? match[3]!, isQuoted: !match[3] || match[0].includes('\\'), stripTabs })
     } else if (char === '<' || char === '>') {
-      // A redirection and its target; a here-string stands for unreadable input.
+      // A redirection and its target; a here-string stands for unreadable
+      // input, and a redirection with no target is a syntax error.
       const isHereString = line.startsWith('<<<', i)
-      while ('<>&'.includes(line[i] ?? '')) i++
+      while (i < line.length && '<>&'.includes(line[i]!)) i++
       while (line[i] === ' ' || line[i] === '\t') i++
-      if (readWord() === undefined) return undefined
+      const target = readWord()
+      if (target === undefined || target === '') return undefined
       if (isHereString) current.stdin = null
     } else {
       const word = readWord()
