@@ -627,6 +627,16 @@ test('/prose-lint coach asks Claude, out of the user\'s sight, for up to three c
   expect(ran.text).not.toContain('Propose')
 })
 
+test('/prose-lint coach tells Claude to apply only the changes the user picks', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.context?.join('\n')).toContain('Apply only the changes the user picks')
+})
+
 test("a session's start folds earlier days into one record per day and project", async ($, on) => {
   const day = (written: number) => ({
     configs: ['bundled rules'],
