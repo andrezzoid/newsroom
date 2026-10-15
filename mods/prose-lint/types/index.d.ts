@@ -15,7 +15,7 @@ export type ProseAlert = {
   end: number
   // The words Vale matched, whole even when they run onto the next line.
   match: string
-  // Vale's rule as Style.Rule, such as AiTells.Dash.
+  // Vale's rule as Style.Rule, such as Newsroom.EmDashes.
   check: string
   // Vale's message, which quotes the match.
   message: string
@@ -49,7 +49,7 @@ export type DayStats = {
   // Prose words Claude added: lines of documents outside code blocks, and
   // comment lines in code (counted by their comment marker, so approximate).
   words: Partial<Record<Kind, number>>
-  // By Vale rule, such as AiTells.Dash, then by kind.
+  // By Vale rule, such as Newsroom.EmDashes, then by kind.
   rules: Record<string, Partial<Record<Kind, Counts>>>
   // Writes and Edits to a file that still had open alerts: the round trips
   // the alerts cost.

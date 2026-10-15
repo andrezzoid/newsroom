@@ -20,7 +20,7 @@ When the turn ends, the row strikes out what got fixed. Here Claude fixed the da
 
 ## Install
 
-It needs Claude Code v2.1.287 or later, which runs mods, and Vale on your `PATH` (`brew install vale`). Then, in your shell:
+It needs Claude Code v2.1.287 or later, which runs mods, and Vale 3.18 or later on your `PATH` (`brew install vale`). Then, in your shell:
 
 ```sh
 claude plugin marketplace add andrezzoid/newsroom
@@ -33,11 +33,24 @@ The plugin uses the first config it finds:
 
 1. A `.vale.ini` in the edited file's folder or a folder above it: the project's own rules.
 2. Your global `~/.config/vale/.vale.ini`.
-3. The bundled rules in `vale/.vale.ini`: most of [AiTells](https://github.com/krishnasunkam/vale-ai-tells), which flags the habits of machine-written prose, and part of [write-good](https://github.com/vale-cli/write-good). The comments in that file say which rules are off and why. The plugin downloads these packages on first use.
+3. The bundled rules in `vale/.vale.ini`: the `Newsroom` style in `vale/styles/Newsroom`, which this repo keeps, so the plugin downloads nothing. Each rule targets one sign in Wikipedia's [Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing) or one line of its author's writing rules, and each alert's message names it before the fix.
+
+| Rule | Level | Flags |
+|---|---|---|
+| `EmDashes` | error | An em dash, or an en dash with a space on each side. "1–3" passes. |
+| `NeverTag` | error | A ", never X" tag: "keeps the hash, never the account number". |
+| `NegativeParallelisms` | warning | "Not just X, but Y", "it's not X, it's Y", "is X, not Y", "no X, no Y". |
+| `AIVocabulary` | warning | Wikipedia's AI vocabulary for each model era ("delve", "pivotal", "leverage"), plus "genuine", "meaningful", "actionable" and a few more. |
+| `Copulatives` | warning | "Serves as a", "stands as a", "boasts a" in place of "is" or "has". |
+| `Adverbs` | warning | Filler adverbs: "really", "just", "very" and 33 more. |
+| `BoldLabels` | warning | A label and a colon in place of a sentence: "The tell: …". |
+| `Passive` | warning | Passive voice, in documents but not in code comments. |
+
+The rules skip blockquotes. `vale/styles/Newsroom/NOTICE` names the package each rule comes from. The bundled rules need Vale 3.18 or later: older versions read the `*.test.yml` files beside the rules as rules and fail.
 
 The transcript row and Claude's note name the config that ran. A project's styles are the project's to download: run `vale sync` in the repo if Vale reports them missing.
 
-To keep the bundled rules and add your own, copy `vale/.vale.ini` and its `styles/config` folder into your repo and edit from there.
+To keep the bundled rules and add your own, copy `vale/.vale.ini` and its `styles` folder into your repo and edit from there.
 
 ## Catch what the plugin can't see
 
