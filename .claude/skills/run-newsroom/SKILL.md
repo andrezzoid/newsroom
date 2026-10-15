@@ -12,13 +12,8 @@ draws under the diff. Paths are relative to the repo root.
 
 ## Prerequisites
 
-Vale on `PATH` (3.24.0 verified), `claude` logged in (v2.1.295 verified), and,
-for the driver only, pyte in a venv:
-
-```bash
-vale --version
-python3 -m venv "$TMPDIR/pl-venv" && "$TMPDIR/pl-venv/bin/pip" install -q --use-deprecated=legacy-certs pyte
-```
+Vale on `PATH` (3.24.0 verified) and `claude` logged in (v2.1.295 verified).
+The driver runs on any `python3`: its pyte and wcwidth sit in `vendor/`.
 
 ## Run (agent path): headless, for the commands and Claude's note
 
@@ -59,7 +54,7 @@ steps, and saves each screen as text. This run writes a draft with four alerts,
 then fixes the dash so the turn's end strikes it out:
 
 ```bash
-"$TMPDIR/pl-venv/bin/python" .claude/skills/run-newsroom/driver.py \
+python3 .claude/skills/run-newsroom/driver.py \
   --cwd "$TMPDIR/pl-tui" --claude-args "--model haiku --permission-mode acceptEdits" \
   --timeout 30 --wait "trust this folder" --idle 1 --keys Down --keys Enter --idle 3 --shot ready \
   --timeout 180 \
@@ -110,10 +105,12 @@ Both pass: validate warns that `plugin.json` has no `version`; test runs 22.
 
 ## Gotchas
 
-- **Claude Code's sandbox blocks the driver.** It denies `openpty()` and Unix
-  sockets, so neither the driver nor tmux can start there. Hand the driver
-  command to the human to run with the `!` prefix, then read the shots. The
-  headless path works in the sandbox once it allows `api.anthropic.com`.
+- **Claude Code's sandbox denies `openpty()`**, so the driver runs outside it:
+  `.claude/settings.json` excludes `python3 .claude/skills/run-newsroom/driver.py *`.
+  The exclusion matches only a call that starts with exactly that text and
+  chains nothing: no `cd`, pipe or redirect, or the call stays sandboxed and
+  fails with `out of pty devices`. The headless path works in the sandbox once
+  it allows `api.anthropic.com`.
 - **`--plugin-dir` keeps its own stats.** It stores them in
   `~/.claude/plugins/store/prose-lint_inline-<hash>.json`, keyed by the
   folder's name, apart from the installed copy's store, so test runs never
