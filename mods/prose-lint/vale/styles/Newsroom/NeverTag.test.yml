@@ -38,7 +38,7 @@
 - name: a tag whose object is code, a quote or starts with to-
   about: |
     AiTells.NeverTag flags these; a word-only class after "never" missed them.
-    Vale places an alert that starts at a code span at column 1.
+    Vale places an alert whose match ends in a code span at column 1.
   rule: NeverTag.yml
   input: |
     Use `bun`, never `npm`.
