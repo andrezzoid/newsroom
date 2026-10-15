@@ -7,7 +7,7 @@ so a pull request cannot raise its own autonomy. Written by `/setup-factory`.
 - **Tracker:** GitHub Issues
 - **Max autonomy:** `pr`
 - **Merge method:** `squash`
-- **Gates:** `sh scripts/gates.sh` (the claude CLI, Vale 3.24 or later, and jq)
+- **Gates:** `sh scripts/gates.sh` (its header lists what it needs)
 
 ## One-way doors
 

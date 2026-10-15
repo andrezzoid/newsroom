@@ -1,6 +1,6 @@
 ## Gates
 
-`.githooks/pre-commit` runs `scripts/gates.sh` before every commit: the plugin's checks and tests, and Vale over every tracked file. Claude Code turns the hook on when a session starts. Any other agent or person runs `git config core.hooksPath .githooks` once per clone.
+`.githooks/pre-commit` runs every gate in `scripts/gates.sh` before every commit. Claude Code turns the hook on when a session starts. Any other agent or person runs `git config core.hooksPath .githooks` once per clone.
 
 ## Agent skills
 

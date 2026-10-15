@@ -1,4 +1,3 @@
 #!/bin/sh
-# Runs every gate before a commit. Claude Code turns this folder on at the
-# start of each session; without Claude, run `git config core.hooksPath .githooks`.
+# Runs every gate before a commit. CLAUDE.md says how the hook gets turned on.
 exec sh scripts/gates.sh
