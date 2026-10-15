@@ -413,8 +413,9 @@ const shorten = async ($: EngineInterface, path: string): Promise<string> => {
 // on an added line too. Vale lints the whole pre-edit file, so code blocks and
 // comment delimiters read as they did, and each alert on a
 // removed line cancels one of the same alert on an added line of the same
-// hunk. A line that goes from one "just" to two still reports the new
-// one, and a "just" removed in one section never hides one added in another.
+// hunk. A line that goes from one filler word to two still reports the new
+// one, and a word removed in one section never hides the same word added in
+// another.
 // When that lint fails, nothing cancels: better a repeated alert than a hidden
 // one. Vale names piped text stdin.<ext>, so a project config whose sections
 // match paths (docs/*.md) lints none of it, and the existing alerts repeat.

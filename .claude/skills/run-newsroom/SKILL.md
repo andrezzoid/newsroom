@@ -107,7 +107,7 @@ Both pass: validate warns that `plugin.json` has no `version`.
 
 - **Claude Code's sandbox denies `openpty()`**, so the driver runs outside it:
   `.claude/settings.json` excludes `python3 .claude/skills/run-newsroom/driver.py *`.
-  The exclusion matches only a call that starts with exactly that text and
+  The exclusion matches only a call that starts with that text, verbatim, and
   chains nothing: no `cd`, pipe or redirect, or the call stays sandboxed and
   fails with `out of pty devices`. Outside the sandbox `$TMPDIR` is macOS's own
   `/var/folders/…/T/`, not the sandbox's, so give `--cwd` a literal `/tmp/…`

@@ -10,7 +10,9 @@ A Claude Code plugin that runs [Vale](https://vale.sh) over the prose Claude wri
 
 The same file, written in the terminal and in the Code tab of the Claude Desktop app:
 
+<!-- vale off -->
 ![A Write row in the Claude Code terminal: the new file's six lines, then "prose-lint · 3 alerts · bundled rules". Line 3 has its em dash underlined in red, with the Dash message boxed under it. Line 6 has "really" and "serves as a" underlined in blue, with the Adverb and CopulaInflation messages boxed under it.](https://raw.githubusercontent.com/andrezzoid/newsroom/main/static/cc_terminal.png)
+<!-- vale on -->
 
 ![The same file in the Claude Desktop app: the diff of the new file, then the same three alerts on lines 3 and 6, underlined and boxed the same way.](https://raw.githubusercontent.com/andrezzoid/newsroom/main/static/cc_desktop.png)
 
@@ -35,6 +37,9 @@ The plugin uses the first config it finds:
 2. Your global `~/.config/vale/.vale.ini`.
 3. The bundled rules in `vale/.vale.ini`: the `Newsroom` style in `vale/styles/Newsroom`, which this repo keeps, so the plugin downloads nothing. Each rule targets one sign in Wikipedia's [Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing) or one line of its author's writing rules, and each alert's message names it before the fix.
 
+<!-- The table quotes what each rule flags, so Vale skips it. -->
+<!-- vale off -->
+
 | Rule | Level | Flags |
 |---|---|---|
 | `EmDashes` | error | An em dash, or an en dash with a space on each side. "1–3" passes. |
@@ -46,7 +51,9 @@ The plugin uses the first config it finds:
 | `BoldLabels` | warning | A label and a colon in place of a sentence: "The tell: …". |
 | `Passive` | warning | Passive voice, in documents but not in code comments. |
 
-`vale/styles/Newsroom/NOTICE` names the package each rule comes from. Words in `vale/styles/config/vocabularies/Newsroom/accept.txt`, such as "leverage", never raise `AIVocabulary`, `Adverbs`, `Copulatives` or `Passive`. The bundled rules need Vale 3.18 or later: older versions read the `*.test.yml` files beside the rules as rules and fail.
+<!-- vale on -->
+
+`vale/styles/Newsroom/NOTICE` names the package each rule comes from. Words in `vale/styles/config/vocabularies/Newsroom/accept.txt`, such as "leverage", don't raise `AIVocabulary`, `Adverbs`, `Copulatives` or `Passive`. The bundled rules need Vale 3.18 or later: older versions read the `*.test.yml` files beside the rules as rules and fail.
 
 The transcript row and Claude's note name the config that ran. A project's styles are the project's to download: run `vale sync` in the repo if Vale reports them missing.
 

@@ -18,8 +18,8 @@ A revert cannot undo a change here, so it never merges without a human.
 ## Issue tracker
 
 Issues live in GitHub Issues on this repo. Use `gh issue`. Blockers are issue
-dependencies, or a `## Blocked by` section listing `#12`. A ticket being worked
-carries the `in-progress` label.
+dependencies, or a `## Blocked by` section listing `#12`. A ticket an agent
+works on carries the `in-progress` label.
 
 `factory ticket show <ID>` gives the branch to work on and the `Closes` line
 the PR body ends with, so the tracker links the PR and closes the ticket on
@@ -28,7 +28,7 @@ merge.
 **PRs as a request surface: yes.** `/triage` also lists open PRs from people
 outside the repo (GitHub author association `CONTRIBUTOR`,
 `FIRST_TIME_CONTRIBUTOR` or `NONE`) and triages them like issues, with `gh pr
-view`, `gh pr diff` and `gh pr edit`. A PR named explicitly is triaged whoever
+view`, `gh pr diff` and `gh pr edit`. It triages any PR you name, whoever
 wrote it.
 
 ## Triage labels
@@ -37,13 +37,13 @@ Matt Pocock's `triage` roles under their own names, plus the factory's.
 
 | Role | Label |
 |---|---|
-| Something is broken | `bug` |
+| Something broke | `bug` |
 | New feature or improvement | `enhancement` |
 | Maintainer needs to evaluate | `needs-triage` |
 | Waiting on reporter for more information | `needs-info` |
 | Fully specified, ready for an AFK agent | `ready-for-agent` |
 | Needs a human, from triage or handed back by an agent | `ready-for-human` |
-| Will not be actioned | `wontfix` |
+| Nobody will act on it | `wontfix` |
 | May merge itself once verified | `autonomy:merge` |
 | Claimed by an agent session | `in-progress` |
 
