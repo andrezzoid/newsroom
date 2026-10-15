@@ -726,7 +726,7 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
     '| - | - | - | - |',
     ...rules.map(
       rule =>
-        `| ${rule.check.slice(rule.check.indexOf('.') + 1)} | ${rule.written} | ${keptRate(rule)} | ` +
+        `| ${rule.check} | ${rule.written} | ${keptRate(rule)} | ` +
         `${(total.examples[rule.check] ?? []).map(match => `"${match}"`).join(', ')} |`,
     ),
     '',
