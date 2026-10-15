@@ -50,10 +50,12 @@ const reports = atom({ plugin: 'prose-lint', key: 'reports' } as const, { config
 // The alerts Claude wrote in the current turn, given a verdict when it ends.
 const open = atom({ plugin: 'prose-lint', key: 'open' } as const, [] as OpenAlert[])
 
-// The exact text of the last command the mod refused, '' for none. The same
-// text sent again runs unlinted, once, so Claude can keep alerts it has a
-// reason for, as it can in a file.
-const refused = atom({ plugin: 'prose-lint', key: 'refused' } as const, '')
+// The commands the mod refused, newest last, each as its text and its prose.
+// The same command with the same prose, sent again, runs unlinted once, so
+// Claude can keep alerts it has a reason for, as it can in a file. Keeps the
+// last REFUSED_KEPT, enough for the commands of a few parallel calls.
+const refused = atom({ plugin: 'prose-lint', key: 'refused' } as const, [] as string[])
+const REFUSED_KEPT = 10
 
 // The window /prose-lint stats reads, in days, today included.
 const STATS_DAYS = 30
@@ -253,24 +255,28 @@ const runs = (text: string, onLine: ProseAlert[]): Run[] => {
 }
 
 // What Claude reads in place of a command's result when the mod refuses the
-// command, or undefined to let it run: the command it refused last, sent
-// again; a command with no prose the mod can read; or one whose prose has no
-// alerts. Never throws, so a lint problem never blocks a command.
+// command, or undefined to let it run: a refused command sent again with the
+// same prose; a command with no prose the mod can read; or one whose prose
+// has no alerts. Never throws, so a lint problem never blocks a command.
 const refusal = async ($: EngineInterface, command: string): Promise<string | undefined> => {
   try {
     const prose = proseOf(command)
     if (prose.length === 0) return undefined
-    if (command === (await read($, refused))) {
-      await update($, refused, () => '')
+    const cwd = await $.session.cwd()
+    const texts = (await Promise.all(prose.map(piece => (typeof piece === 'string' ? piece : readFile($, absolute(piece.file, cwd)))))).filter(
+      text => text !== undefined,
+    )
+    if (texts.length === 0) return undefined
+    const text = texts.join('\n\n')
+    const key = `${command}\n\0${text}`
+    if ((await read($, refused)).includes(key)) {
+      await update($, refused, list => list.filter(other => other !== key))
       return undefined
     }
-    const cwd = await $.session.cwd()
-    // A file the mod can't read rejects, and the catch lets the command run.
-    const texts = await Promise.all(prose.map(piece => (typeof piece === 'string' ? piece : $.fs.read(absolute(piece.file, cwd)))))
-    const linted = await lint($, { text: texts.join('\n\n'), ext: 'md' }, cwd)
+    const linted = await lint($, { text, ext: 'md' }, cwd)
     const found = Object.values(linted?.byFile ?? {})[0] ?? []
     if (!linted || found.length === 0) return undefined
-    await update($, refused, () => command)
+    await update($, refused, list => [...list, key].slice(-REFUSED_KEPT))
     return [
       'This command did not run: prose-lint found alerts in its prose. Rewrite the prose, or run the same command again to send it as is.',
       describe(found, linted.configLabel),
@@ -933,6 +939,12 @@ const describe = (found: ValeAlert[], configLabel: string): string => {
 }
 
 const basename = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
+
+// A regular file's text, or undefined for anything else: a missing file, or
+// a pipe or device (/dev/tty), whose read would wait on input that never
+// comes and hold the command.
+const readFile = async ($: EngineInterface, path: string): Promise<string | undefined> =>
+  (await $.fs.stat(path).catch(() => undefined))?.kind === 'file' ? $.fs.read(path).catch(() => undefined) : undefined
 
 // `path` as an absolute path, a relative one taken from `cwd`.
 const absolute = (path: string, cwd: string): string => (path.startsWith('/') ? path : `${cwd}/${path}`)

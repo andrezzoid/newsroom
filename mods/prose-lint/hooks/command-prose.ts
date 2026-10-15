@@ -7,18 +7,19 @@
 export type Piece = string | { file: string }
 
 // The pieces of prose the commands in `command` will publish, in order, a
-// title or subject before its body. A command whose prose holds a shell
-// variable, or a command substitution other than a heredoc piped to cat,
-// gives none, and so does a command line the reader can't follow: the mod
+// title or subject before its body. A value that holds a shell variable, or
+// a command substitution other than a heredoc piped to cat, gives no piece,
+// and a command line the reader can't follow gives none at all: the mod
 // never blocks what it cannot read.
 export const proseOf = (command: string): Piece[] => {
   const commands = readCommands(command)
   if (!commands) return []
-  // A cd earlier on the line moves the folder a relative -F path starts from.
-  let hasMoved = false
+  // A cd or a file written earlier on the line can change what a -F path
+  // holds by the time the command reads it.
+  let isFileUnknown = false
   return commands.flatMap(simple => {
-    const pieces = prosePieces(simple, hasMoved)
-    if (simple.words[0] === 'cd' || simple.words[0] === 'pushd') hasMoved = true
+    const pieces = prosePieces(simple, isFileUnknown)
+    if (simple.words[0] === 'cd' || simple.words[0] === 'pushd' || simple.writes) isFileUnknown = true
     return pieces
   })
 }
@@ -46,26 +47,28 @@ const GH: Record<string, Flags> = {
 // A word's value, or null where it holds an expansion the reader can't run.
 type Word = string | null
 
-// One simple command: its words, and the heredoc on its standard input,
-// null when the reader can't follow the input.
-type Simple = { words: Word[]; stdin?: Word }
+// One simple command: its words, the heredoc on its standard input (null
+// when the reader can't follow the input), and whether it redirects its
+// output to a file.
+type Simple = { words: Word[]; stdin?: Word; writes?: boolean }
 
 // The prose of one simple command, when the command is a git commit or a gh
 // command in the table and the reader can follow all its prose. git joins
-// its -m messages as paragraphs; gh keeps the last of each flag. A relative
-// -F path after a cd or a git -C names a file in a folder the reader doesn't
-// know, so it can't follow that path.
-const prosePieces = ({ words, stdin }: Simple, hasMoved: boolean): Piece[] => {
+// its -m messages as paragraphs; gh keeps the last of each flag. A -F path
+// after a cd, a file write or a git -C may name another file than the one
+// the mod would read, so the reader can't follow it. /dev/stdin reads the
+// heredoc, never the session's own input.
+const prosePieces = ({ words, stdin }: Simple, isFileUnknown: boolean): Piece[] => {
   const start = words.findIndex(word => word === null || !/^[A-Za-z_]\w*=/.test(word))
   const [program, ...rest] = start < 0 ? [] : words.slice(start)
   let flags: Flags | undefined
   let args: Word[] = []
-  let isMoved = hasMoved
+  let isFileMoved = isFileUnknown
   if (program === 'git') {
     // Global options come before the subcommand; -C and -c take a value.
     let i = 0
     while (typeof rest[i] === 'string' && rest[i]!.startsWith('-')) {
-      if (rest[i] === '-C') isMoved = true
+      if (rest[i] === '-C') isFileMoved = true
       i += rest[i] === '-C' || rest[i] === '-c' ? 2 : 1
     }
     if (rest[i] === 'commit') [flags, args] = [GIT_COMMIT, rest.slice(i + 1)]
@@ -76,20 +79,19 @@ const prosePieces = ({ words, stdin }: Simple, hasMoved: boolean): Piece[] => {
   if (!flags) return []
 
   let title: Piece | undefined
-  const bodies: Piece[] = []
+  let bodies: Piece[] = []
   for (const { part, value } of flagValues(args, flags)) {
     const piece =
       part !== 'bodyFile' || value === null
         ? value
-        : value === '-'
+        : value === '-' || value === '/dev/stdin' || value === '/dev/fd/0'
           ? stdin
-          : isMoved && !value.startsWith('/')
+          : isFileMoved
             ? null
             : { file: value }
-    if (piece === null || piece === undefined) return []
-    if (part === 'title') title = piece
-    else if (program === 'git') bodies.push(piece)
-    else bodies.splice(0, bodies.length, piece)
+    if (part === 'title') title = piece ?? undefined
+    else if (program === 'git') bodies = piece == null ? bodies : [...bodies, piece]
+    else bodies = piece == null ? [] : [piece]
   }
   return title === undefined ? bodies : [title, ...bodies]
 }
@@ -230,11 +232,15 @@ const readCommands = (line: string): Simple[] | undefined => {
       // A redirection and its target; a here-string stands for unreadable
       // input, and a redirection with no target is a syntax error.
       const isHereString = line.startsWith('<<<', i)
+      const start = i
       while (i < line.length && '<>&'.includes(line[i]!)) i++
+      const operator = line.slice(start, i)
       while (line[i] === ' ' || line[i] === '\t') i++
       const target = readWord()
       if (target === undefined || target === '') return undefined
       if (isHereString) current.stdin = null
+      // >&2 and >/dev/null write no file.
+      if (operator.includes('>') && !operator.endsWith('&') && target !== '/dev/null') current.writes = true
     } else {
       const word = readWord()
       if (word === undefined) return undefined

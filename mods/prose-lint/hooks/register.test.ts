@@ -877,3 +877,11 @@ test('a -F file that an earlier command on the line writes is not read', async (
   expect(reads).toEqual([])
   expect(ran).toEqual(["printf 'New' > m.txt && git commit -F m.txt"])
 })
+
+test('a -F file is read after an earlier command that only redirects to a stream or /dev/null', async ($, on) => {
+  const { piped } = bash(on, { files: { '/repo/msg.txt': 'It works.' } })
+
+  await $.tool.call({ tool: 'Bash', command: 'git add . 2>&1 >/dev/null && git commit -F msg.txt' })
+
+  expect(piped.map(run => run.stdin)).toEqual(['It works.'])
+})
