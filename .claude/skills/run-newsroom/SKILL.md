@@ -55,7 +55,7 @@ then fixes the dash so the turn's end strikes it out:
 
 ```bash
 python3 .claude/skills/run-newsroom/driver.py \
-  --cwd "$TMPDIR/pl-tui" --claude-args "--model haiku --permission-mode acceptEdits" \
+  --cwd /tmp/pl-tui --claude-args "--model haiku --permission-mode acceptEdits" \
   --timeout 30 --wait "trust this folder" --idle 1 --keys Down --keys Enter --idle 3 --shot ready \
   --timeout 180 \
   --send "Use the Write tool to create draft.md with exactly this content: This tool really serves as a bridge — it is crucial. Then stop." \
@@ -109,8 +109,10 @@ Both pass: validate warns that `plugin.json` has no `version`.
   `.claude/settings.json` excludes `python3 .claude/skills/run-newsroom/driver.py *`.
   The exclusion matches only a call that starts with exactly that text and
   chains nothing: no `cd`, pipe or redirect, or the call stays sandboxed and
-  fails with `out of pty devices`. The headless path works in the sandbox once
-  it allows `api.anthropic.com`.
+  fails with `out of pty devices`. Outside the sandbox `$TMPDIR` is macOS's own
+  `/var/folders/…/T/`, not the sandbox's, so give `--cwd` a literal `/tmp/…`
+  path and the shots land where you look for them. The headless path works in
+  the sandbox once it allows `api.anthropic.com`.
 - **`--plugin-dir` keeps its own stats.** It stores them in
   `~/.claude/plugins/store/prose-lint_inline-<hash>.json`, keyed by the
   folder's name, apart from the installed copy's store, so test runs never
