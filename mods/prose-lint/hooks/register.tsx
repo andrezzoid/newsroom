@@ -61,8 +61,8 @@ export const register: Register = on => {
     await fold($).catch(() => {})
     await $.command.register({
       name: 'prose-lint',
-      description: 'Lint files or folders with Vale, or `stats [project]` for your writing stats',
-      argumentHint: '<file or folder>… | stats [project]',
+      description: 'Lint files or folders with Vale, `stats [project]` for your writing stats, or `coach` for changes to make from them',
+      argumentHint: '<file or folder>… | stats [project] | coach',
     })
     return next(e)
   })
@@ -83,12 +83,13 @@ export const register: Register = on => {
   // "fix these" can follow.
   on('command.run', { command: 'prose-lint' }, async ($, e) => {
     const paths = e.args.split(/\s+/).filter(Boolean)
-    if (paths.length === 0) return { text: 'Usage: /prose-lint <file or folder>… | stats [project]' }
+    if (paths.length === 0) return { text: 'Usage: /prose-lint <file or folder>… | stats [project] | coach' }
     // `stats` alone, or with a project name (no slash), is the stats view;
     // ./stats lints a folder by that name, and `stats docs/` lints both.
     if (paths[0] === 'stats' && paths.length <= 2 && !paths[1]?.includes('/')) {
       return { text: await statsReport($, paths[1]) }
     }
+    // `coach` alone is the coach; ./coach lints a folder by that name.
     if (paths[0] === 'coach' && paths.length === 1) return coachReport($)
 
     const cwd = await $.session.cwd()

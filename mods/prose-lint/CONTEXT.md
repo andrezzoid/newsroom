@@ -28,6 +28,21 @@ _Avoid_: Ignored, unresolved
 **Fix edit**:
 An edit that removes the words of an alert Claude hasn't fixed yet.
 
+### Stats
+
+**Kept rate**:
+The share of a rule's alerts with a verdict that Claude kept.
+
+**Noise**:
+A rule Claude keeps most alerts of. The fix belongs in the config that ran it, not in Claude's writing.
+_Avoid_: False positive (one alert, where noise is the rule)
+
+**Habit**:
+A rule Claude writes many alerts of and fixes most of. The fix belongs in Claude's instructions, so it stops writing them.
+
+**Proposal**:
+A change the coach has Claude suggest from the stats, with its evidence: turn a noisy rule off or down, add a line against a habit to `CLAUDE.md`, or add a project's terms to a config's vocabulary. Claude applies only the proposals the user picks.
+
 ### Rules
 
 **Bundled rules**:
