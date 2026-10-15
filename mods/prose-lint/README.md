@@ -3,6 +3,7 @@
 A Claude Code plugin that runs [Vale](https://vale.sh) over the prose Claude writes: Markdown, text, and comments in code.
 
 - After each Write or Edit, it lints the file and keeps the alerts on the lines Claude added. Claude reads them and rewrites what it got wrong. The transcript shows them under the diff, with each match underlined. When the turn ends, the alerts that got fixed, by Claude or by you, show struck through.
+- Before a `git commit`, or a `gh` command that creates, edits, comments on or merges a pull request or an issue, it lints the message, title or body the command would publish, as Markdown. When that prose has alerts, the command doesn't run and Claude reads them in its place. Claude rewrites the prose, or sends the same command again, which then runs as is, and tells you why it kept them. The mod reads quoted values, a heredoc, and a `-F` file; a value holding a shell variable or another command runs with no lint.
 - `/prose-lint <file or folder>…` lints whole files. Claude reads the output too, so "fix these" works after it.
 - `/prose-lint stats [project]` shows Claude's writing in this session and the last 30 days: alerts per 1,000 words by week, the rules it trips most with how often it kept their alerts, and docs against code comments. The plugin keeps these counts on your machine, in its own store, with no text but a few example matches per rule.
 
@@ -54,7 +55,7 @@ To keep the bundled rules and add your own, copy `vale/.vale.ini` and its `style
 
 ## Catch what the plugin can't see
 
-The plugin sees only the Write and Edit tools, so a file Claude writes through Bash (`cat >`, `sed`) goes unchecked. A pre-commit hook with the same `.vale.ini` covers every staged file. Save this as `.git/hooks/pre-commit` and make it executable:
+The plugin sees the Write and Edit tools and the prose of `git commit` and the `gh` commands above, so a file Claude writes through Bash (`cat >`, `sed`) goes unchecked. A pre-commit hook with the same `.vale.ini` covers every staged file. Save this as `.git/hooks/pre-commit` and make it executable:
 
 ```sh
 #!/bin/sh

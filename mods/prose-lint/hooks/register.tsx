@@ -9,7 +9,9 @@ import { proseOf } from './command-prose'
 // the call's transcript row shows them under the diff. A project's own
 // .vale.ini decides the rules when there is one; otherwise vale/.vale.ini
 // does. Each edit also feeds the day's stats: words written, alerts written,
-// and, when the turn ends, which alerts Claude fixed or kept.
+// and, when the turn ends, which alerts Claude fixed or kept. Before a git
+// commit or a gh pull request or issue command runs, the same rules lint the
+// prose it would publish, and an alert refuses the command once.
 // types/index.d.ts declares what the rows and the stats keep.
 
 type Hunk = { oldStart: number; newStart: number; lines: readonly string[] }
