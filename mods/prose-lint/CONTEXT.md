@@ -52,5 +52,5 @@ A `git` or `gh` command the mod stopped before it ran, because the prose it woul
 _Avoid_: Blocked command, held command, rejected command
 
 **Row**:
-An edit's entry in the transcript, with its alerts drawn under the diff.
+An edit's or a command's entry in the transcript. An edit's row draws its alerts under the diff; a refused command's row shows the note in place of the command's output.
 _Avoid_: Widget, block
