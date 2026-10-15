@@ -1,0 +1,39 @@
+# Run at --minAlertLevel=error by ../test.sh: vale test's alerts don't show
+# their level, so these cases see only the error-level ones.
+
+- name: the slop fixture
+  about: A copy of noise/slop.md. Only the user's two hard rules must be fixed.
+  input: |
+    # Cache
+
+    The new cache answers most reads from memory — about 90% of them.
+    It keeps hot keys for an hour and evicts the rest.
+
+    Eviction really serves as a safety net when memory runs low.
+
+    This tool really serves as a bridge — it is crucial.
+
+    It just works. It just really works.
+
+    Fast. It's not just a tool, it's a game-changer.
+
+    The log keeps the hash, never the account number itself.
+  want: |
+    3:46:Newsroom.EmDashes:Overuse of em dashes: use a period, comma, colon or parentheses.
+    8:37:Newsroom.EmDashes:Overuse of em dashes: use a period, comma, colon or parentheses.
+    14:23:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
+
+- name: every warning rule stays below error
+  input: |
+    They are design material, not decoration.
+
+    We delve into it.
+
+    Eviction serves as a safety net.
+
+    It really works.
+
+    The tell: the test breaks when you refactor.
+
+    The file was written by the hook.
+  want: ''
