@@ -1,0 +1,45 @@
+# From AiTells.Adverb (see NOTICE). The user's "no adverbs: an adverb usually
+# means the verb is weak". "genuinely", "notably", "quietly" and "seamlessly"
+# are AIVocabulary's, so one word raises one alert.
+extends: existence
+message: "Adverb: cut '%s' and let the verb carry it."
+level: warning
+ignorecase: true
+scope: ~blockquote
+tokens:
+  - simply
+  - actually
+  - really
+  - very
+  - basically
+  - literally
+  - structurally
+  - precisely
+  - exactly
+  - merely
+  - truly
+  - clearly
+  - obviously
+  - essentially
+  - virtually
+  - generally
+  - currently
+  - quickly
+  - easily
+  - just
+  - robustly
+  - arguably
+  - somewhat
+  - fairly
+  - seemingly
+  - importantly
+  - honestly
+  - frankly
+  - candidly
+  - carefully
+  - thoughtfully
+  - properly
+  - effortlessly
+  - cleanly
+  - transparently
+  - authentically
