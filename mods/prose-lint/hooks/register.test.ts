@@ -684,3 +684,12 @@ test("a heredoc in a git commit's -m reaches Vale as its text", async ($, on) =>
 
   expect(piped.map(run => run.stdin)).toEqual(['Add the flag\n\nIt reads the file.'])
 })
+
+test("a git commit's -F file reaches Vale as the file's text", async ($, on) => {
+  const { piped } = bash(on)
+  on('fs.read', (_, e) => (e.path === '/repo/msg.txt' ? { value: 'Add the flag\n\nIt reads the file.\n' } : { deny: 'ENOENT' }))
+
+  await $.tool.call({ tool: 'Bash', command: 'git commit -F msg.txt' })
+
+  expect(piped.map(run => run.stdin)).toEqual(['Add the flag\n\nIt reads the file.\n'])
+})
