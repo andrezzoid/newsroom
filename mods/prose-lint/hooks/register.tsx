@@ -685,6 +685,14 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
 // the user; for Claude alone, how to turn them into proposals.
 const coachReport = async ($: EngineInterface): Promise<{ text: string; context?: string[] }> => {
   const { total, current, configs } = await gather($)
+  const words = wordsOf(total)
+  if (words < COACH_WORDS) {
+    return {
+      text:
+        `prose-lint: not enough writing yet to coach from: ${thousands(words)} words in the last ${STATS_DAYS} days, ` +
+        `and the coach needs ${thousands(COACH_WORDS)}.`,
+    }
+  }
   const root = $.plugin.root.replace(/\/\.claude-plugin\/?$/, '')
   return {
     context: [coaching(`${root}/vale/.vale.ini`)],
@@ -730,6 +738,10 @@ const quoted = (examples: string[] = []): string => examples.map(match => `"${ma
 
 // The rules the coach lists, by written alerts.
 const COACH_RULES = 5
+
+// The words the coach needs before it proposes anything: the rates are per
+// 1,000 words, and below that one alert moves a rule's rate a lot.
+const COACH_WORDS = 1000
 
 // The `count` rules Claude wrote the most alerts of, with their counts summed
 // across kinds.
