@@ -1,0 +1,8 @@
+Newsroom.AIVocabulary warning
+Newsroom.Adverbs warning
+Newsroom.BoldLabels warning
+Newsroom.Copulatives warning
+Newsroom.EmDashes error
+Newsroom.NegativeParallelisms warning
+Newsroom.NeverTag error
+Newsroom.Passive warning
