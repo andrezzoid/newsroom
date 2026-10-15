@@ -20,3 +20,23 @@
   rule: NeverTag.yml
   input: If it fails, never retry the call. When in doubt, never guess.
   want: ''
+
+- name: a tag after a mid-sentence when, after, before or once
+  about: The fix for conditions hid these tags; poke-holes found all five unflagged.
+  rule: NeverTag.yml
+  input: |
+    Keep the hash when you log a request, never the account number itself.
+
+    Store the token after login, never the password.
+
+    The hook runs after each Write, never on Read.
+
+    It runs once, never twice.
+
+    The cache refreshes before each request, never in the background.
+  want: |
+    1:37:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
+    3:28:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
+    5:31:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
+    7:13:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
+    9:40:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
