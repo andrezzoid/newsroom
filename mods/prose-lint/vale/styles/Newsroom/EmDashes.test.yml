@@ -1,0 +1,17 @@
+- name: an em dash
+  rule: EmDashes.yml
+  input: The cache answers most reads from memory — about 90% of them.
+  want: |
+    1:43:Newsroom.EmDashes:Overuse of em dashes: use a period, comma, colon or parentheses.
+
+- name: an en dash with a space on each side
+  rule: EmDashes.yml
+  input: Fast – very fast.
+  want: |
+    1:6:Newsroom.EmDashes:Overuse of em dashes: use a period, comma, colon or parentheses.
+
+- name: an en dash in a range
+  about: AiTells.Dash flagged "3–5" and "[T 10:30–11:00]" in the user's docs.
+  rule: EmDashes.yml
+  input: Aim for 1–3 entry points, from 10:30–11:00.
+  want: ''

@@ -1,0 +1,6 @@
+(?i)implement
+(?i)implementation
+(?i)seam
+(?i)lens
+(?i)harness
+(?i)ubiquitous
