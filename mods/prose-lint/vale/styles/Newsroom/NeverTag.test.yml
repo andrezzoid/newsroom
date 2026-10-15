@@ -15,14 +15,8 @@
   input: She left, never to return.
   want: ''
 
-- name: an instruction after a condition
-  about: Code review found "If it fails, never retry the call." flagged at error level.
-  rule: NeverTag.yml
-  input: If it fails, never retry the call. When in doubt, never guess.
-  want: ''
-
 - name: a tag after a mid-sentence when, after, before or once
-  about: The fix for conditions hid these tags; poke-holes found all five unflagged.
+  about: An exemption for conditions hid these; AiTells.NeverTag flags all five.
   rule: NeverTag.yml
   input: |
     Keep the hash when you log a request, never the account number itself.
