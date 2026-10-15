@@ -602,6 +602,16 @@ test("/prose-lint coach says when this session hasn't written yet", async ($, on
   expect(ran.text?.split('\n')[0]).toBe('**This session** · no prose written yet')
 })
 
+test('/prose-lint coach heads its table with the window it covers', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text).toContain('**prose-lint coach** · last 30 days · all projects · 1,300 words\n\n| Rule |')
+})
+
 test('/prose-lint coach lists the five rules with the most written alerts, most first', async ($, on) => {
   storeIn(on, coachHistory())
   mock.clock(on, { now: NOON })
