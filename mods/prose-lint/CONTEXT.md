@@ -35,7 +35,7 @@ The Vale config, rules and vocabulary the mod ships, used where neither a projec
 _Avoid_: Default config, our rules
 
 **Project config**:
-A `.vale.ini` in the edited file's folder or a folder above it.
+A `.vale.ini` in the edited file's folder or a folder above it; for a command's prose, the session's folder or a folder above it.
 _Avoid_: Team config, local config
 
 **User config**:
@@ -44,8 +44,12 @@ The user's global Vale config, `~/.config/vale/.vale.ini`.
 ### What Claude and the user see
 
 **Note**:
-What Claude reads after an edit with new alerts.
+What Claude reads after an edit with new alerts, or in place of a refused command's result.
 _Avoid_: Feedback, context
+
+**Refused command**:
+A `git` or `gh` command the mod stopped before it ran, because the prose it would publish (a commit message, or a pull request's or issue's title, body or comment) has alerts. The same command text sent again runs as is, once.
+_Avoid_: Blocked command, held command, rejected command
 
 **Row**:
 An edit's entry in the transcript, with its alerts drawn under the diff.
