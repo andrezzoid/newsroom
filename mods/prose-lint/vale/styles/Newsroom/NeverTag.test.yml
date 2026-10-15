@@ -1,0 +1,16 @@
+- name: a ", never X" tag after a claim
+  rule: NeverTag.yml
+  input: The log keeps the hash, never the account number itself.
+  want: |
+    1:23:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
+
+- name: a ", never X" tag after a place
+  rule: NeverTag.yml
+  input: Tests live at seams, never against internals.
+  contains: Newsroom.NeverTag
+
+- name: an infinitive after never
+  about: AiTells.NeverTag leaves ", never to" alone.
+  rule: NeverTag.yml
+  input: She left, never to return.
+  want: ''
