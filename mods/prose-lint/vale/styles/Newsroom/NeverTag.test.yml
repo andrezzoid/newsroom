@@ -14,3 +14,9 @@
   rule: NeverTag.yml
   input: She left, never to return.
   want: ''
+
+- name: an instruction after a condition
+  about: Code review found "If it fails, never retry the call." flagged at error level.
+  rule: NeverTag.yml
+  input: If it fails, never retry the call. When in doubt, never guess.
+  want: ''

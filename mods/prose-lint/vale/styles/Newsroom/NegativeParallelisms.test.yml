@@ -31,5 +31,5 @@
 
 - name: a plain negation
   rule: NegativeParallelisms.yml
-  input: It does not run on Windows, but it runs on Linux. It no longer evicts, no matter the load.
+  input: It does not run on Windows, but it runs on Linux. It no longer evicts, no matter the load. There is no cache, no matter the load.
   want: ''
