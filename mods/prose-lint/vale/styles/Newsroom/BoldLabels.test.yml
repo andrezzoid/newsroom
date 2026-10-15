@@ -1,0 +1,23 @@
+- name: a label, a colon and its explanation
+  rule: BoldLabels.yml
+  input: 'The tell: the test breaks when you refactor.'
+  want: |
+    1:1:Newsroom.BoldLabels:Bold label: fold 'The tell:' into the sentence it introduces.
+
+- name: a longer label
+  rule: BoldLabels.yml
+  input: "The key thing to avoid: don't make shallow modules."
+  contains: "'The key thing to avoid:'"
+
+- name: a dramatic label before a short clause
+  rule: BoldLabels.yml
+  input: 'The catch: it leaks.'
+  contains: Newsroom.BoldLabels
+
+- name: a clause before the colon, or a short value after it
+  rule: BoldLabels.yml
+  input: |
+    The following options are available: fast mode and the plain one.
+
+    The output: green.
+  want: ''
