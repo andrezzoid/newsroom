@@ -15,6 +15,9 @@ A revert cannot undo a change here, so it never merges without a human.
 
 - `.claude-plugin/marketplace.json`: renaming or removing a plugin breaks existing installs until users reinstall
 - `scripts/gates.sh`: it holds the gates, so a pull request that edits it changes the checks its own merge has to pass
+- `mods/prose-lint/vale/.vale.ini`: the gates lint every file with it, so editing it changes what they check
+- `mods/prose-lint/vale/test.sh`: a gate, so editing it changes what the gates check
+- `.githooks/**`: it decides what runs before each commit
 
 ## Issue tracker
 
