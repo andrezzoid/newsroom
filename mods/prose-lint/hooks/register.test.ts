@@ -637,6 +637,21 @@ test('/prose-lint coach tells Claude to apply only the changes the user picks', 
   expect(ran.context?.join('\n')).toContain('Apply only the changes the user picks')
 })
 
+test('/prose-lint coach under 1,000 words says there is not enough writing yet', async ($, on) => {
+  // 999 words: this session's 300 and 699 of another day's.
+  const thin = coachHistory()
+  thin.set('stats/2026-10-08/newsroom', { ...(thin.get('stats/2026-10-08/newsroom') as object), words: { docs: 699 } })
+  storeIn(on, thin)
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text).toBe(
+    'prose-lint: not enough writing yet to coach from: 999 words in the last 30 days, and the coach needs 1,000.',
+  )
+})
+
 test("a session's start folds earlier days into one record per day and project", async ($, on) => {
   const day = (written: number) => ({
     configs: ['bundled rules'],
