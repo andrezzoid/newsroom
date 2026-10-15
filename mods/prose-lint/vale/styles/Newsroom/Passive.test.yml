@@ -1,0 +1,18 @@
+- name: a regular and an irregular participle
+  rule: Passive.yml
+  input: The file was written by the hook. The flag is used once.
+  want: |
+    1:10:Newsroom.Passive:Passive voice: name who does it and make them the subject.
+    1:44:Newsroom.Passive:Passive voice: name who does it and make them the subject.
+
+- name: a code comment describes state
+  about: The noise test found 20 such alerts in 38 code files.
+  input: |
+    // The child has been reaped.
+    const x = 1
+  format: ts
+  absent: Newsroom.Passive
+
+- name: a document, through the config
+  input: The file was written by the hook.
+  contains: Newsroom.Passive
