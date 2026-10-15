@@ -1,0 +1,35 @@
+- name: not just X, it's Y
+  rule: NegativeParallelisms.yml
+  input: It's not just a tool, it's a game-changer.
+  want: |
+    1:6:Newsroom.NegativeParallelisms:Negative parallelism: state the positive claim and drop the contrast.
+
+- name: not only X, but also Y
+  rule: NegativeParallelisms.yml
+  input: Not only does it run fast, but it also uses less memory.
+  contains: Newsroom.NegativeParallelisms
+
+- name: is X, not Y
+  rule: NegativeParallelisms.yml
+  input: They are design material, not decoration.
+  contains: Newsroom.NegativeParallelisms
+
+- name: it's not X, it's Y
+  rule: NegativeParallelisms.yml
+  input: It's not a bug, it's a feature.
+  contains: Newsroom.NegativeParallelisms
+
+- name: no X, no Y, no Z
+  rule: NegativeParallelisms.yml
+  input: No tests, no error handling, no abstractions.
+  contains: Newsroom.NegativeParallelisms
+
+- name: no X, no Y, just Z
+  rule: NegativeParallelisms.yml
+  input: No meetings, no tickets, just code.
+  contains: Newsroom.NegativeParallelisms
+
+- name: a plain negation
+  rule: NegativeParallelisms.yml
+  input: It does not run on Windows, but it runs on Linux. It no longer evicts, no matter the load.
+  want: ''
