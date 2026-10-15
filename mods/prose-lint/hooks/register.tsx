@@ -651,10 +651,7 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
 
   const sessionLine = wordsOf(current) > 0 ? [sessionSummary(current), ''] : []
 
-  const rules = Object.entries(total.rules)
-    .map(([check, byKind]) => ({ check, ...sumCounts(Object.values(byKind)) }))
-    .sort((a, b) => b.written - a.written)
-    .slice(0, 8)
+  const rules = topRules(total, 8)
   const keptRate = (c: Counts) => (c.kept + c.fixed > 0 ? `${Math.round((100 * c.kept) / (c.kept + c.fixed))}%` : '–')
 
   return [
@@ -690,9 +687,28 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
 // /prose-lint coach: this session's line, then hands Claude the stats to
 // propose changes from.
 const coachReport = async ($: EngineInterface): Promise<{ text: string }> => {
-  const { current } = await gather($)
-  return { text: sessionSummary(current) }
+  const { total, current } = await gather($)
+  return {
+    text: [
+      sessionSummary(current),
+      '',
+      '| Rule |',
+      '| - |',
+      ...topRules(total, COACH_RULES).map(rule => `| ${rule.check} |`),
+    ].join('\n'),
+  }
 }
+
+// The rules the coach lists, by written alerts.
+const COACH_RULES = 5
+
+// The `count` rules Claude wrote the most alerts of, with their counts summed
+// across kinds.
+const topRules = (stats: DayStats, count: number): ({ check: string } & Counts)[] =>
+  Object.entries(stats.rules)
+    .map(([check, byKind]) => ({ check, ...sumCounts(Object.values(byKind)) }))
+    .sort((a, b) => b.written - a.written)
+    .slice(0, count)
 
 // The stats of the last STATS_DAYS days, for every project or one: summed,
 // by week, and this session's own records, which a project's view counts
