@@ -580,3 +580,30 @@ test('a vale failure leaves the result alone', async ($, on) => {
 
   expect(ran.context).toBeUndefined()
 })
+
+// A session where Vale reports `alerts` on any prose piped to it. `ran` holds
+// each Bash command that got past the mod; `piped`, what Vale read and how.
+const bash = (on: On, alerts: unknown[] = [alert(1, 'just')]) => {
+  const ran: string[] = []
+  const piped: { argv: readonly string[]; stdin?: string }[] = []
+  on('session.cwd', () => ({ value: '/repo' }))
+  on('fs.stat', () => ({ deny: 'ENOENT' }))
+  on('process.run', (_, e) => {
+    if (isPiped(e.argv)) piped.push({ argv: e.argv, stdin: e.stdin })
+    return vale(alerts)
+  })
+  on('tool.call', { tool: 'Bash' }, (_, e) => {
+    ran.push(e.command)
+    return { result: { stdout: '', stderr: '', interrupted: false } }
+  })
+  return { ran, piped }
+}
+
+test('a git commit whose message has an alert does not run', async ($, on) => {
+  const { ran } = bash(on)
+
+  const result = await $.tool.call({ tool: 'Bash', command: 'git commit -m "It just works"' })
+
+  expect(result.deny).toBeDefined()
+  expect(ran).toEqual([])
+})
