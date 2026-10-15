@@ -53,12 +53,6 @@ const open = atom({ plugin: 'prose-lint', key: 'open' } as const, [] as OpenAler
 // The window /prose-lint stats reads, in days, today included.
 const STATS_DAYS = 30
 
-// Set by /prose-lint coach. A command's context waits for the user's next
-// prompt, and a command.run hook can't submit one (it would wait on the turn
-// the hook holds), so the end of the command's turn submits it: Claude then
-// answers the coach's table without the user asking.
-let coachPrompt = false
-
 // How long the store keeps a day's stats: a year of trends, at about a
 // kilobyte per day and project, far below the store's 4 MiB limit.
 const KEEP_DAYS = 365
@@ -93,10 +87,6 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     const ended = await next(e)
     if (!e.agentId && e.reason === 'answer') await lintOpen($).catch(() => {})
-    if (!e.agentId && coachPrompt) {
-      coachPrompt = false
-      if (!e.isAborted) void $.prompt.submit({ text: 'Propose changes from the /prose-lint coach table.' }).catch(() => {})
-    }
     return ended
   })
 
@@ -721,7 +711,11 @@ const coachReport = async ($: EngineInterface): Promise<{ text: string; context?
         `and the coach needs ${thousands(COACH_WORDS)}.`,
     }
   }
-  coachPrompt = true
+  // A command's context waits for the user's next prompt, and a command.run
+  // hook can't submit one (it would wait on the turn the hook holds). A local
+  // command ends no turn either, so a timer submits it once the hook returns,
+  // and Claude answers the table without the user asking.
+  $.clock.after(0, () => void $.prompt.submit({ text: 'Propose changes from the /prose-lint coach table.' }).catch(() => {}))
   return {
     context: [coaching(bundledConfig($))],
     text: [

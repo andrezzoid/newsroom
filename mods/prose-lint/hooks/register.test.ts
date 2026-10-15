@@ -643,13 +643,11 @@ test('/prose-lint coach starts a turn, so Claude proposes without the user askin
   const prompts: string[] = []
   on('prompt.submit', (_, e) => (prompts.push(e.text), { text: e.text }))
   storeIn(on, coachHistory())
-  mock.clock(on, { now: NOON })
+  const clock = mock.clock(on, { now: NOON })
   on('session.id', () => ({ value: 's1' }))
 
-  on('turn.complete', () => ({ text: '' }))
-
   await $.command.run(coach)
-  await $.turn.complete({ answer: '', durationMs: 0, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
 
   expect(prompts).toEqual(['Propose changes from the /prose-lint coach table.'])
 })
