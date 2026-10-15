@@ -652,6 +652,16 @@ test('/prose-lint coach under 1,000 words says there is not enough writing yet',
   )
 })
 
+test('/prose-lint coach under 1,000 words hands Claude nothing', async ($, on) => {
+  storeIn(on, new Map([[STATS, { ...(coachHistory().get(STATS) as object) }]]))
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.context).toBeUndefined()
+})
+
 test("a session's start folds earlier days into one record per day and project", async ($, on) => {
   const day = (written: number) => ({
     configs: ['bundled rules'],
