@@ -1,0 +1,14 @@
+# From ai-tells' LabelAndExplain (see NOTICE). The user's "never a bold label
+# with a clipped noun phrase": a label and a colon in place of a sentence.
+extends: existence
+message: "Bold label: fold '%s' into the sentence it introduces."
+level: warning
+nonword: true
+scope: ~heading
+tokens:
+  # A noun phrase led by a determiner, a colon, then a lowercase clause of 20
+  # or more characters. The lookbehind skips a clause before the colon ("The
+  # options are available:"), and the lookahead keeps the clause out of %s.
+  - '\b(?:The|A|An|One|Our|Their|Its) (?:[a-z][a-z''-]* ){0,3}[a-z][a-z''-]*(?<! (?:is|are|was|were|be|been|being) [a-z][a-z''-]{0,20}):(?= [a-z][^.!?:]{20,}[.!?])'
+  # Labels that read as one whatever follows them.
+  - '\bThe (?:price|catch|kicker|upshot|tradeoff|trade-off|trick|cost|downside|flip side|bottom line|takeaway|result|answer|reason|lesson|moral|point|pitch|fix|payoff|tell):'

@@ -5,7 +5,6 @@ extends: existence
 message: "Adverb: cut '%s' and let the verb carry it."
 level: warning
 ignorecase: true
-scope: ~blockquote
 tokens:
   - simply
   - actually

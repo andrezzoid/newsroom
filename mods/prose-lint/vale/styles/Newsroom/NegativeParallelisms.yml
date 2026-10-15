@@ -6,7 +6,6 @@ message: "Negative parallelism: state the positive claim and drop the contrast."
 level: warning
 nonword: true
 ignorecase: true
-scope: ~blockquote
 tokens:
   - '\bnot\s+(?:just|only|merely)\b[^.!?]{0,80}\b(?:but|it[''’]?s)\b'
   - '\bit[''’]?s\s+not\b[^.!?]{0,60},\s*it[''’]?s\b'

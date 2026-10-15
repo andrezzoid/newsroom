@@ -21,4 +21,6 @@
   about: Every rule skips quotations, so Claude never rewrites someone else's words.
   input: |
     > It really works — and it serves as a test, never a demo.
+    >
+    > The tell: the test breaks when you refactor, and it delves into the details.
   want: ''

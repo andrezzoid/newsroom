@@ -4,7 +4,6 @@ extends: existence
 message: "Overuse of em dashes: use a period, comma, colon or parentheses."
 level: error
 nonword: true
-scope: ~blockquote
 tokens:
   - '—'
   - '(?<=\s)–(?=\s)'

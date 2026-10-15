@@ -6,7 +6,6 @@ extends: existence
 message: "AI vocabulary: replace '%s' with a plainer word."
 level: warning
 ignorecase: true
-scope: ~blockquote
 tokens:
   # 2023 to mid-2024 (GPT-4)
   - additionally
