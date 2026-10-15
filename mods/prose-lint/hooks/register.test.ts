@@ -259,24 +259,28 @@ const created = (filePath: string) => () => ({
 })
 
 // A Write, w1, of a new /repo/notes.md in which Vale finds these alerts.
-const writeWith = async ($: Engine, on: On, alerts: unknown[]) => {
+const writeWith = ($: Engine, on: On, alerts: unknown[]) => {
   on('fs.stat', () => dir)
   on('process.run', (_, e) => (isBundled(e.argv) ? vale(alerts, 1) : noConfig))
   on('tool.call', { tool: 'Write' }, created('/repo/notes.md'))
-  await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/repo/notes.md', content: '...' })
+  return $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/repo/notes.md', content: '...' })
 }
 
-// The terminal row of the Write w1, once a Write with these alerts drew it.
-const rowOf = async ($: Engine, on: On, alerts: unknown[]) => {
-  on('ui.render', { component: 'ToolResult' }, () => ({ type: 'engine', ref: 0 }))
-  await writeWith($, on, alerts)
-  return $.ui.mount({
+// The terminal row of the Write w1 as it stands now.
+const mountRow = ($: Engine) =>
+  $.ui.mount({
     plugin: 'prose-lint',
     surface: 'terminal',
     component: 'ToolResult',
     requestId: 'w1',
     props: { tool_use_id: 'w1', tool: 'Write', output: {}, isErrored: false },
   })
+
+// The terminal row of the Write w1, once a Write with these alerts drew it.
+const rowOf = async ($: Engine, on: On, alerts: unknown[]) => {
+  on('ui.render', { component: 'ToolResult' }, () => ({ type: 'engine', ref: 0 }))
+  await writeWith($, on, alerts)
+  return mountRow($)
 }
 
 test("a Write's row counts its new alerts", async ($, on) => {
@@ -303,11 +307,7 @@ test("a Write's row names each open alert's rule in full after its message", asy
 })
 
 test("Claude's note gives an alert's message but not its rule, to cost fewer tokens", async ($, on) => {
-  on('fs.stat', () => dir)
-  on('process.run', (_, e) => (isBundled(e.argv) ? vale([emDash], 1) : noConfig))
-  on('tool.call', { tool: 'Write' }, created('/repo/notes.md'))
-
-  const ran = await $.tool.call({ tool: 'Write', file_path: '/repo/notes.md', content: '...' })
+  const ran = await writeWith($, on, [emDash])
 
   expect(ran.context?.[0]).toContain('Use a comma or a period, not an em dash.')
   expect(ran.context?.[0]).not.toContain('EmDashes')
@@ -365,13 +365,7 @@ test("the turn's end counts what Claude fixed and what it kept", async ($, on) =
     rules: { 'AiTells.Adverb': { docs: { written: 2, fixed: 1, kept: 1 } } },
   })
   // The terminal row strikes out the fixed match and keeps the other underlined.
-  const ui = await $.ui.mount({
-    plugin: 'prose-lint',
-    surface: 'terminal',
-    component: 'ToolResult',
-    requestId: 'w1',
-    props: { tool_use_id: 'w1', tool: 'Write', output: {}, isErrored: false },
-  })
+  const ui = await mountRow($)
   const struck = (await ui.findAll({ type: 'Text' })).filter(element => element.props.strikethrough === true)
   expect(struck.map(element => element.text)).toContain('really')
   expect(struck.map(element => element.text)).not.toContain('just')
@@ -392,13 +386,7 @@ test("a fixed alert's row names its rule in full after the struck message", asyn
   await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/work/newsroom/notes.md', content: '...' })
   await $.turn.complete({ answer: '', durationMs: 0, isAborted: false, turnId: 't1', reason: 'answer' })
 
-  const ui = await $.ui.mount({
-    plugin: 'prose-lint',
-    surface: 'terminal',
-    component: 'ToolResult',
-    requestId: 'w1',
-    props: { tool_use_id: 'w1', tool: 'Write', output: {}, isErrored: false },
-  })
+  const ui = await mountRow($)
   const struck = (await ui.findAll({ type: 'Text' })).filter(element => element.props.strikethrough === true)
   expect(struck.map(element => element.text)).toContain('Use a comma or a period, not an em dash.')
   expect(
@@ -446,13 +434,7 @@ test('a kept alert fixed in a later turn turns fixed on its row, and its stats s
   await $.turn.complete({ ...answered, turnId: 't2' })
 
   expect(store.get(STATS)).toMatchObject({ rules: { 'AiTells.Adverb': { docs: { written: 1, fixed: 0, kept: 1 } } } })
-  const ui = await $.ui.mount({
-    plugin: 'prose-lint',
-    surface: 'terminal',
-    component: 'ToolResult',
-    requestId: 'w1',
-    props: { tool_use_id: 'w1', tool: 'Write', output: {}, isErrored: false },
-  })
+  const ui = await mountRow($)
   expect((await ui.find({ type: 'Text', text: 'all fixed' })) !== undefined).toBe(true)
 })
 
