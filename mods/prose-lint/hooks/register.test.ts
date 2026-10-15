@@ -541,6 +541,55 @@ test("/prose-lint stats with a project counts only that project, and this sessio
   expect(ran.text).not.toContain('This session')
 })
 
+const counts = (written: number, fixed: number, kept: number) => ({ docs: { written, fixed, kept } })
+
+// 1,300 words of writing: a day under the bundled rules, then this session's
+// record under a project's config. Six rules, so the coach's top five leave
+// Copulatives out.
+const coachHistory = () =>
+  new Map<string, unknown>([
+    [
+      'stats/2026-10-08/newsroom',
+      {
+        configs: ['bundled rules'],
+        words: { docs: 1000 },
+        rules: {
+          'Newsroom.Adverbs': counts(30, 27, 3),
+          'Newsroom.Passive': counts(20, 2, 18),
+          'Newsroom.AIVocabulary': counts(12, 6, 6),
+          'Newsroom.EmDashes': counts(8, 8, 0),
+          'Newsroom.Copulatives': counts(2, 2, 0),
+        },
+        fixEdits: 4,
+        examples: { 'Newsroom.Adverbs': ['just', 'really', 'very'], 'Newsroom.Passive': ['was written'] },
+      },
+    ],
+    [
+      STATS,
+      {
+        configs: ['/repo/.vale.ini'],
+        words: { docs: 300 },
+        rules: { 'Team.Terms': counts(5, 1, 4) },
+        fixEdits: 1,
+        examples: { 'Team.Terms': ['newsroom', 'Vale'] },
+      },
+    ],
+  ])
+
+const coach = stats('coach')
+
+test('/prose-lint coach leads with this session\'s line', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text).toContain(
+    '**This session** · 300 words · 16.7 alerts and 3.3 fix edits per 1,000 words · 5 written, 1 fixed, 4 kept',
+  )
+})
+
 test("a session's start folds earlier days into one record per day and project", async ($, on) => {
   const day = (written: number) => ({
     configs: ['bundled rules'],
