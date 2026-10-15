@@ -34,3 +34,31 @@
     5:31:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
     7:13:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
     9:40:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
+
+- name: a tag whose object is code, a quote or starts with to-
+  about: AiTells.NeverTag flags these; a word-only class after "never" missed them.
+  rule: NeverTag.yml
+  input: |
+    Use `bun`, never `npm`.
+
+    Edit the YAML, never "the JSON".
+
+    Make a to-do list, never to-dos on paper.
+  contains:
+    - '1:'
+    - '3:'
+    - '5:'
+
+- name: a tag after a wrapped line, and after a condition
+  about: |
+    A condition still raises the alert, as in AiTells.NeverTag: an exemption
+    anchored to a line start hid the wrapped tag here.
+  rule: NeverTag.yml
+  input: |
+    Store the token
+    after login, never the password.
+
+    If it fails, never retry the call.
+  want: |
+    2:12:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
+    4:12:Newsroom.NeverTag:", never X" tag: state the behavior once and stop.
