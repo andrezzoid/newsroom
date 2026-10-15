@@ -1,0 +1,24 @@
+- name: a filler adverb
+  rule: Adverbs.yml
+  input: It really works.
+  want: |
+    1:4:Newsroom.Adverbs:Adverb: cut 'really' and let the verb carry it.
+
+- name: in a code comment
+  input: |
+    // It really works.
+    const x = 1
+  format: ts
+  want: |
+    1:7:Newsroom.Adverbs:Adverb: cut 'really' and let the verb carry it.
+
+- name: an adverb AIVocabulary also holds
+  about: One word raises one alert, from AIVocabulary.
+  input: It quietly works, genuinely, seamlessly and notably.
+  absent: Newsroom.Adverbs
+
+- name: a blockquote
+  about: Every rule skips quotations, so Claude never rewrites someone else's words.
+  input: |
+    > It really works — and it serves as a test, never a demo.
+  want: ''
