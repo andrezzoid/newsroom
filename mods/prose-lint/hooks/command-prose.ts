@@ -13,7 +13,14 @@ export type Piece = string | { file: string }
 // never blocks what it cannot read.
 export const proseOf = (command: string): Piece[] => {
   const commands = readCommands(command)
-  return commands ? commands.flatMap(prosePieces) : []
+  if (!commands) return []
+  // A cd earlier on the line moves the folder a relative -F path starts from.
+  let hasMoved = false
+  return commands.flatMap(simple => {
+    const pieces = prosePieces(simple, hasMoved)
+    if (simple.words[0] === 'cd' || simple.words[0] === 'pushd') hasMoved = true
+    return pieces
+  })
 }
 
 // Which flag carries which part of the prose, by the flag's short letter and
@@ -22,9 +29,9 @@ type Part = 'title' | 'body' | 'bodyFile'
 type Flags = Record<string, Part>
 
 const GIT_COMMIT: Flags = { m: 'body', message: 'body', F: 'bodyFile', file: 'bodyFile' }
-const GH_TITLED: Flags = { t: 'title', title: 'title', b: 'body', body: 'body', F: 'bodyFile', 'body-file': 'bodyFile' }
 const GH_COMMENT: Flags = { b: 'body', body: 'body', F: 'bodyFile', 'body-file': 'bodyFile' }
-const GH_MERGE: Flags = { t: 'title', subject: 'title', b: 'body', body: 'body', F: 'bodyFile', 'body-file': 'bodyFile' }
+const GH_TITLED: Flags = { t: 'title', title: 'title', ...GH_COMMENT }
+const GH_MERGE: Flags = { t: 'title', subject: 'title', ...GH_COMMENT }
 
 const GH: Record<string, Flags> = {
   'pr create': GH_TITLED,
@@ -44,17 +51,23 @@ type Word = string | null
 type Simple = { words: Word[]; stdin?: Word }
 
 // The prose of one simple command, when the command is a git commit or a gh
-// command in the table and the reader can follow all its prose. git joins its -m messages as
-// paragraphs; gh keeps the last of each flag.
-const prosePieces = ({ words, stdin }: Simple): Piece[] => {
+// command in the table and the reader can follow all its prose. git joins
+// its -m messages as paragraphs; gh keeps the last of each flag. A relative
+// -F path after a cd or a git -C names a file in a folder the reader doesn't
+// know, so it can't follow that path.
+const prosePieces = ({ words, stdin }: Simple, hasMoved: boolean): Piece[] => {
   const start = words.findIndex(word => word === null || !/^[A-Za-z_]\w*=/.test(word))
   const [program, ...rest] = start < 0 ? [] : words.slice(start)
   let flags: Flags | undefined
   let args: Word[] = []
+  let isMoved = hasMoved
   if (program === 'git') {
     // Global options come before the subcommand; -C and -c take a value.
     let i = 0
-    while (typeof rest[i] === 'string' && rest[i]!.startsWith('-')) i += rest[i] === '-C' || rest[i] === '-c' ? 2 : 1
+    while (typeof rest[i] === 'string' && rest[i]!.startsWith('-')) {
+      if (rest[i] === '-C') isMoved = true
+      i += rest[i] === '-C' || rest[i] === '-c' ? 2 : 1
+    }
     if (rest[i] === 'commit') [flags, args] = [GIT_COMMIT, rest.slice(i + 1)]
   } else if (program === 'gh') {
     flags = GH[`${rest[0]} ${rest[1]}`]
@@ -65,7 +78,14 @@ const prosePieces = ({ words, stdin }: Simple): Piece[] => {
   let title: Piece | undefined
   const bodies: Piece[] = []
   for (const { part, value } of flagValues(args, flags)) {
-    const piece = value === '-' && part === 'bodyFile' ? stdin : part === 'bodyFile' && value !== null ? { file: value } : value
+    const piece =
+      part !== 'bodyFile' || value === null
+        ? value
+        : value === '-'
+          ? stdin
+          : isMoved && !value.startsWith('/')
+            ? null
+            : { file: value }
     if (piece === null || piece === undefined) return []
     if (part === 'title') title = piece
     else if (program === 'git') bodies.push(piece)
@@ -111,7 +131,7 @@ const splitOnce = (text: string, separator: string): [string, string | undefined
 const readCommands = (line: string): Simple[] | undefined => {
   const commands: Simple[] = []
   let current: Simple = { words: [] }
-  const heredocs: { simple: Simple; delimiter: string; isQuoted: boolean; stripTabs: boolean }[] = []
+  const heredocs: ({ simple: Simple } & HeredocHead)[] = []
   let i = 0
 
   const endCommand = () => {
@@ -197,14 +217,11 @@ const readCommands = (line: string): Simple[] | undefined => {
       endCommand()
       i++
     } else if (line.startsWith('<<', i) && !line.startsWith('<<<', i)) {
-      i += 2
-      const stripTabs = line[i] === '-'
-      if (stripTabs) i++
-      const match = /^[ \t]*(?:'([^'\n]+)'|"([^"\n]+)"|\\?([\w.-]+))/.exec(line.slice(i))
-      if (!match) return undefined
-      i += match[0].length
+      const head = heredocHead(line, i)
+      if (!head) return undefined
+      i = head.end
       current.stdin = null
-      heredocs.push({ simple: current, delimiter: match[1] ?? match[2] ?? match[3]!, isQuoted: !match[3] || match[0].includes('\\'), stripTabs })
+      heredocs.push({ simple: current, ...head })
     } else if ((char === '<' || char === '>') && line[i + 1] === '(') {
       // A process substitution: a word the reader can't run.
       i = closing(line, i + 1, '(', ')')
@@ -233,12 +250,30 @@ const readCommands = (line: string): Simple[] | undefined => {
 // substitution ends. The value is null when an unquoted delimiter lets the
 // body expand something. Undefined for any other substitution.
 const catHeredoc = (line: string, at: number): { value: Word; end: number } | undefined => {
-  const head = /^\$\(\s*cat\s*<<(-?)[ \t]*(?:'([^'\n]+)'|"([^"\n]+)"|([\w.-]+))[ \t]*\n/.exec(line.slice(at))
-  if (!head) return undefined
-  const { body, end, isClosed } = heredocBody(line, at + head[0].length, head[2] ?? head[3] ?? head[4]!, head[1] === '-')
+  const cat = /^\$\(\s*cat\s*/.exec(line.slice(at))
+  const head = cat && heredocHead(line, at + cat[0].length)
+  const newline = head && /^[ \t]*\n/.exec(line.slice(head.end))
+  if (!head || !newline) return undefined
+  const { body, end, isClosed } = heredocBody(line, head.end + newline[0].length, head.delimiter, head.stripTabs)
   const close = /^\s*\)/.exec(line.slice(end))
   if (!isClosed || !close) return undefined
-  return { value: literal(body.replace(/\n+$/, ''), !head[4]), end: end + close[0].length }
+  return { value: literal(body.replace(/\n+$/, ''), head.isQuoted), end: end + close[0].length }
+}
+
+// A heredoc's operator and delimiter at `at`: <<EOF, <<-EOF, <<'EOF',
+// <<"EOF" or <<\EOF. Any quote or backslash stops the body's expansion, and
+// <<- strips the body's leading tabs. `end` is the index past the delimiter.
+type HeredocHead = { delimiter: string; isQuoted: boolean; stripTabs: boolean; end: number }
+
+const heredocHead = (line: string, at: number): HeredocHead | undefined => {
+  const match = /^<<(-?)[ \t]*(?:'([^'\n]+)'|"([^"\n]+)"|(\\?)([\w.-]+))/.exec(line.slice(at))
+  if (!match) return undefined
+  return {
+    delimiter: match[2] ?? match[3] ?? match[5]!,
+    isQuoted: match[5] === undefined || match[4] === '\\',
+    stripTabs: match[1] === '-',
+    end: at + match[0].length,
+  }
 }
 
 // A heredoc's body: its lines from `at` up to the one that holds only
