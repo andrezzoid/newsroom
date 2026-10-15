@@ -616,6 +616,17 @@ test('/prose-lint coach shows each rule\'s written count, kept rate, examples an
   expect(ran.text).toContain('| Team.Terms | 5 | 80% | "newsroom", "Vale" | /repo/.vale.ini |')
 })
 
+test('/prose-lint coach asks Claude, out of the user\'s sight, for up to three changes', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.context?.join('\n')).toContain('Propose up to three changes')
+  expect(ran.text).not.toContain('Propose')
+})
+
 test("a session's start folds earlier days into one record per day and project", async ($, on) => {
   const day = (written: number) => ({
     configs: ['bundled rules'],
