@@ -581,17 +581,19 @@ test('a vale failure leaves the result alone', async ($, on) => {
   expect(ran.context).toBeUndefined()
 })
 
-// A session where Vale reports `alerts` on piped prose that says "just", and
-// none on other prose. `ran` holds
-// each Bash command that got past the mod; `piped`, what Vale read and how.
-const bash = (on: On, alerts: unknown[] = [alert(1, 'just')]) => {
+// A session where Vale reports an alert on piped prose that says "just", and
+// none on other prose. Without `hasConfig`, Vale finds no config of the
+// project's or user's, so only the bundled rules answer. `ran` holds each
+// Bash command that got past the mod; `piped`, what Vale read and how.
+const bash = (on: On, { hasConfig = true } = {}) => {
   const ran: string[] = []
   const piped: { argv: readonly string[]; stdin?: string }[] = []
   on('session.cwd', () => ({ value: '/repo' }))
   on('fs.stat', () => ({ deny: 'ENOENT' }))
   on('process.run', (_, e) => {
     if (isPiped(e.argv)) piped.push({ argv: e.argv, stdin: e.init?.stdin })
-    return vale(e.init?.stdin?.includes('just') ? alerts : [])
+    if (!hasConfig && !isBundled(e.argv)) return noConfig
+    return vale(e.init?.stdin?.includes('just') ? [alert(1, 'just')] : [])
   })
   on('tool.call', { tool: 'Bash' }, (_, e) => {
     ran.push(e.command)
@@ -743,4 +745,46 @@ test('a command line that ends in a redirection runs with no lint', async ($, on
 
   expect(piped).toEqual([])
   expect(ran).toEqual(['git commit -m "It just works" >'])
+})
+
+test("with no config of the project's or user's, a command's prose reaches the bundled rules", async ($, on) => {
+  const { piped } = bash(on, { hasConfig: false })
+
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "It works"' })
+
+  expect(piped.map(run => [isBundled(run.argv), run.stdin])).toEqual([[false, 'It works'], [true, 'It works']])
+})
+
+test("a git commit -am's message reaches Vale", async ($, on) => {
+  const { piped } = bash(on)
+
+  await $.tool.call({ tool: 'Bash', command: 'git commit -am "M"' })
+
+  expect(piped.map(run => run.stdin)).toEqual(['M'])
+})
+
+test("a heredoc on a git commit -F -'s standard input reaches Vale as its text", async ($, on) => {
+  const { piped } = bash(on)
+
+  await $.tool.call({ tool: 'Bash', command: `git commit -F - <<'EOF'\nAdd the flag\n\nIt reads the file.\nEOF` })
+
+  expect(piped.map(run => run.stdin)).toEqual(['Add the flag\n\nIt reads the file.'])
+})
+
+for (const command of ['gh pr comment 12 --body "B"', 'gh issue comment 12 -b "B"', 'gh pr edit 12 -b "B"', 'gh issue edit 12 --body "B"']) {
+  test(`${command.split(' ').slice(0, 3).join(' ')}'s body reaches Vale`, async ($, on) => {
+    const { piped } = bash(on)
+
+    await $.tool.call({ tool: 'Bash', command })
+
+    expect(piped.map(run => run.stdin)).toEqual(['B'])
+  })
+}
+
+test('a process substitution elsewhere on the line leaves the git commit linted', async ($, on) => {
+  const { piped } = bash(on)
+
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "M" && diff <(git show HEAD~1:a) a' })
+
+  expect(piped.map(run => run.stdin)).toEqual(['M'])
 })
