@@ -607,3 +607,11 @@ test('a git commit whose message has an alert does not run', async ($, on) => {
   expect(result.deny).toBeDefined()
   expect(ran).toEqual([])
 })
+
+test("a refused git commit hands Claude the note with its message's alert", async ($, on) => {
+  bash(on)
+
+  const result = await $.tool.call({ tool: 'Bash', command: 'git commit -m "It just works"' })
+
+  expect(result.deny).toContain("- 1:1 Filler adverb 'just': let the verb carry it.")
+})
