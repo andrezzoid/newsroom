@@ -693,3 +693,45 @@ test("a git commit's -F file reaches Vale as the file's text", async ($, on) => 
 
   expect(piped.map(run => run.stdin)).toEqual(['Add the flag\n\nIt reads the file.\n'])
 })
+
+test("a gh pr create's title and body reach Vale as Markdown, the title first", async ($, on) => {
+  const { piped } = bash(on)
+
+  await $.tool.call({ tool: 'Bash', command: `gh pr create --title "T" --body 'B'` })
+
+  expect(piped.map(run => [run.stdin, run.argv.find(arg => arg.startsWith('--ext='))])).toEqual([['T\n\nB', '--ext=.md']])
+})
+
+test("a gh pr merge's subject and body reach Vale as Markdown, the subject first", async ($, on) => {
+  const { piped } = bash(on)
+
+  await $.tool.call({ tool: 'Bash', command: 'gh pr merge 12 --squash --subject "S" --body "B"' })
+
+  expect(piped.map(run => [run.stdin, run.argv.find(arg => arg.startsWith('--ext='))])).toEqual([['S\n\nB', '--ext=.md']])
+})
+
+test('a git commit chained after another command reaches Vale alone', async ($, on) => {
+  const { piped } = bash(on)
+
+  await $.tool.call({ tool: 'Bash', command: 'git add . && git commit -m "M"' })
+
+  expect(piped.map(run => run.stdin)).toEqual(['M'])
+})
+
+test('a git commit whose message is a shell variable runs with no lint', async ($, on) => {
+  const { ran, piped } = bash(on)
+
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "$MSG"' })
+
+  expect(piped).toEqual([])
+  expect(ran).toEqual(['git commit -m "$MSG"'])
+})
+
+test('a command outside the table runs with no lint, even with a message flag', async ($, on) => {
+  const { ran, piped } = bash(on)
+
+  await $.tool.call({ tool: 'Bash', command: 'git tag -m "It just works" v1' })
+
+  expect(piped).toEqual([])
+  expect(ran).toEqual(['git tag -m "It just works" v1'])
+})
