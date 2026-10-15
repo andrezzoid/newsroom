@@ -791,6 +791,7 @@ const gather = async ($: EngineInterface, project?: string) => {
 // verdicts.
 const sessionSummary = (current: DayStats): string => {
   const words = wordsOf(current)
+  if (words === 0) return '**This session** · no prose written yet'
   const session = sumCounts(Object.values(current.rules).flatMap(byKind => Object.values(byKind)))
   return (
     `**This session** · ${thousands(words)} words · ${per1000(session.written, words)} alerts and ` +
