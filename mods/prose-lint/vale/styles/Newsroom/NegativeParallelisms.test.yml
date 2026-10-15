@@ -2,7 +2,7 @@
   rule: NegativeParallelisms.yml
   input: It's not just a tool, it's a game-changer.
   want: |
-    1:6:Newsroom.NegativeParallelisms:Negative parallelism: state the positive claim and drop the contrast.
+    1:1:Newsroom.NegativeParallelisms:Negative parallelism: state the positive claim and drop the contrast.
 
 - name: not only X, but also Y
   rule: NegativeParallelisms.yml

@@ -1,0 +1,15 @@
+# From AiTells.NegParallel, AiTells.EpigramContrast and ai-tells'
+# ContrastiveNegation (see NOTICE). Wikipedia's "Negative parallelisms": "not
+# just X, but Y", "it's not X, it's Y", "is X, not Y" and "no X, no Y, just Z".
+extends: existence
+message: "Negative parallelism: state the positive claim and drop the contrast."
+level: warning
+nonword: true
+ignorecase: true
+scope: ~blockquote
+tokens:
+  - '\bnot\s+(?:just|only|merely)\b[^.!?]{0,80}\b(?:but|it[''’]?s)\b'
+  - '\bit[''’]?s\s+not\b[^.!?]{0,60},\s*it[''’]?s\b'
+  - '\bisn[''’]?t\s+(?:just|only)\b[^.!?]{0,60}\bit[''’]?s\b'
+  - '\b(?:is|are|was|were|reads?\s+as|stays?|remains?|becomes?)\s+(?:a\s+|an\s+|the\s+)?[\w’''-]+(?:\s+[\w’''-]+){0,2},\s+not\s+(?:a\s+|an\s+|the\s+)?[\w’''-]+'
+  - '\bno\s+(?!longer\b|sooner\b)[^,.;:!?]{2,},\s+no\s+[^.!?]+'
