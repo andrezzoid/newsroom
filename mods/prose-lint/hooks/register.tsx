@@ -54,6 +54,13 @@ const STATS_DAYS = 30
 // kilobyte per day and project, far below the store's 4 MiB limit.
 const KEEP_DAYS = 365
 
+// The rules /prose-lint coach lists, by written alerts.
+const COACH_RULES = 5
+
+// The words the coach needs before it proposes anything: the rates are per
+// 1,000 words, and below that one alert moves a rule's rate a lot.
+const COACH_WORDS = 1000
+
 export const register: Register = on => {
   // A reload fires session.start again, so the command survives one; and the
   // engine awaits this hook, so /prose-lint exists before the first prompt.
@@ -310,10 +317,8 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
 // styles) shows a toast and returns undefined, so a lint problem never fails
 // Claude's edit.
 const lint = async ($: EngineInterface, paths: string[], dir: string): Promise<Linted | undefined> => {
-  // The docs say `root` is the folder holding plugin.json, which could mean
-  // .claude-plugin/ itself; the config sits beside .claude-plugin/ either way.
-  const root = $.plugin.root.replace(/\/\.claude-plugin\/?$/, '')
-  const bundled = `${root}/vale/.vale.ini`
+  const root = pluginRoot($)
+  const bundled = bundledConfig($)
 
   // Vale would find the bundled config above the plugin's own files and label
   // it as a project's.
@@ -327,6 +332,12 @@ const lint = async ($: EngineInterface, paths: string[], dir: string): Promise<L
   const run = await vale($, ['--config', bundled, '--output', 'JSON', ...paths], dir)
   return run && parse($, run, BUNDLED, ['--config', bundled])
 }
+
+// The docs say `root` is the folder holding plugin.json, which could mean
+// .claude-plugin/ itself; the plugin's files sit beside .claude-plugin/ either way.
+const pluginRoot = ($: EngineInterface): string => $.plugin.root.replace(/\/\.claude-plugin\/?$/, '')
+
+const bundledConfig = ($: EngineInterface): string => `${pluginRoot($)}/vale/.vale.ini`
 
 // The alerts in `text`, linted as a file of type `ext` from `dir` with the
 // config arguments an earlier lint() settled on, so no config search or label
@@ -694,9 +705,8 @@ const coachReport = async ($: EngineInterface): Promise<{ text: string; context?
         `and the coach needs ${thousands(COACH_WORDS)}.`,
     }
   }
-  const root = $.plugin.root.replace(/\/\.claude-plugin\/?$/, '')
   return {
-    context: [coaching(`${root}/vale/.vale.ini`)],
+    context: [coaching(bundledConfig($))],
     text: [
       sessionSummary(current),
       '',
@@ -725,8 +735,8 @@ const coaching = (bundled: string): string =>
     "- Examples that are the project's own terms: add them to the vocabulary of the config that ran the rule.",
     'Find CLAUDE.md and the config files yourself. ' +
       `"bundled rules" is the plugin's own config, ${bundled}, which a plugin update overwrites, so a change to it ` +
-      'starts by copying it and its styles folder to ~/.config/vale/. A project\'s .vale.ini belongs to its team: ' +
-      'say so when you propose a change to one.',
+      "starts by copying it and its styles folder to Vale's global config folder: `vale ls-dirs` names it. " +
+      "A project's .vale.ini belongs to its team: say so when you propose a change to one.",
     'Number the proposals and ask the user which to apply. Apply only the changes the user picks, and change no file ' +
       'before they pick.',
   ].join('\n')
@@ -736,13 +746,6 @@ const keptRate = (c: Counts): string =>
   c.kept + c.fixed > 0 ? `${Math.round((100 * c.kept) / (c.kept + c.fixed))}%` : '–'
 
 const quoted = (examples: string[] = []): string => examples.map(match => `"${match}"`).join(', ')
-
-// The rules the coach lists, by written alerts.
-const COACH_RULES = 5
-
-// The words the coach needs before it proposes anything: the rates are per
-// 1,000 words, and below that one alert moves a rule's rate a lot.
-const COACH_WORDS = 1000
 
 // The `count` rules Claude wrote the most alerts of, with their counts summed
 // across kinds.
