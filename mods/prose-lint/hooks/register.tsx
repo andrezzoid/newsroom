@@ -261,8 +261,13 @@ const refusal = async ($: EngineInterface, command: string): Promise<string | un
       return undefined
     }
     const prose = proseOf(command)
-    if (prose.length === 0 || prose.some(piece => typeof piece !== 'string')) return undefined
-    const linted = await lint($, { text: prose.join('\n\n'), ext: 'md' }, await $.session.cwd())
+    if (prose.length === 0) return undefined
+    const cwd = await $.session.cwd()
+    // A file the mod can't read rejects, and the catch lets the command run.
+    const texts = await Promise.all(
+      prose.map(piece => (typeof piece === 'string' ? piece : $.fs.read(piece.file.startsWith('/') ? piece.file : `${cwd}/${piece.file}`))),
+    )
+    const linted = await lint($, { text: texts.join('\n\n'), ext: 'md' }, cwd)
     const found = Object.values(linted?.byFile ?? {})[0] ?? []
     if (!linted || found.length === 0) return undefined
     await update($, refused, () => command)
