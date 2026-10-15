@@ -639,6 +639,18 @@ test('/prose-lint coach asks Claude, out of the user\'s sight, for up to three c
   expect(ran.text).not.toContain('Propose')
 })
 
+test('/prose-lint coach starts a turn, so Claude proposes without the user asking again', async ($, on) => {
+  const prompts: string[] = []
+  on('prompt.submit', (_, e) => (prompts.push(e.text), {}))
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  await $.command.run(coach)
+
+  expect(prompts).toEqual(['Propose changes from the /prose-lint coach table.'])
+})
+
 test('/prose-lint coach tells Claude to apply only the changes the user picks', async ($, on) => {
   storeIn(on, coachHistory())
   mock.clock(on, { now: NOON })
