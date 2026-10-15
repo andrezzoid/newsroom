@@ -1,7 +1,7 @@
 # From write-good's Passive (see NOTICE). The user's "active voice". Off for
 # code comments in .vale.ini.
 extends: existence
-message: "Passive voice: name who does it and make them the subject."
+message: "Passive '%s': make whoever acts the subject."
 level: warning
 ignorecase: true
 raw:

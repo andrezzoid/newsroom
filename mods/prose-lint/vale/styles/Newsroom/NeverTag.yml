@@ -1,7 +1,7 @@
 # From AiTells.NeverTag (see NOTICE). The user's "no ', never X' tag". An
 # infinitive (", never to return") is a plain clause and passes.
 extends: existence
-message: '", never X" tag: state the behavior once and stop.'
+message: 'Trailing "never X": cut it and keep the claim.'
 level: error
 nonword: true
 # The head word after "never" may be any word but a bare "to", so a code span

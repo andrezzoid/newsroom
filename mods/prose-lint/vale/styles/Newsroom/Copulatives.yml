@@ -1,7 +1,7 @@
 # From AiTells.CopulaInflation (see NOTICE), trimmed to Wikipedia's
 # "Avoidance of basic copulatives ('is'/'are' phrases)".
 extends: existence
-message: "Avoidance of basic copulatives: replace '%s' with \"is\", \"are\" or \"has\"."
+message: "'%s' avoids \"is\": use \"is\", \"are\" or \"has\"."
 level: warning
 ignorecase: true
 tokens:

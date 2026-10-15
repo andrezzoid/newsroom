@@ -2,7 +2,7 @@
 # means the verb is weak". "genuinely", "notably", "quietly" and "seamlessly"
 # are AIVocabulary's, so one word raises one alert.
 extends: existence
-message: "Adverb: cut '%s' and let the verb carry it."
+message: "Filler adverb '%s': cut it or use a stronger verb."
 level: warning
 ignorecase: true
 tokens:

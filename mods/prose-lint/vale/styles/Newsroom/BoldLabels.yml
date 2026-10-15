@@ -1,7 +1,7 @@
 # From ai-tells' LabelAndExplain (see NOTICE). The user's "never a bold label
 # with a clipped noun phrase": a label and a colon in place of a sentence.
 extends: existence
-message: "Bold label: fold '%s' into the sentence it introduces."
+message: "Label instead of a sentence: work '%s' into the sentence."
 level: warning
 nonword: true
 scope: ~heading

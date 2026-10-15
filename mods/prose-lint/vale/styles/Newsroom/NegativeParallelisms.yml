@@ -2,7 +2,7 @@
 # ContrastiveNegation (see NOTICE). Wikipedia's "Negative parallelisms": "not
 # just X, but Y", "it's not X, it's Y", "is X, not Y" and "no X, no Y, just Z".
 extends: existence
-message: "Negative parallelism: state the positive claim and drop the contrast."
+message: "Contrast with a negation: state the claim and drop the negative."
 level: warning
 nonword: true
 ignorecase: true

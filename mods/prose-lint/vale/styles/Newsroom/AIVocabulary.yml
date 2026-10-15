@@ -3,7 +3,7 @@
 # the verbs' other forms, plus six words the noise test found in the user's
 # skills. "boasts a" is Copulatives' alert, so one word raises one alert.
 extends: existence
-message: "AI vocabulary: replace '%s' with a plainer word."
+message: "'%s' reads as AI: use a plainer word."
 level: warning
 ignorecase: true
 tokens:
