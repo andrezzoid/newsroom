@@ -735,3 +735,12 @@ test('a command outside the table runs with no lint, even with a message flag', 
   expect(piped).toEqual([])
   expect(ran).toEqual(['git tag -m "It just works" v1'])
 })
+
+test('a command line that ends in a redirection runs with no lint', async ($, on) => {
+  const { ran, piped } = bash(on)
+
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "It just works" >' })
+
+  expect(piped).toEqual([])
+  expect(ran).toEqual(['git commit -m "It just works" >'])
+})
