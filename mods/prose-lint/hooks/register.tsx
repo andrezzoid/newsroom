@@ -261,7 +261,7 @@ const refusal = async ($: EngineInterface, command: string): Promise<string | un
       return undefined
     }
     const prose = proseOf(command)
-    if (prose.length === 0) return undefined
+    if (prose.length === 0 || prose.some(piece => typeof piece !== 'string')) return undefined
     const linted = await lint($, { text: prose.join('\n\n'), ext: 'md' }, await $.session.cwd())
     const found = Object.values(linted?.byFile ?? {})[0] ?? []
     if (!linted || found.length === 0) return undefined
