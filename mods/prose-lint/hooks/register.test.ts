@@ -583,13 +583,25 @@ test('a vale failure leaves the result alone', async ($, on) => {
 
 // A session where Vale reports an alert on piped prose that says "just", and
 // none on other prose. Without `hasConfig`, Vale finds no config of the
-// project's or user's, so only the bundled rules answer. `ran` holds each
-// Bash command that got past the mod; `piped`, what Vale read and how.
-const bash = (on: On, { hasConfig = true } = {}) => {
+// project's or user's, so only the bundled rules answer. `files` are the
+// regular files on disk, by path, read when the test runs; `others` are paths
+// that lead to something else, such as a pipe. `ran` holds each Bash command
+// that got past the mod; `piped`, what Vale read and how; `reads`, each path
+// the mod read.
+const bash = (on: On, { hasConfig = true, files = {} as Record<string, string>, others = [] as string[] } = {}) => {
   const ran: string[] = []
   const piped: { argv: readonly string[]; stdin?: string }[] = []
+  const reads: string[] = []
   on('session.cwd', () => ({ value: '/repo' }))
-  on('fs.stat', () => ({ deny: 'ENOENT' }))
+  on('fs.stat', (_, e) =>
+    e.path in files || others.includes(e.path)
+      ? { value: { kind: e.path in files ? ('file' as const) : ('other' as const), size: 0, mtimeMs: 0, isLink: false } }
+      : { deny: 'ENOENT' },
+  )
+  on('fs.read', (_, e) => {
+    reads.push(e.path)
+    return e.path in files ? { value: files[e.path]! } : { deny: 'ENOENT' }
+  })
   on('process.run', (_, e) => {
     if (isPiped(e.argv)) piped.push({ argv: e.argv, stdin: e.init?.stdin })
     if (!hasConfig && !isBundled(e.argv)) return noConfig
@@ -599,7 +611,7 @@ const bash = (on: On, { hasConfig = true } = {}) => {
     ran.push(e.command)
     return { result: { stdout: '', stderr: '', interrupted: false } }
   })
-  return { ran, piped }
+  return { ran, piped, reads }
 }
 
 test('a git commit whose message has an alert does not run', async ($, on) => {
@@ -688,8 +700,7 @@ test("a heredoc in a git commit's -m reaches Vale as its text", async ($, on) =>
 })
 
 test("a git commit's -F file reaches Vale as the file's text", async ($, on) => {
-  const { piped } = bash(on)
-  on('fs.read', (_, e) => (e.path === '/repo/msg.txt' ? { value: 'Add the flag\n\nIt reads the file.\n' } : { deny: 'ENOENT' }))
+  const { piped } = bash(on, { files: { '/repo/msg.txt': 'Add the flag\n\nIt reads the file.\n' } })
 
   await $.tool.call({ tool: 'Bash', command: 'git commit -F msg.txt' })
 
@@ -791,8 +802,7 @@ test('a process substitution elsewhere on the line leaves the git commit linted'
 
 for (const command of ['git -C sub commit -F msg.txt', 'cd sub && git commit -F msg.txt']) {
   test(`${command} runs with no lint, since the mod can't tell which msg.txt it reads`, async ($, on) => {
-    const { ran, piped } = bash(on)
-    on('fs.read', () => ({ value: 'It just works.\n' }))
+    const { ran, piped } = bash(on, { files: { '/repo/msg.txt': 'It just works.\n', '/repo/sub/msg.txt': 'It just works.\n' } })
 
     await $.tool.call({ tool: 'Bash', command })
 
@@ -807,4 +817,63 @@ test("a heredoc with a backslashed delimiter in a git commit's -m reaches Vale a
   await $.tool.call({ tool: 'Bash', command: `git commit -m "$(cat <<\\EOF\nAdd the flag\nEOF\n)"` })
 
   expect(piped.map(run => run.stdin)).toEqual(['Add the flag'])
+})
+
+test("a git commit -F /dev/stdin reads its heredoc, never the session's own input", async ($, on) => {
+  const { piped, reads } = bash(on)
+
+  await $.tool.call({ tool: 'Bash', command: `git commit -F /dev/stdin <<'EOF'\nIt just works\nEOF` })
+
+  expect(piped.map(run => run.stdin)).toEqual(['It just works'])
+  expect(reads).toEqual([])
+})
+
+test('a -F path that leads to a pipe is never read, and the command runs', async ($, on) => {
+  const { ran, reads } = bash(on, { others: ['/repo/pipe'] })
+
+  await $.tool.call({ tool: 'Bash', command: 'git commit -F pipe' })
+
+  expect(reads).toEqual([])
+  expect(ran).toEqual(['git commit -F pipe'])
+})
+
+test('two refused commands each run when Claude sends them again', async ($, on) => {
+  const { ran } = bash(on)
+  const first = 'git commit -m "It just works"'
+  const second = 'gh issue comment 1 --body "It just works"'
+
+  await $.tool.call({ tool: 'Bash', command: first })
+  await $.tool.call({ tool: 'Bash', command: second })
+  await $.tool.call({ tool: 'Bash', command: first })
+  await $.tool.call({ tool: 'Bash', command: second })
+
+  expect(ran).toEqual([first, second])
+})
+
+test('a refused -F command is linted again when its file changed', async ($, on) => {
+  const files = { '/repo/msg.txt': 'It just works.' }
+  bash(on, { files })
+
+  await $.tool.call({ tool: 'Bash', command: 'git commit -F msg.txt' })
+  files['/repo/msg.txt'] = 'It just really works.'
+  const again = await $.tool.call({ tool: 'Bash', command: 'git commit -F msg.txt' })
+
+  expect(again.deny).toBeDefined()
+})
+
+test("a git commit's readable -m reaches Vale when another -m is a shell variable", async ($, on) => {
+  const { piped } = bash(on)
+
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "It just works" -m "$BODY"' })
+
+  expect(piped.map(run => run.stdin)).toEqual(['It just works'])
+})
+
+test('a -F file that an earlier command on the line writes is not read', async ($, on) => {
+  const { ran, reads } = bash(on, { files: { '/repo/m.txt': 'An old message that just sits there.' } })
+
+  await $.tool.call({ tool: 'Bash', command: "printf 'New' > m.txt && git commit -F m.txt" })
+
+  expect(reads).toEqual([])
+  expect(ran).toEqual(["printf 'New' > m.txt && git commit -F m.txt"])
 })
