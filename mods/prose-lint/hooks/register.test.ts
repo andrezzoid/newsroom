@@ -662,6 +662,21 @@ test('/prose-lint coach under 1,000 words hands Claude nothing', async ($, on) =
   expect(ran.context).toBeUndefined()
 })
 
+test('/prose-lint ./coach lints the folder named coach', async ($, on) => {
+  const linted: string[] = []
+  on('fs.stat', () => dir)
+  on('session.cwd', () => ({ value: '/repo' }))
+  on('process.run', (_, e) => {
+    linted.push(e.argv.at(-1) ?? '')
+    return isBundled(e.argv) ? vale([]) : noConfig
+  })
+
+  const ran = await $.command.run(stats('./coach'))
+
+  expect(linted).toContain('/repo/./coach')
+  expect(ran.text).toBe('prose-lint: no alerts found (bundled rules).')
+})
+
 // The test answers no fs or process call, so a coach that wrote a file or ran
 // a command would fail; the store is the one place it could still write.
 const coachChangesNothing = async ($: Engine, on: On, memory: Map<string, unknown>) => {
