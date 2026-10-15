@@ -2,7 +2,7 @@
   rule: EmDashes.yml
   input: The cache answers most reads from memory — about 90% of them.
   want: |
-    1:43:Newsroom.EmDashes:Overuse of em dashes: use a period, comma, colon or parentheses.
+    1:42:Newsroom.EmDashes:Overuse of em dashes: use a period, comma, colon or parentheses.
 
 - name: an en dash with a space on each side
   rule: EmDashes.yml

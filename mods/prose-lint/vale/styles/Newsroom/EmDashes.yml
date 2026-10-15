@@ -1,0 +1,10 @@
+# From AiTells.Dash (see NOTICE). Wikipedia's "Overuse of em dashes", and the
+# user's "no em-dashes". A range ("1–3") keeps its en dash.
+extends: existence
+message: "Overuse of em dashes: use a period, comma, colon or parentheses."
+level: error
+nonword: true
+scope: ~blockquote
+tokens:
+  - '—'
+  - '(?<=\s)–(?=\s)'
