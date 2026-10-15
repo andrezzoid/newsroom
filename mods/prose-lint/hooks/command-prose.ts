@@ -122,16 +122,9 @@ const readCommands = (line: string): Simple[] | undefined => {
   // Reads the heredocs the last line opened, from `i`, in order.
   const readHeredocs = () => {
     for (const heredoc of heredocs.splice(0)) {
-      const lines: string[] = []
-      while (i < line.length) {
-        const end = line.indexOf('\n', i) < 0 ? line.length : line.indexOf('\n', i)
-        const text = line.slice(i, end)
-        i = end + 1
-        if ((heredoc.stripTabs ? text.replace(/^\t+/, '') : text) === heredoc.delimiter) break
-        lines.push(heredoc.stripTabs ? text.replace(/^\t+/, '') : text)
-      }
-      const body = lines.join('\n')
-      heredoc.simple.stdin = heredoc.isQuoted || !/[$`\\]/.test(body) ? body : null
+      const { body, end } = heredocBody(line, i, heredoc.delimiter, heredoc.stripTabs)
+      i = end
+      heredoc.simple.stdin = literal(body, heredoc.isQuoted)
     }
   }
 
@@ -212,6 +205,10 @@ const readCommands = (line: string): Simple[] | undefined => {
       i += match[0].length
       current.stdin = null
       heredocs.push({ simple: current, delimiter: match[1] ?? match[2] ?? match[3]!, isQuoted: !match[3] || match[0].includes('\\'), stripTabs })
+    } else if ((char === '<' || char === '>') && line[i + 1] === '(') {
+      // A process substitution: a word the reader can't run.
+      i = closing(line, i + 1, '(', ')')
+      current.words.push(null)
     } else if (char === '<' || char === '>') {
       // A redirection and its target; a here-string stands for unreadable
       // input, and a redirection with no target is a syntax error.
@@ -238,23 +235,36 @@ const readCommands = (line: string): Simple[] | undefined => {
 const catHeredoc = (line: string, at: number): { value: Word; end: number } | undefined => {
   const head = /^\$\(\s*cat\s*<<(-?)[ \t]*(?:'([^'\n]+)'|"([^"\n]+)"|([\w.-]+))[ \t]*\n/.exec(line.slice(at))
   if (!head) return undefined
-  const delimiter = head[2] ?? head[3] ?? head[4]!
-  const stripTabs = head[1] === '-'
-  const lines: string[] = []
-  let i = at + head[0].length
-  for (;;) {
-    const newline = line.indexOf('\n', i)
-    if (newline < 0) return undefined
-    const text = line.slice(i, newline)
-    i = newline + 1
-    if ((stripTabs ? text.replace(/^\t+/, '') : text) === delimiter) break
-    lines.push(stripTabs ? text.replace(/^\t+/, '') : text)
-  }
-  const close = /^\s*\)/.exec(line.slice(i))
-  if (!close) return undefined
-  const body = lines.join('\n').replace(/\n+$/, '')
-  return { value: head[4] && /[$`\\]/.test(body) ? null : body, end: i + close[0].length }
+  const { body, end, isClosed } = heredocBody(line, at + head[0].length, head[2] ?? head[3] ?? head[4]!, head[1] === '-')
+  const close = /^\s*\)/.exec(line.slice(end))
+  if (!isClosed || !close) return undefined
+  return { value: literal(body.replace(/\n+$/, ''), !head[4]), end: end + close[0].length }
 }
+
+// A heredoc's body: its lines from `at` up to the one that holds only
+// `delimiter` (once leading tabs go, for <<-), and the index past that line.
+// The end of the input closes a heredoc that has no such line, as in bash.
+const heredocBody = (
+  line: string,
+  at: number,
+  delimiter: string,
+  stripTabs: boolean,
+): { body: string; end: number; isClosed: boolean } => {
+  const lines: string[] = []
+  for (let i = at; i < line.length; ) {
+    const newline = line.indexOf('\n', i)
+    const end = newline < 0 ? line.length : newline
+    const text = stripTabs ? line.slice(i, end).replace(/^\t+/, '') : line.slice(i, end)
+    i = end + 1
+    if (text === delimiter) return { body: lines.join('\n'), end: i, isClosed: true }
+    lines.push(text)
+  }
+  return { body: lines.join('\n'), end: line.length, isClosed: false }
+}
+
+// A heredoc body as its command reads it: whole under a quoted delimiter,
+// and null under a bare one when it holds something the shell would expand.
+const literal = (body: string, isQuoted: boolean): Word => (isQuoted || !/[$`\\]/.test(body) ? body : null)
 
 // Where the expansion starting at `at` ($name, ${…}, $(…), `…`) ends; at + 1
 // for a $ that starts none, which the shell keeps as a plain $.

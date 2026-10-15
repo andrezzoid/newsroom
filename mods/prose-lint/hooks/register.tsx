@@ -101,9 +101,9 @@ export const register: Register = on => {
     const cwd = await $.session.cwd()
     const results: (Linted | undefined)[] = []
     for (const path of paths) {
-      const absolute = path.startsWith('/') ? path : `${cwd}/${path}`
-      const isDir = (await $.fs.stat(absolute).catch(() => undefined))?.kind === 'dir'
-      results.push(await lint($, [absolute], isDir ? absolute : dirname(absolute)))
+      const file = absolute(path, cwd)
+      const isDir = (await $.fs.stat(file).catch(() => undefined))?.kind === 'dir'
+      results.push(await lint($, [file], isDir ? file : dirname(file)))
     }
 
     const linted = results.filter(result => result !== undefined)
@@ -258,17 +258,15 @@ const runs = (text: string, onLine: ProseAlert[]): Run[] => {
 // alerts. Never throws, so a lint problem never blocks a command.
 const refusal = async ($: EngineInterface, command: string): Promise<string | undefined> => {
   try {
+    const prose = proseOf(command)
+    if (prose.length === 0) return undefined
     if (command === (await read($, refused))) {
       await update($, refused, () => '')
       return undefined
     }
-    const prose = proseOf(command)
-    if (prose.length === 0) return undefined
     const cwd = await $.session.cwd()
     // A file the mod can't read rejects, and the catch lets the command run.
-    const texts = await Promise.all(
-      prose.map(piece => (typeof piece === 'string' ? piece : $.fs.read(piece.file.startsWith('/') ? piece.file : `${cwd}/${piece.file}`))),
-    )
+    const texts = await Promise.all(prose.map(piece => (typeof piece === 'string' ? piece : $.fs.read(absolute(piece.file, cwd)))))
     const linted = await lint($, { text: texts.join('\n\n'), ext: 'md' }, cwd)
     const found = Object.values(linted?.byFile ?? {})[0] ?? []
     if (!linted || found.length === 0) return undefined
@@ -935,6 +933,9 @@ const describe = (found: ValeAlert[], configLabel: string): string => {
 }
 
 const basename = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
+
+// `path` as an absolute path, a relative one taken from `cwd`.
+const absolute = (path: string, cwd: string): string => (path.startsWith('/') ? path : `${cwd}/${path}`)
 
 // The folder holding `path`: "/" for a file at the root, "." for a bare name.
 const dirname = (path: string): string => {
