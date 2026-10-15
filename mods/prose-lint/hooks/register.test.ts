@@ -590,6 +590,19 @@ test('/prose-lint coach leads with this session\'s line', async ($, on) => {
   )
 })
 
+test('/prose-lint coach lists the five rules with the most written alerts, most first', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text).toMatch(
+    /\| Newsroom\.Adverbs \|[^\n]*\n\| Newsroom\.Passive \|[^\n]*\n\| Newsroom\.AIVocabulary \|[^\n]*\n\| Newsroom\.EmDashes \|[^\n]*\n\| Team\.Terms \|/,
+  )
+  expect(ran.text).not.toContain('Copulatives')
+})
+
 test("a session's start folds earlier days into one record per day and project", async ($, on) => {
   const day = (written: number) => ({
     configs: ['bundled rules'],
