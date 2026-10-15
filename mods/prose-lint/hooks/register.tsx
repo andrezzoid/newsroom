@@ -721,6 +721,8 @@ const coachReport = async ($: EngineInterface): Promise<{ text: string; context?
     text: [
       sessionSummary(current),
       '',
+      `**prose-lint coach** · last ${STATS_DAYS} days · all projects · ${thousands(words)} words`,
+      '',
       '| Rule | Written | Kept | Examples | Config |',
       '| - | - | - | - | - |',
       ...topRules(total, COACH_RULES).map(
@@ -745,6 +747,8 @@ const coaching = (bundled: string): string =>
     'Find CLAUDE.md and the config files yourself. ' +
       `"${BUNDLED}" is the plugin's own config, ${bundled}, which a plugin update overwrites, so a change to it ` +
       "starts by copying it and its styles folder to Vale's global config folder: `vale ls-dirs` names it. " +
+      'Tell the user what the copy costs: it then runs in every project without its own config, and later ' +
+      "updates to the plugin's rules stop reaching them. " +
       "A project's .vale.ini belongs to its team: say so when you propose a change to one.",
     'Number the proposals and ask the user which to apply. Apply only the changes the user picks, and change no file ' +
       'before they pick.',
