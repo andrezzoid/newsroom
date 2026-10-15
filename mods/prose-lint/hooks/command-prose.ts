@@ -14,14 +14,9 @@ export type Piece = string | { file: string }
 export const proseOf = (command: string): Piece[] => {
   const commands = readCommands(command)
   if (!commands) return []
-  // A cd or a file written earlier on the line can change what a -F path
-  // holds by the time the command reads it.
-  let isFileUnknown = false
-  return commands.flatMap(simple => {
-    const pieces = prosePieces(simple, isFileUnknown)
-    if (simple.words[0] === 'cd' || simple.words[0] === 'pushd' || simple.writes) isFileUnknown = true
-    return pieces
-  })
+  // A command earlier on the line runs after the mod reads a -F file, and a
+  // cd, a cp or a tee can change what that file holds by then.
+  return commands.flatMap((simple, index) => prosePieces(simple, index > 0))
 }
 
 // Which flag carries which part of the prose, by the flag's short letter and
@@ -47,17 +42,16 @@ const GH: Record<string, Flags> = {
 // A word's value, or null where it holds an expansion the reader can't run.
 type Word = string | null
 
-// One simple command: its words, the heredoc on its standard input (null
-// when the reader can't follow the input), and whether it redirects its
-// output to a file.
-type Simple = { words: Word[]; stdin?: Word; writes?: boolean }
+// One simple command: its words, and the heredoc on its standard input,
+// null when the reader can't follow the input.
+type Simple = { words: Word[]; stdin?: Word }
 
 // The prose of one simple command, when the command is a git commit or a gh
-// command in the table and the reader can follow all its prose. git joins
-// its -m messages as paragraphs; gh keeps the last of each flag. A -F path
-// after a cd, a file write or a git -C may name another file than the one
-// the mod would read, so the reader can't follow it. /dev/stdin reads the
-// heredoc, never the session's own input.
+// command in the table, without the values the reader can't follow. git
+// joins its -m messages as paragraphs; gh keeps the last of each flag. A -F
+// path after an earlier command on the line, or under a git -C, may name
+// another file than the one the mod would read, so the reader can't follow
+// it. /dev/stdin reads the heredoc, never the session's own input.
 const prosePieces = ({ words, stdin }: Simple, isFileUnknown: boolean): Piece[] => {
   const start = words.findIndex(word => word === null || !/^[A-Za-z_]\w*=/.test(word))
   const [program, ...rest] = start < 0 ? [] : words.slice(start)
@@ -232,15 +226,11 @@ const readCommands = (line: string): Simple[] | undefined => {
       // A redirection and its target; a here-string stands for unreadable
       // input, and a redirection with no target is a syntax error.
       const isHereString = line.startsWith('<<<', i)
-      const start = i
       while (i < line.length && '<>&'.includes(line[i]!)) i++
-      const operator = line.slice(start, i)
       while (line[i] === ' ' || line[i] === '\t') i++
       const target = readWord()
       if (target === undefined || target === '') return undefined
       if (isHereString) current.stdin = null
-      // >&2 and >/dev/null write no file.
-      if (operator.includes('>') && !operator.endsWith('&') && target !== '/dev/null') current.writes = true
     } else {
       const word = readWord()
       if (word === undefined) return undefined
