@@ -7,7 +7,7 @@ so a pull request cannot raise its own autonomy. Written by `/setup-factory`.
 - **Tracker:** GitHub Issues
 - **Max autonomy:** `pr`
 - **Merge method:** `squash`
-- **Gates:** `claude plugin validate .`, `claude plugin test mods/prose-lint`
+- **Gates:** `claude plugin validate .`, `claude plugin test mods/prose-lint`, `sh mods/prose-lint/vale/test.sh` (Vale 3.24 or later, and jq)
 
 ## One-way doors
 

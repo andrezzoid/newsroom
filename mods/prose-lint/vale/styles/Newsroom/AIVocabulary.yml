@@ -1,0 +1,58 @@
+# From ai-tells' OverusedVocabulary (see NOTICE), trimmed to Wikipedia's
+# "High density of 'AI vocabulary' words": its four lists by model era, with
+# the verbs' other forms, plus six words the noise test found in the user's
+# skills. "boasts a" is Copulatives' alert, so one word raises one alert.
+extends: existence
+message: "'%s' reads as AI: use a plainer word."
+level: warning
+ignorecase: true
+tokens:
+  # 2023 to mid-2024 (GPT-4)
+  - additionally
+  - boasts(?!\s+an?\b)
+  - bolster(?:s|ed|ing)?
+  - crucial
+  - delv(?:e|es|ed|ing)
+  - emphasiz(?:e|es|ed|ing)
+  - enduring
+  - garner(?:s|ed|ing)?
+  - intricate
+  - intricacies
+  - interplay
+  # Only the adjective: "API key" and "cache key" name a thing.
+  - key(?=\s+(?:role|factor|point|question|insight|takeaway|element|aspect|feature|moment|turning\s+point|player|driver|component|part|step|idea|theme|area|challenge|difference|benefit|consideration|finding|lesson|principle|claim|assumption|stat|thing)s?\b)
+  - landscape
+  - meticulously
+  - pivotal
+  # Only the verb: "underscores" also names the character.
+  - underscor(?:e|es|ed|ing)\s+(?:the|a|an|its|their|his|her|our|this|that|these|those|how|why|what)
+  - tapestry
+  - testament
+  - valuable
+  - vibrant
+  # Mid-2024 to mid-2025 (GPT-4o)
+  - align(?:s|ed|ing)?\s+with
+  - enhanc(?:e|es|ed|ing)
+  - foster(?:s|ed|ing)?
+  - highlight(?:s|ed|ing)?
+  - showcas(?:e|es|ed|ing)
+  # Mid-2025 on (GPT-5, GPT-6)
+  - challenge
+  - clearer
+  - dependable
+  - echoed
+  - leverag(?:e|es|ed|ing)
+  - matters
+  - multifaceted
+  - practical
+  - prioritiz(?:e|es|ed|ing)
+  - quietly
+  - steady
+  - universally
+  # Found in the user's skills
+  - genuine
+  - genuinely
+  - meaningful
+  - actionable
+  - seamlessly
+  - notably

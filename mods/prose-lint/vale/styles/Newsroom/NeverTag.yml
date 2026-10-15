@@ -1,0 +1,10 @@
+# From AiTells.NeverTag (see NOTICE). The user's "no ', never X' tag". An
+# infinitive (", never to return") is a plain clause and passes.
+extends: existence
+message: 'Trailing "never X": cut it and keep the claim.'
+level: error
+nonword: true
+# The head word after "never" may be any word but a bare "to", so a code span
+# or a quote ("never `npm`") counts as one.
+raw:
+  - ',\s+never\s+(?:a\s+|an\s+|the\s+|as\s+)?(?:[^t\s][\w’''-]*|t[^o\s][\w’''-]*|to[\w’''-]+)(?:\s+[\w’''-]+){0,3}'

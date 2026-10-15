@@ -45,21 +45,33 @@ const editRecord = {
 
 const edit = { tool: 'Edit', file_path: '/repo/README.md', old_string: 'old', new_string: 'just a test' } as const
 
-// First, in case the module's sync state outlives a test.
-test('missing styles are synced before the first bundled lint', async ($, on) => {
-  const calls: string[] = []
+// A plugin folder with no downloaded packages, on a machine where a download
+// fails: every fs.stat misses, and `vale sync` exits 2.
+const noPackages = (on: On, runs: string[]) => {
   on('fs.stat', () => ({ deny: 'ENOENT' }))
   on('process.run', (_, e) => {
+    runs.push(e.argv.join(' '))
+    if (e.argv.includes('sync')) return failure('x509: certificate signed by unknown authority', 'E100')
     if (!isBundled(e.argv)) return noConfig
-    if (isPiped(e.argv)) return vale([])
-    calls.push(e.argv.includes('sync') ? 'sync' : 'lint')
-    return vale(e.argv.includes('sync') ? [] : [alert(2, 'just')])
+    return vale(isPiped(e.argv) ? [] : [alert(2, 'just')])
   })
   on('tool.call', { tool: 'Edit' }, () => ({ result: editRecord }))
+}
+
+test('the first bundled lint runs no vale sync', async ($, on) => {
+  const runs: string[] = []
+  noPackages(on, runs)
+
+  await $.tool.call(edit)
+
+  expect(runs.filter(run => run.includes('sync'))).toEqual([])
+})
+
+test("the first bundled lint hands Claude the edit's alerts without downloading anything", async ($, on) => {
+  noPackages(on, [])
 
   const ran = await $.tool.call(edit)
 
-  expect(calls).toEqual(['sync', 'lint'])
   expect(ran.context?.[0]).toContain('- 2:1')
 })
 
