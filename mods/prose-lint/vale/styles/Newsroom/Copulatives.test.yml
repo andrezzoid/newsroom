@@ -1,0 +1,17 @@
+- name: serves as a
+  rule: Copulatives.yml
+  input: Eviction serves as a safety net.
+  want: |
+    1:10:Newsroom.Copulatives:Avoidance of basic copulatives: replace 'serves as a' with "is", "are" or "has".
+
+- name: stands as and boasts
+  rule: Copulatives.yml
+  input: The festival stands as a landmark and the town boasts an arts scene.
+  contains:
+    - "'stands as a'"
+    - "'boasts an'"
+
+- name: a plain copula
+  rule: Copulatives.yml
+  input: Eviction is a safety net. The server serves assets.
+  want: ''
