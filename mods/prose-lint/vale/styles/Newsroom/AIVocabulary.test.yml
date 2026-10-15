@@ -46,3 +46,21 @@
 - name: the user's own terms
   input: Use the ubiquitous language of the glossary.
   absent: Newsroom.AIVocabulary
+
+- name: key as a noun
+  about: Software prose names keys all the time; only the adjective is AI vocabulary.
+  rule: AIVocabulary.yml
+  input: Use the API key, and the `tabs` key holds the cache key.
+  want: ''
+
+- name: key as an adjective
+  rule: AIVocabulary.yml
+  input: Answer the key questions and make the key point first.
+  want: |
+    1:12:Newsroom.AIVocabulary:AI vocabulary: replace 'key' with a plainer word.
+    1:39:Newsroom.AIVocabulary:AI vocabulary: replace 'key' with a plainer word.
+
+- name: leverage, a term of the user's design vocabulary
+  about: accept.txt lists it, as it does "seam" from the same glossary.
+  input: Depth gives callers leverage at the interface.
+  absent: Newsroom.AIVocabulary
