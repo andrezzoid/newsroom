@@ -58,7 +58,6 @@ const noPackages = (on: On, runs: string[]) => {
   on('tool.call', { tool: 'Edit' }, () => ({ result: editRecord }))
 }
 
-// First, in case module state outlives a test.
 test('the first bundled lint runs no vale sync', async ($, on) => {
   const runs: string[] = []
   noPackages(on, runs)

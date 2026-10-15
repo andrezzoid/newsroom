@@ -304,17 +304,17 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
 // the bundled rules run. A project config wins because it states the team's
 // goals for the prose in their repo, and their git hook or CI can run the same
 // file over what this mod never sees, such as files Claude writes through Bash.
-// Never throws: a failure (Vale missing, a project config with unsynced styles,
-// a failed download) shows a toast and returns undefined, so a lint problem
-// never fails Claude's edit.
+// Never throws: a failure (Vale missing, a project config with unsynced
+// styles) shows a toast and returns undefined, so a lint problem never fails
+// Claude's edit.
 const lint = async ($: EngineInterface, paths: string[], dir: string): Promise<Linted | undefined> => {
   // The docs say `root` is the folder holding plugin.json, which could mean
   // .claude-plugin/ itself; the config sits beside .claude-plugin/ either way.
   const root = $.plugin.root.replace(/\/\.claude-plugin\/?$/, '')
   const bundled = `${root}/vale/.vale.ini`
 
-  // Vale would find the bundled config above the plugin's own files and take
-  // it for a project's, skipping the download its styles need.
+  // Vale would find the bundled config above the plugin's own files and label
+  // it as a project's.
   const isOwnFile = dir === root || dir.startsWith(`${root}/`)
   if (!isOwnFile) {
     const run = await vale($, ['--output', 'JSON', ...paths], dir)
@@ -322,20 +322,14 @@ const lint = async ($: EngineInterface, paths: string[], dir: string): Promise<L
     if (!isNoConfig(run)) return parse($, run, await labelFor($, dir), [])
   }
 
-  try {
-    await sync($, bundled, `${root}/vale/styles`)
-  } catch (err) {
-    $.ui.toast(`prose-lint: vale sync failed: ${String(err).slice(0, 160)}`)
-    return undefined
-  }
   const run = await vale($, ['--config', bundled, '--output', 'JSON', ...paths], dir)
   return run && parse($, run, BUNDLED, ['--config', bundled])
 }
 
 // The alerts in `text`, linted as a file of type `ext` from `dir` with the
-// config arguments an earlier lint() settled on, so no config search, label
-// or download runs again. Undefined, with no toast, when Vale fails: the
-// caller treats that as "no alerts known".
+// config arguments an earlier lint() settled on, so no config search or label
+// runs again. Undefined, with no toast, when Vale fails: the caller treats that
+// as "no alerts known".
 const lintText = async (
   $: EngineInterface,
   text: string,
@@ -413,26 +407,6 @@ const shorten = async ($: EngineInterface, path: string): Promise<string> => {
   const home = await $.env.get('HOME')
   return home && path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path
 }
-
-// Downloads the style packages the bundled config lists on first use, and
-// again after an update moves the plugin folder. Edits that land during the
-// download share it; the next edit retries a failed download.
-let synced: Promise<void> | undefined
-
-const sync = ($: EngineInterface, config: string, styles: string): Promise<void> =>
-  (synced ??= (async () => {
-    const present = await Promise.all(
-      ['AiTells', 'write-good'].map(style => $.fs.stat(`${styles}/${style}`).then(() => true, () => false)),
-    )
-    if (present.every(Boolean)) return
-
-    $.ui.toast('prose-lint: downloading the Vale styles')
-    const run = await $.process.run(['vale', '--config', config, 'sync'], { timeoutMs: 120_000 })
-    if (run.exitCode !== 0) throw new Error((run.stderr || run.stdout).trim())
-  })().catch(err => {
-    synced = undefined
-    throw err
-  }))
 
 // The new alerts of an edit, without its existing ones: a diff shows a
 // reworded line as removed and added whole, so the alerts it already had land
