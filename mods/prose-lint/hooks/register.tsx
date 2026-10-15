@@ -652,7 +652,6 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
   const sessionLine = wordsOf(current) > 0 ? [sessionSummary(current), ''] : []
 
   const rules = topRules(total, 8)
-  const keptRate = (c: Counts) => (c.kept + c.fixed > 0 ? `${Math.round((100 * c.kept) / (c.kept + c.fixed))}%` : '–')
 
   return [
     ...sessionLine,
@@ -670,9 +669,7 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
     '| Rule | Written | Kept | Examples |',
     '| - | - | - | - |',
     ...rules.map(
-      rule =>
-        `| ${rule.check} | ${rule.written} | ${keptRate(rule)} | ` +
-        `${(total.examples[rule.check] ?? []).map(match => `"${match}"`).join(', ')} |`,
+      rule => `| ${rule.check} | ${rule.written} | ${keptRate(rule)} | ${quoted(total.examples[rule.check])} |`,
     ),
     '',
     '| Where | Words | Alerts per 1,000 |',
@@ -687,17 +684,27 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
 // /prose-lint coach: this session's line, then hands Claude the stats to
 // propose changes from.
 const coachReport = async ($: EngineInterface): Promise<{ text: string }> => {
-  const { total, current } = await gather($)
+  const { total, current, configs } = await gather($)
   return {
     text: [
       sessionSummary(current),
       '',
-      '| Rule |',
-      '| - |',
-      ...topRules(total, COACH_RULES).map(rule => `| ${rule.check} |`),
+      '| Rule | Written | Kept | Examples | Config |',
+      '| - | - | - | - | - |',
+      ...topRules(total, COACH_RULES).map(
+        rule =>
+          `| ${rule.check} | ${rule.written} | ${keptRate(rule)} | ${quoted(total.examples[rule.check])} | ` +
+          `${[...(configs.get(rule.check) ?? [])].join(', ')} |`,
+      ),
     ].join('\n'),
   }
 }
+
+// The share of a rule's alerts with a verdict that Claude kept.
+const keptRate = (c: Counts): string =>
+  c.kept + c.fixed > 0 ? `${Math.round((100 * c.kept) / (c.kept + c.fixed))}%` : '–'
+
+const quoted = (examples: string[] = []): string => examples.map(match => `"${match}"`).join(', ')
 
 // The rules the coach lists, by written alerts.
 const COACH_RULES = 5
@@ -712,13 +719,16 @@ const topRules = (stats: DayStats, count: number): ({ check: string } & Counts)[
 
 // The stats of the last STATS_DAYS days, for every project or one: summed,
 // by week, and this session's own records, which a project's view counts
-// only when the session wrote in that project.
+// only when the session wrote in that project. A record keeps its configs but
+// not which rule each ran, so `configs` gives a rule every config of each
+// record it appears in: exact while a record ran one config.
 const gather = async ($: EngineInterface, project?: string) => {
   const since = day((await $.clock.now()) - (STATS_DAYS - 1) * DAY_MS)
   const sessionId = await $.session.id()
   const total = emptyStats()
   const current = emptyStats()
   const weeks = new Map<string, DayStats>()
+  const configs = new Map<string, Set<string>>()
   for (const key of await $.store.keys()) {
     const [prefix, date, from, session] = key.split('/')
     if (prefix !== 'stats' || !date || !from || (project && from !== project)) continue
@@ -730,8 +740,13 @@ const gather = async ($: EngineInterface, project?: string) => {
     const week = weekOf(date)
     if (!weeks.has(week)) weeks.set(week, emptyStats())
     merge(weeks.get(week) as DayStats, stats)
+    for (const check of Object.keys(stats.rules)) {
+      const ran = configs.get(check) ?? new Set()
+      for (const config of stats.configs) ran.add(config)
+      configs.set(check, ran)
+    }
   }
-  return { total, current, weeks }
+  return { total, current, weeks, configs }
 }
 
 // This session's line: its words, its rates per 1,000 words, and its alerts'
