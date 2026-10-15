@@ -291,6 +291,17 @@ test("a Write's row with one new alert says alert", async ($, on) => {
   expect(await ui.find({ type: 'Text', text: 'prose-lint · 1 alert · bundled rules' })).toBeDefined()
 })
 
+// An alert of the Newsroom style, whose rule name says which style raised it.
+const emDash = { ...alert(1, '—'), Check: 'Newsroom.EmDashes', Message: 'Use a comma or a period, not an em dash.' }
+
+test("a Write's row names each open alert's rule in full after its message", async ($, on) => {
+  const ui = await rowOf($, on, [emDash])
+
+  expect(
+    await ui.find({ type: 'Text', text: /Use a comma or a period, not an em dash\. Newsroom\.EmDashes$/ }),
+  ).toBeDefined()
+})
+
 test('a flagged Write toasts its count of new alerts', async ($, on) => {
   const toasts: string[] = []
   on('ui.toast', (_, e) => (toasts.push(e.text), { value: undefined }))
