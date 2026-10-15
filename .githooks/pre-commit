@@ -1,0 +1,3 @@
+#!/bin/sh
+# Runs every gate before a commit. CLAUDE.md says how the hook gets turned on.
+exec sh scripts/gates.sh

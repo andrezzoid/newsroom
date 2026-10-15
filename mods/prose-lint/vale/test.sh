@@ -1,6 +1,6 @@
 #!/bin/sh
-# The bundled rules' tests: each rule's cases beside it, then each rule's
-# level, which vale test's alerts don't show. The slop fixture and
+# Tests the bundled rules, first with each rule's cases beside it, then each
+# rule's level, which vale test's alerts don't show. The slop fixture and
 # levels/sample.md trip every rule once; levels/expected.txt lists the rule and
 # level each must report, so only EmDashes and NeverTag are errors. Needs Vale
 # 3.24 or later, and jq.

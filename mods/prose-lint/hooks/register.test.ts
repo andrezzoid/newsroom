@@ -91,7 +91,7 @@ test('an Edit hands Claude the alerts on the lines it added, not the ones alread
 
 test('an Edit that rewords a line reports only its new alerts, not the ones the line had', async ($, on) => {
   on('fs.stat', () => dir)
-  // Vale finds "just" in the removed line, and "just" and "really" in the new one.
+  // Vale finds one filler adverb in the removed line, and two in the new one.
   on('process.run', (_, e) =>
     !isBundled(e.argv)
       ? noConfig
@@ -102,7 +102,7 @@ test('an Edit that rewords a line reports only its new alerts, not the ones the 
   on('tool.call', { tool: 'Edit' }, () => ({
     result: {
       ...editRecord,
-      // The old line had "just"; the new one adds "really".
+      // The new line keeps the old line's adverb and adds a second.
       structuredPatch: [{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 2, lines: [' a', '-It just works.', '+It just really works.'] }],
     },
   }))
@@ -360,8 +360,9 @@ test("the turn's end counts what Claude fixed and what it kept", async ($, on) =
   on('process.run', (_, e) => {
     if (!isBundled(e.argv)) return noConfig
     lints++
-    // The edit's lint finds both; the turn's end finds only "just" left. Real
-    // spans in "It just really works.", so the row can match its alerts.
+    // The edit's lint finds both adverbs; the turn's end finds only the first
+    // left. The spans are real ones in the file's line, so the row can match
+    // its alerts.
     const just = { ...alert(1, 'just'), Span: [4, 7] }
     const really = { ...alert(1, 'really'), Span: [9, 14] }
     return vale(lints === 1 ? [just, really] : [just])
@@ -440,7 +441,7 @@ test('a kept alert fixed in a later turn turns fixed on its row, and its stats s
 
   await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/work/newsroom/notes.md', content: '...' })
   await $.turn.complete(answered)
-  // The next turn fixes it: the file changes and Vale finds nothing.
+  // The next turn fixes it, so the file changes and Vale finds nothing.
   isFixed = true
   mtimeMs = 2
   await $.turn.complete({ ...answered, turnId: 't2' })
