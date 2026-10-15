@@ -1,0 +1,11 @@
+# From AiTells.CopulaInflation (see NOTICE), trimmed to Wikipedia's
+# "Avoidance of basic copulatives ('is'/'are' phrases)".
+extends: existence
+message: "Avoidance of basic copulatives: replace '%s' with \"is\", \"are\" or \"has\"."
+level: warning
+ignorecase: true
+scope: ~blockquote
+tokens:
+  - serves\s+as\s+(?:an?|the)
+  - stands\s+as\s+(?:an?|the)
+  - boasts\s+an?
