@@ -105,13 +105,12 @@ const flagValues = (args: Word[], flags: Flags): { part: Part; value: Word }[] =
       if (part) found.push({ part, value: inline ?? args[++i] ?? null })
       continue
     }
-    for (let at = 1; at < arg.length; at++) {
-      const part = flags[arg[at]!]
-      if (!part) continue
-      const inline = arg.slice(at + 1)
-      found.push({ part, value: inline || (args[++i] ?? null) })
-      break
-    }
+    // A letter inside the cluster is part of another flag's attached value
+    // (the b in -lbug), never a flag of its own.
+    const first = flags[arg[1]!]
+    const last = flags[arg.at(-1)!]
+    if (first) found.push({ part: first, value: arg.slice(2) || (args[++i] ?? null) })
+    else if (last) found.push({ part: last, value: args[++i] ?? null })
   }
   return found
 }
