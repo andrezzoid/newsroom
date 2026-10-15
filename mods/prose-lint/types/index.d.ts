@@ -87,6 +87,8 @@ declare module 'claude-code' {
       // Keyed by the Edit or Write call's tool_use_id.
       reports: StateFamily<ProseReport>
       open: OpenAlert[]
+      // The exact text of the last Bash command the mod refused, '' for none.
+      refused: string
     }
   }
 }

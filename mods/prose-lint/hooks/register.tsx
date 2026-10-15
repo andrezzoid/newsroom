@@ -48,6 +48,11 @@ const reports = atom({ plugin: 'prose-lint', key: 'reports' } as const, { config
 // The alerts Claude wrote in the current turn, given a verdict when it ends.
 const open = atom({ plugin: 'prose-lint', key: 'open' } as const, [] as OpenAlert[])
 
+// The exact text of the last command the mod refused, '' for none. The same
+// text sent again runs unlinted, once, so Claude can keep alerts it has a
+// reason for, as it can in a file.
+const refused = atom({ plugin: 'prose-lint', key: 'refused' } as const, '')
+
 // The window /prose-lint stats reads, in days, today included.
 const STATS_DAYS = 30
 
@@ -246,17 +251,25 @@ const runs = (text: string, onLine: ProseAlert[]): Run[] => {
 }
 
 // What Claude reads in place of a command's result when the mod refuses the
-// command, or undefined to let it run: a command with no prose the mod can
-// read, or whose prose has no alerts. Never throws, so a lint problem never
-// blocks a command.
+// command, or undefined to let it run: the command it refused last, sent
+// again; a command with no prose the mod can read; or one whose prose has no
+// alerts. Never throws, so a lint problem never blocks a command.
 const refusal = async ($: EngineInterface, command: string): Promise<string | undefined> => {
   try {
+    if (command === (await read($, refused))) {
+      await update($, refused, () => '')
+      return undefined
+    }
     const prose = proseOf(command)
     if (prose.length === 0) return undefined
     const linted = await lint($, { text: prose.join('\n\n'), ext: 'md' }, await $.session.cwd())
     const found = Object.values(linted?.byFile ?? {})[0] ?? []
     if (!linted || found.length === 0) return undefined
-    return describe(found, linted.configLabel)
+    await update($, refused, () => command)
+    return [
+      'This command did not run: prose-lint found alerts in its prose. Rewrite the prose, or run the same command again to send it as is.',
+      describe(found, linted.configLabel),
+    ].join('\n')
   } catch {
     return undefined
   }
