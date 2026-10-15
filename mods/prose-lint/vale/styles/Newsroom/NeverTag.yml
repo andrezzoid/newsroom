@@ -1,9 +1,9 @@
 # From AiTells.NeverTag (see NOTICE). The user's "no ', never X' tag". An
-# infinitive (", never to return") and an instruction after a condition ("If
-# it fails, never retry") are plain clauses and pass.
+# infinitive (", never to return") and an instruction after a condition that
+# opens the sentence ("If it fails, never retry") are plain clauses and pass.
 extends: existence
 message: '", never X" tag: state the behavior once and stop.'
 level: error
 nonword: true
 raw:
-  - '(?<!\b(?i:if|when|whenever|unless|once|before|after|until)\b[^.!?;:,]*),\s+never\s+(?!to\b)(?:a\s+|an\s+|the\s+|as\s+)?[\w’''-]+(?:\s+[\w’''-]+){0,3}'
+  - '(?<!(?:(?m:^)|[.!?]\s+)(?i:if|when|whenever|unless|once|before|after|until)\b[^.!?;:,]*),\s+never\s+(?!to\b)(?:a\s+|an\s+|the\s+|as\s+)?[\w’''-]+(?:\s+[\w’''-]+){0,3}'
