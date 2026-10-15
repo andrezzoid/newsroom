@@ -673,3 +673,14 @@ test("a git commit's message reaches Vale as Markdown", async ($, on) => {
 
   expect(piped.map(run => run.argv.find(arg => arg.startsWith('--ext=')))).toEqual(['--ext=.md'])
 })
+
+test("a heredoc in a git commit's -m reaches Vale as its text", async ($, on) => {
+  const { piped } = bash(on)
+
+  await $.tool.call({
+    tool: 'Bash',
+    command: `git commit -m "$(cat <<'EOF'\nAdd the flag\n\nIt reads the file.\nEOF\n)"`,
+  })
+
+  expect(piped.map(run => run.stdin)).toEqual(['Add the flag\n\nIt reads the file.'])
+})
