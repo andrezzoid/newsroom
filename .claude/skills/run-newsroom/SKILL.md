@@ -101,7 +101,7 @@ claude plugin validate .
 claude plugin test mods/prose-lint
 ```
 
-Both pass: validate warns that `plugin.json` has no `version`; test runs 22.
+Both pass: validate warns that `plugin.json` has no `version`.
 
 ## Gotchas
 
