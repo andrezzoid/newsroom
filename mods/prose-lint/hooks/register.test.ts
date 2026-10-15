@@ -581,7 +581,8 @@ test('a vale failure leaves the result alone', async ($, on) => {
   expect(ran.context).toBeUndefined()
 })
 
-// A session where Vale reports `alerts` on any prose piped to it. `ran` holds
+// A session where Vale reports `alerts` on piped prose that says "just", and
+// none on other prose. `ran` holds
 // each Bash command that got past the mod; `piped`, what Vale read and how.
 const bash = (on: On, alerts: unknown[] = [alert(1, 'just')]) => {
   const ran: string[] = []
@@ -589,8 +590,8 @@ const bash = (on: On, alerts: unknown[] = [alert(1, 'just')]) => {
   on('session.cwd', () => ({ value: '/repo' }))
   on('fs.stat', () => ({ deny: 'ENOENT' }))
   on('process.run', (_, e) => {
-    if (isPiped(e.argv)) piped.push({ argv: e.argv, stdin: e.stdin })
-    return vale(alerts)
+    if (isPiped(e.argv)) piped.push({ argv: e.argv, stdin: e.init?.stdin })
+    return vale(e.init?.stdin?.includes('just') ? alerts : [])
   })
   on('tool.call', { tool: 'Bash' }, (_, e) => {
     ran.push(e.command)
@@ -633,4 +634,26 @@ test('the note of a refused command tells Claude the same text runs as is', asyn
   const result = await $.tool.call({ tool: 'Bash', command: 'git commit -m "It just works"' })
 
   expect(result.deny).toContain('same command')
+})
+
+test('a refused command that then ran is linted again the third time', async ($, on) => {
+  const { ran } = bash(on)
+  const command = 'git commit -m "It just works"'
+
+  await $.tool.call({ tool: 'Bash', command })
+  await $.tool.call({ tool: 'Bash', command })
+  const third = await $.tool.call({ tool: 'Bash', command })
+
+  expect(third.deny).toBeDefined()
+  expect(ran).toEqual([command])
+})
+
+test('after a refusal, a rewritten command with no alerts runs', async ($, on) => {
+  const { ran } = bash(on)
+
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "It just works"' })
+  const rewritten = await $.tool.call({ tool: 'Bash', command: 'git commit -m "It works"' })
+
+  expect(rewritten.deny).toBeUndefined()
+  expect(ran).toEqual(['git commit -m "It works"'])
 })
