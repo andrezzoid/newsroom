@@ -195,7 +195,7 @@ const annotate = async (
                   a.status === 'fixed' ? (
                     <Text dimColor>
                       <Text color="green">✓ </Text>
-                      <Text strikethrough>{a.message}</Text> {a.check.slice(a.check.indexOf('.') + 1)}
+                      <Text strikethrough>{a.message}</Text> {a.check}
                     </Text>
                   ) : (
                     <Text>
