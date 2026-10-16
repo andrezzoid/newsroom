@@ -542,6 +542,195 @@ test("/prose-lint stats with a project counts only that project, and this sessio
   expect(ran.text).not.toContain('This session')
 })
 
+const counts = (written: number, fixed: number, kept: number) => ({ docs: { written, fixed, kept } })
+
+// 1,300 words of writing: a day under the bundled rules, then this session's
+// record under a project's config. Six rules, so the coach's top five leave
+// Copulatives out.
+const coachHistory = () =>
+  new Map<string, unknown>([
+    [
+      'stats/2026-10-08/newsroom',
+      {
+        configs: ['bundled rules'],
+        words: { docs: 1000 },
+        rules: {
+          'Newsroom.Adverbs': counts(30, 27, 3),
+          'Newsroom.Passive': counts(20, 2, 18),
+          'Newsroom.AIVocabulary': counts(12, 6, 6),
+          'Newsroom.EmDashes': counts(8, 8, 0),
+          'Newsroom.Copulatives': counts(2, 2, 0),
+        },
+        fixEdits: 4,
+        examples: { 'Newsroom.Adverbs': ['just', 'really', 'very'], 'Newsroom.Passive': ['was written'] },
+      },
+    ],
+    [
+      STATS,
+      {
+        configs: ['/repo/.vale.ini'],
+        words: { docs: 300 },
+        rules: { 'Team.Terms': counts(5, 1, 4) },
+        fixEdits: 1,
+        examples: { 'Team.Terms': ['newsroom', 'Vale'] },
+      },
+    ],
+  ])
+
+const coach = stats('coach')
+
+test('/prose-lint coach leads with this session\'s line', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text).toContain(
+    '**This session** · 300 words · 16.7 alerts and 3.3 fix edits per 1,000 words · 5 written, 1 fixed, 4 kept',
+  )
+})
+
+test("/prose-lint coach says when this session hasn't written yet", async ($, on) => {
+  const earlier = coachHistory()
+  earlier.delete(STATS)
+  storeIn(on, earlier)
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text?.split('\n')[0]).toBe('**This session** · no prose written yet')
+})
+
+test('/prose-lint coach heads its table with the window it covers', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text).toContain('**prose-lint coach** · last 30 days · all projects · 1,300 words\n\n| Rule |')
+})
+
+test('/prose-lint coach lists the five rules with the most written alerts, most first', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text).toMatch(
+    /\| Newsroom\.Adverbs \|[^\n]*\n\| Newsroom\.Passive \|[^\n]*\n\| Newsroom\.AIVocabulary \|[^\n]*\n\| Newsroom\.EmDashes \|[^\n]*\n\| Team\.Terms \|/,
+  )
+  expect(ran.text).not.toContain('Copulatives')
+})
+
+test('/prose-lint coach shows each rule\'s written count, kept rate, examples and the config that ran it', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text).toContain('| Rule | Written | Kept | Examples | Config |')
+  expect(ran.text).toContain('| Newsroom.Passive | 20 | 90% | "was written" | bundled rules |')
+  expect(ran.text).toContain('| Newsroom.EmDashes | 8 | 0% |  | bundled rules |')
+  expect(ran.text).toContain('| Team.Terms | 5 | 80% | "newsroom", "Vale" | /repo/.vale.ini |')
+})
+
+test('/prose-lint coach asks Claude, out of the user\'s sight, for up to three changes', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.context?.join('\n')).toContain('Propose up to three changes')
+  expect(ran.text).not.toContain('Propose')
+})
+
+test('/prose-lint coach starts a turn, so Claude proposes without the user asking again', async ($, on) => {
+  const prompts: string[] = []
+  on('prompt.submit', (_, e) => (prompts.push(e.text), { text: e.text }))
+  storeIn(on, coachHistory())
+  const clock = mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  await $.command.run(coach)
+  await clock.settle()
+
+  expect(prompts).toEqual(['Propose changes from the /prose-lint coach table.'])
+})
+
+test('/prose-lint coach tells Claude to apply only the changes the user picks', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.context?.join('\n')).toContain('Apply only the changes the user picks')
+})
+
+test('/prose-lint coach under 1,000 words says there is not enough writing yet', async ($, on) => {
+  // 999 words: this session's 300 and 699 of another day's.
+  const thin = coachHistory()
+  thin.set('stats/2026-10-08/newsroom', { ...(thin.get('stats/2026-10-08/newsroom') as object), words: { docs: 699 } })
+  storeIn(on, thin)
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text).toBe(
+    'prose-lint: not enough writing yet to coach from: 999 words in the last 30 days, and the coach needs 1,000.',
+  )
+})
+
+test('/prose-lint coach under 1,000 words hands Claude nothing', async ($, on) => {
+  storeIn(on, new Map([[STATS, { ...(coachHistory().get(STATS) as object) }]]))
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.context).toBeUndefined()
+})
+
+test('/prose-lint ./coach lints the folder named coach', async ($, on) => {
+  const linted: string[] = []
+  on('fs.stat', () => dir)
+  on('session.cwd', () => ({ value: '/repo' }))
+  on('process.run', (_, e) => {
+    linted.push(e.argv.at(-1) ?? '')
+    return isBundled(e.argv) ? vale([]) : noConfig
+  })
+
+  const ran = await $.command.run(stats('./coach'))
+
+  expect(linted).toContain('/repo/./coach')
+  expect(ran.text).toBe('prose-lint: no alerts found (bundled rules).')
+})
+
+// The test answers no fs or process call, so a coach that wrote a file or ran
+// a command would fail; the store is the one place it could still write.
+const coachChangesNothing = async ($: Engine, on: On, memory: Map<string, unknown>) => {
+  const before = JSON.stringify([...memory])
+  storeIn(on, memory)
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  await $.command.run(coach)
+
+  expect(JSON.stringify([...memory])).toBe(before)
+}
+
+test('/prose-lint coach changes nothing', ($, on) => coachChangesNothing($, on, coachHistory()))
+
+test('/prose-lint coach under 1,000 words changes nothing', ($, on) =>
+  coachChangesNothing($, on, new Map([[STATS, coachHistory().get(STATS)]])))
+
 test("a session's start folds earlier days into one record per day and project", async ($, on) => {
   const day = (written: number) => ({
     configs: ['bundled rules'],

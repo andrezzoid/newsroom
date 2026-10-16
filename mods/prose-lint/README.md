@@ -5,6 +5,7 @@ A Claude Code plugin that runs [Vale](https://vale.sh) over the prose Claude wri
 - After each Write or Edit, it lints the file and keeps the alerts on the lines Claude added. Claude reads them and rewrites what it got wrong. The transcript shows them under the diff, with each match underlined. When the turn ends, the alerts that got fixed, by Claude or by you, show struck through.
 - `/prose-lint <file or folder>…` lints whole files. Claude reads the output too, so "fix these" works after it.
 - `/prose-lint stats [project]` shows Claude's writing in this session and the last 30 days: alerts per 1,000 words by week, the rules it trips most with how often it kept their alerts, and docs against code comments. The plugin keeps these counts on your machine, in its own store, with no text but a few example matches per rule.
+- `/prose-lint coach` turns those stats into changes. It shows this session's line and the five rules Claude writes the most alerts of, each with how often Claude kept them, a few examples and the config that ran it. Claude then proposes up to three changes, such as turning a noisy rule off in its config or adding a line to `CLAUDE.md`, and applies only the ones you pick. It needs 1,000 words of writing in the last 30 days first.
 
 ## What it looks like
 
