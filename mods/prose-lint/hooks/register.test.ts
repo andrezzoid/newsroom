@@ -468,17 +468,20 @@ test('the turn\'s end counts every alert a long Write kept, past the 20th', asyn
 test('the turn\'s end counts every alert an Edit removed from a long Write, past the 20th', async ($, on) => {
   let isFixed = false
   const store = writeManyInSession($, on, () => isFixed)
-  on('tool.call', { tool: 'Edit' }, () => ({
-    result: {
-      ...editRecord,
-      filePath: '/work/newsroom/notes.md',
-      originalFile: 'Notes, with every alert.\n',
-      structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-Notes, with every alert.', '+Notes.'] }],
-    },
-  }))
+  // The Edit rewrites the file, so every lint from then on finds nothing.
+  on('tool.call', { tool: 'Edit' }, () => {
+    isFixed = true
+    return {
+      result: {
+        ...editRecord,
+        filePath: '/work/newsroom/notes.md',
+        originalFile: 'Notes, with every alert.\n',
+        structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-Notes, with every alert.', '+Notes.'] }],
+      },
+    }
+  })
 
   await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/work/newsroom/notes.md', content: '...' })
-  isFixed = true
   await $.tool.call({ ...edit, tool_use_id: 'e1', file_path: '/work/newsroom/notes.md' })
   await $.turn.complete(answered)
 
