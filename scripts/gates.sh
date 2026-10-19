@@ -20,11 +20,12 @@ fi
 # warnings too: Vale itself exits 1 only on errors. A line that quotes a rule
 # to explain it turns Vale off around itself, as the README does.
 # Third-party skills are the ones skills-lock.json lists, edited or not.
-# .agents/skills links to skills/, so Vale would lint them again through it.
+# A symlink gets linted at its target, so the gates skip every link.
 set -- $(jq -r '.skills | keys[] | ":(exclude)skills/\(.)/**"' skills-lock.json)
+set -- "$@" $(git ls-files -s | awk '$1 == "120000" { print ":(exclude)" $4 }')
 alerts=$(git ls-files -z -- ':(exclude,glob)**/vendor/**' \
   ':(exclude,glob)mods/prose-lint/noise/*.md' ':(exclude)mods/prose-lint/vale/levels' \
-  ':(exclude).agents/skills' "$@" |
+  "$@" |
   xargs -0 vale --no-global --config mods/prose-lint/vale/.vale.ini --output line)
 status=$?
 if [ -n "$alerts" ]; then
