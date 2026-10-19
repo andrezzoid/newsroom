@@ -217,6 +217,26 @@ test('/prose-lint lists every alert of the files it names', async ($, on) => {
   expect(ran.text).toContain('`notes.md`')
 })
 
+test('/prose-lint on a file with 250 alerts lists 200 and counts the rest', async ($, on) => {
+  on('fs.stat', () => ({ deny: 'ENOENT' }))
+  on('session.cwd', () => ({ value: '/repo' }))
+  on('process.run', (_, e) => {
+    if (!isBundled(e.argv)) return noConfig
+    const alerts = Array.from({ length: 250 }, (_, index) => alert(index + 1, `adverb${index + 1}`))
+    return result(0, JSON.stringify({ [e.argv.at(-1) ?? '']: alerts }))
+  })
+
+  const ran = await $.command.run({
+    command: 'prose-lint',
+    args: 'README.md',
+    origin: { kind: 'composer' },
+    presentation: { isFullscreen: false, columns: 100 },
+  })
+
+  expect(ran.text?.split('\n').filter(line => /^- \d+:\d+ /.test(line))).toHaveLength(200)
+  expect(ran.text).toEndWith('\n(50 more not shown)')
+})
+
 test('/prose-lint on a file with no alerts says so', async ($, on) => {
   on('fs.stat', () => dir)
   on('session.cwd', () => ({ value: '/repo' }))
@@ -277,6 +297,37 @@ const writeWith = ($: Engine, on: On, alerts: unknown[]) => {
   on('tool.call', { tool: 'Write' }, created('/repo/notes.md'))
   return $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/repo/notes.md', content: '...' })
 }
+
+// One alert on each of lines 1 to `count`, the error rule's on the last
+// `errors` lines and an adverb warning on the rest, each with words of its own.
+const manyAlerts = (count: number, errors = 0) =>
+  Array.from({ length: count }, (_, index) =>
+    index < count - errors
+      ? { ...alert(index + 1, `adverb${index + 1}`), Severity: 'warning' }
+      : { ...alert(index + 1, `—${index + 1}`), Check: 'AiTells.Dash', Severity: 'error', Message: 'Em/en dash: recast.' },
+  )
+
+// The alert rows of Claude's note.
+const rowsOf = (note: string | undefined) => (note ?? '').split('\n').filter(line => /^- \d+:\d+ /.test(line))
+
+test("Claude's note lists every alert of a Write that raised 25", async ($, on) => {
+  const ran = await writeWith($, on, manyAlerts(25))
+
+  expect(rowsOf(ran.context?.[0])).toHaveLength(25)
+})
+
+test("Claude's note of a Write that raised 25 alerts has no line of alerts not shown", async ($, on) => {
+  const ran = await writeWith($, on, manyAlerts(25))
+
+  expect(ran.context?.[0]).not.toContain('more not shown')
+})
+
+test("Claude's note puts every error of a long Write under must-fix, even the file's last lines", async ($, on) => {
+  const ran = await writeWith($, on, manyAlerts(25, 3))
+
+  const mustFix = ran.context?.[0]?.split('Must fix:\n')[1]?.split('\nFix, or tell the user why not:')[0]
+  expect(rowsOf(mustFix)).toEqual(['- 23:1 Em/en dash: recast.', '- 24:1 Em/en dash: recast.', '- 25:1 Em/en dash: recast.'])
+})
 
 // The terminal row of the Write w1 as it stands now.
 const mountRow = ($: Engine) =>
@@ -383,6 +434,60 @@ test("the turn's end counts what Claude fixed and what it kept", async ($, on) =
   expect(struck.map(element => element.text)).toContain('really')
   expect(struck.map(element => element.text)).not.toContain('just')
   expect(await ui.find({ type: 'Text', text: 'prose-lint · 2 alerts · 1 fixed · bundled rules' })).toBeDefined()
+})
+
+// A session's Write, w1, of a new /work/newsroom/notes.md in which Vale
+// finds 25 alerts, 3 of them errors, until isFixed() turns true; from then
+// on it finds none.
+const writeManyInSession = ($: Engine, on: On, isFixed: () => boolean) => {
+  const store = session(on)
+  on('fs.stat', () => dir)
+  on('fs.read', () => ({ value: 'Notes.\n' }))
+  on('process.run', (_, e) => (isBundled(e.argv) ? vale(isFixed() ? [] : manyAlerts(25, 3), 1) : noConfig))
+  on('tool.call', { tool: 'Write' }, created('/work/newsroom/notes.md'))
+  on('turn.complete', () => ({ text: '' }))
+  return store
+}
+
+const answered = { answer: '', durationMs: 0, isAborted: false, turnId: 't1', reason: 'answer' } as const
+
+test('the turn\'s end counts every alert a long Write kept, past the 20th', async ($, on) => {
+  const store = writeManyInSession($, on, () => false)
+
+  await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/work/newsroom/notes.md', content: '...' })
+  await $.turn.complete(answered)
+
+  expect(store.get(STATS)).toMatchObject({
+    rules: {
+      'AiTells.Adverb': { docs: { written: 22, fixed: 0, kept: 22 } },
+      'AiTells.Dash': { docs: { written: 3, fixed: 0, kept: 3 } },
+    },
+  })
+})
+
+test('the turn\'s end counts every alert an Edit removed from a long Write, past the 20th', async ($, on) => {
+  let isFixed = false
+  const store = writeManyInSession($, on, () => isFixed)
+  on('tool.call', { tool: 'Edit' }, () => ({
+    result: {
+      ...editRecord,
+      filePath: '/work/newsroom/notes.md',
+      originalFile: 'Notes, with every alert.\n',
+      structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-Notes, with every alert.', '+Notes.'] }],
+    },
+  }))
+
+  await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/work/newsroom/notes.md', content: '...' })
+  isFixed = true
+  await $.tool.call({ ...edit, tool_use_id: 'e1', file_path: '/work/newsroom/notes.md' })
+  await $.turn.complete(answered)
+
+  expect(store.get(STATS)).toMatchObject({
+    rules: {
+      'AiTells.Adverb': { docs: { written: 22, fixed: 22, kept: 0 } },
+      'AiTells.Dash': { docs: { written: 3, fixed: 3, kept: 0 } },
+    },
+  })
 })
 
 test("a fixed alert's row names its rule in full after the struck message", async ($, on) => {
