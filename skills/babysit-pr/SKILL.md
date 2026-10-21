@@ -3,11 +3,11 @@ name: babysit-pr
 description: Keep a pull request mergeable until it merges or closes, as a senior engineer would. Resolve conflicts, fix CI, address and resolve review comments and wait for the next round. Use after a pull request opens, or when asked to babysit one.
 ---
 
-Keep the pull request mergeable until someone merges or closes it. Mergeable means no conflicts with its base, every review thread answered and every check green. Your work ends at mergeable: someone else merges. Follow the "principle-human-on-the-loop" skill. After a hand-back, keep waiting: the user's answer, or the next change, wakes you. When it merges or closes, debrief the user on what happened with the "protocol-report" skill.
+Keep the pull request mergeable until someone merges or closes it. Mergeable means no conflicts with its base, every review thread answered and every check green. Your work ends at mergeable: someone else merges. Call the Skill tool with "principle-human-on-the-loop" before you start. After a hand-back, keep waiting: the user's answer, or the next change, wakes you. When it merges or closes, call the Skill tool with "protocol-report" and debrief the user on what happened.
 
 # Process
 
-Work the steps in order. A fix at a later step might get undone by an earlier one. Give every finding a disposition with the "protocol-dispositions" skill, and keep each fix to what its finding needs: anything else is a followup. Keep `<pr-number>.md` in your scratchpad or temp folder for working notes: the followups, deviations and judgment calls the debrief needs. It only has to survive the session.
+Work the steps in order. A fix at a later step might get undone by an earlier one. Call the Skill tool with "protocol-dispositions" and give every finding a disposition. Keep each fix to what its finding needs: anything else is a followup. Keep `<pr-number>.md` in your scratchpad or temp folder for working notes: the followups, deviations and judgment calls the debrief needs. It only has to survive the session.
 
 1. Read the pull request's state: its conflicts, threads and checks.
 

@@ -3,15 +3,13 @@ name: implement
 description: "Implement a plan: a ticket (ENG-123 in Linear, owner/repo#12 or #12 in GitHub Issues), a spec file, or what this conversation settled. Use when asked to implement, build or pick up any of these."
 ---
 
-Implement the plan: a ticket, a spec, or what this conversation settled, and commit as you progress. Follow the "principle-human-on-the-loop" skill. The run pauses when you hand back and ends when you're done.
+Implement the plan: a ticket, a spec, or what this conversation settled, and commit as you progress. Call the Skill tool with "principle-human-on-the-loop" before you start. The run pauses when you hand back and ends when you're done.
 
 Done means every acceptance criterion has deterministic proof, every gate the repository defines passes, you've committed the solution and you've debriefed the user.
 
 # Ground rules
 
-- Treat the plan as an agreement, and never edit a published ticket's body or an approved spec without explicit consent.
 - Keep the solution to what the acceptance criteria need. Anything else you find is a followup.
-- Give every finding a disposition (fix now, followup or rejected) with the "protocol-dispositions" skill.
 - Circuit breaker: when you've gone back to the same step three times, hand back.
 
 # Process 
@@ -24,16 +22,16 @@ Done means every acceptance criterion has deterministic proof, every gate the re
 
 4. Quote each acceptance criterion and state the observation that would falsify it. When there are none, or one has no such observation, hand back: vague acceptance criteria are a shaping problem.
 
-5. Create `<id-or-slug>.md` in your scratchpad or temp folder for working notes. Keep it current: what you tried, deviations from the plan, decisions, open loops. It is yours, it is disposable, and it only has to survive the session.
+5. Create `<id-or-slug>.md` in your scratchpad or temp folder for working notes. At the end of each step, add what the debrief will need: deviations from the plan, decisions, followups and open loops. It is yours, it is disposable, and it only has to survive the session.
 
-6. Call the Skill tool with "tdd". Each acceptance criterion gets one acceptance test that proves it, at the layer and seam the plan agrees on, or else where its falsifying observation shows. Add other tests only to drive a bug fix. An acceptance test proves its criterion only while it asserts what the criterion says, so weakening it fails the criterion. Done when every acceptance test passes.
+6. Call the Skill tool with "tdd". Each acceptance criterion gets one acceptance test that proves it, at the layer and seam the plan agrees on, or else where its falsifying observation shows. Add other tests only to drive a bug fix. An acceptance test proves its criterion only while it asserts what the criterion says and goes red when you remove its "when" step, so weakening it fails the criterion. Done when every acceptance test passes.
 
-    - While you build, follow "principle-paved-path", "comments-as-design", "deep-module-design" and "define-errors-away" wherever their triggers match.
+    - Before you write code, call the Skill tool with "principle-paved-path", "principle-comments-as-design", "principle-deep-module-design" and "principle-define-errors-away".
 
-7. Call the Skill tool with "code-review", "security-review" and "complexity-red-flags". Done when every finding has a disposition.
+7. Call the Skill tool with "code-review", "security-review" and "complexity-red-flags", then call it with "protocol-dispositions" and give every finding a disposition. Done when each has run, or you have recorded why it does not apply, and every finding has a disposition.
 
-8. Call the Skill tool with "poke-holes" on the final solution. Done when a fresh pass finds no new fix-now finding.
+8. Call the Skill tool with "poke-holes" on the final solution. Done when a fresh pass over every fix that changes behaviour finds no new fix-now finding.
 
 9. Run every gate the repository defines. Done when every gate passes.
 
-10. Debrief the user with the "protocol-report" skill.
+10. Call the Skill tool with "protocol-report" and debrief the user.

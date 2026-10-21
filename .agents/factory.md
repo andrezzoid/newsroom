@@ -22,12 +22,16 @@ A revert cannot undo a change here, so it never merges without a human.
 ## Issue tracker
 
 Issues live in GitHub Issues on this repo. Use `gh issue`. Blockers are issue
-dependencies, or a `## Blocked by` section listing `#12`. A ticket an agent
-works on carries the `in-progress` label.
+dependencies, or a `## Blocked by` section listing `#12`.
 
-`factory ticket show <ID>` gives the branch to work on and the `Closes` line
-the PR body ends with, so the tracker links the PR and closes the ticket on
-merge.
+An agent claims a ticket by adding `in-progress` and removing
+`ready-for-agent`. A hand-back removes `in-progress` and adds
+`ready-for-human`. Change labels one at a time, with `gh issue edit
+--add-label` and `--remove-label`: rewriting the whole list drops any label
+someone added in between.
+
+End the pull request body with `Closes #<n>`, so the tracker links the pull
+request and closes the ticket on merge.
 
 **PRs as a request surface: yes.** `/triage` also lists open PRs from people
 outside the repo (GitHub author association `CONTRIBUTOR`,
@@ -53,5 +57,5 @@ Matt Pocock's `triage` roles under their own names, plus the factory's.
 
 ## Domain docs
 
-Multi-context: `CONTEXT-MAP.md` at the root lists each mod's `CONTEXT.md`, with
-its decisions in that mod's `docs/adr/`.
+Multi-context: `GLOSSARY-MAP.md` at the root lists each context's
+`GLOSSARY.md`, with its decisions in that context's `docs/adr/`.

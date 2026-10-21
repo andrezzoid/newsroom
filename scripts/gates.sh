@@ -15,6 +15,21 @@ if [ -n "$missing" ]; then
   exit 1
 fi
 
+# Every skill a skill or agent tells Claude to call exists in .claude/skills,
+# or ships with Claude Code. A skill that only exists on one machine is missing
+# from every cloud session.
+builtin="code-review security-review run"
+missing=$(grep -rhoiE 'call (the|your) Skill tool( twice,)? (with|for)[^.]*' skills agents |
+  grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u | while read -r name; do
+    case " $builtin " in (*" $name "*) continue ;; esac
+    [ -f ".claude/skills/$name/SKILL.md" ] || echo "$name"
+  done)
+if [ -n "$missing" ]; then
+  printf '%s\n' "$missing"
+  echo "gates: each skill above is called but missing from .claude/skills: link it there, or add it to the built-ins in scripts/gates.sh."
+  exit 1
+fi
+
 # Every tracked file against the bundled rules, whoever wrote it, except
 # third-party code and the fixtures that hold slop on purpose. Any alert fails,
 # warnings too: Vale itself exits 1 only on errors. A line that quotes a rule

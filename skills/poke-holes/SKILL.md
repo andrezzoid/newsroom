@@ -35,4 +35,4 @@ Scale the lenses to the stakes, never to zero. A small solution might get one re
 
 3. Call the Skill tool with "protocol-dispositions" and give every failing row and every finding a disposition. Done when every row that needs a disposition has one.
 
-If you can't spawn reviewers, hand back with "protocol-report": no review ran. A review you narrate yourself looks like one and isn't.
+If you can't spawn reviewers, call the Skill tool with "protocol-report" and hand back: no review ran. A review you narrate yourself looks like one and isn't.
