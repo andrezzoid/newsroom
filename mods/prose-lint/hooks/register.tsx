@@ -30,10 +30,6 @@ type ValeAlert = {
 // the project's or the user's own, else --config with the bundled one.
 type Linted = { configLabel: string; configArgs: string[]; byFile: Record<string, ValeAlert[]> }
 
-// Caps the alerts Claude reads per edit, so a file full of alerts costs a short
-// note, not a page of context. The transcript row still shows them all.
-const MAX_ALERTS = 20
-
 // Caps the alerts /prose-lint prints, so a folder of old prose stays readable.
 const MAX_REPORTED = 200
 
@@ -504,9 +500,7 @@ const addedLines = (patch: readonly Hunk[]): Set<number> => {
 
 // Adds one Write or Edit to today's stats: the prose words it added, every
 // alert on them, and a fix edit when it removed words an open alert matched
-// in that file. Opens only the alerts Claude's note shows, for the turn's end
-// to give a verdict; one past the note's cut counts as written and never
-// gets one.
+// in that file. Opens every alert for the turn's end to give a verdict.
 // Files whose kind it can't tell don't count.
 const recordEdit = async (
   $: EngineInterface,
@@ -533,10 +527,7 @@ const recordEdit = async (
       if (examples.length < 3 && !examples.includes(a.Match)) examples.push(a.Match)
     }
   })
-  const shown = new Set(forNote(found))
-  const opened: OpenAlert[] = found.flatMap((a, index) =>
-    shown.has(a) ? [{ id, index, file: path, check: a.Check, match: a.Match, kind }] : [],
-  )
+  const opened: OpenAlert[] = found.map((a, index) => ({ id, index, file: path, check: a.Check, match: a.Match, kind }))
   if (opened.length > 0) await update($, open, list => [...list, ...opened])
 }
 
@@ -965,29 +956,23 @@ const report = (linted: Linted[], cwd: string): string => {
   return lines.join('\n')
 }
 
-// The alerts Claude's note shows: errors first, so the MAX_ALERTS cut never
-// hides one, then the rest in file order. The stats open only these.
-const forNote = (found: ValeAlert[]): ValeAlert[] =>
-  [...found]
-    .sort((a, b) => Number(b.Severity === 'error') - Number(a.Severity === 'error') || byPosition(a, b))
-    .slice(0, MAX_ALERTS)
-
 // The note Claude reads after a flagged edit, terse because it costs context
-// each time. Errors encode hard rules, so they have no way out; Claude keeps
-// any other alert only by telling the user why, so a quiet reply means it
-// fixed them all.
+// each time. It lists every alert, in file order within each section: later
+// edits report only the lines they add, so an alert left out would never
+// reach Claude. Errors encode hard rules, so they have no way out; Claude
+// keeps any other alert only by telling the user why, so a quiet reply means
+// it fixed them all.
 const describe = (found: ValeAlert[], configLabel: string): string => {
-  const shown = forNote(found)
+  const inOrder = [...found].sort(byPosition)
   const row = (a: ValeAlert) => `- ${a.Line}:${a.Span[0]} ${a.Message}`
-  const errors = shown.filter(a => a.Severity === 'error').map(row)
-  const others = shown.filter(a => a.Severity !== 'error').map(row)
-  const more = found.length > MAX_ALERTS ? `\n(${found.length - MAX_ALERTS} more not shown)` : ''
+  const errors = inOrder.filter(a => a.Severity === 'error').map(row)
+  const others = inOrder.filter(a => a.Severity !== 'error').map(row)
 
   return [
     `Vale (${configLabel}). Don't mention fixes.`,
     ...(errors.length > 0 ? ['Must fix:', ...errors] : []),
     ...(others.length > 0 ? ['Fix, or tell the user why not:', ...others] : []),
-  ].join('\n') + more
+  ].join('\n')
 }
 
 const basename = (path: string): string => path.slice(path.lastIndexOf('/') + 1)

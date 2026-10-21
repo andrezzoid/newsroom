@@ -25,8 +25,7 @@ export type ProseAlert = {
   text: string
   // Set when the turn that wrote it ends: gone from the file (by Claude's
   // hand or the user's) or still there. A kept one turns fixed when a later
-  // turn's end finds it gone. Unset until the first verdict, and for an alert
-  // past the note's cut, which never gets one.
+  // turn's end finds it gone. Unset until the first verdict.
   status?: 'fixed' | 'kept'
 }
 
@@ -34,9 +33,8 @@ export type ProseAlert = {
 export type Kind = 'docs' | 'comments'
 
 // What became of the alerts on prose Claude wrote. A written alert counts as
-// fixed or kept at the end of the next turn Claude answers, except when
-// Claude's note cut it (past 20), the file no longer exists, or Vale failed
-// on it then: those count in neither.
+// fixed or kept at the end of the next turn Claude answers, except when the
+// file no longer exists or Vale failed on it then: those count in neither.
 export type Counts = { written: number; fixed: number; kept: number }
 
 // One day's writing in one project: a session's own record until a later
