@@ -29,8 +29,12 @@ _Avoid_: Golden path, broken windows
 ### Work
 
 **Plan**:
-What the work answers: a ticket, a spec, or what a conversation settled. Only the user changes it.
+What the work answers: a ticket, an agent brief, a spec, or what a conversation settled. Only the user changes it.
 _Avoid_: Contract, agreement, work item, proposal
+
+**Agent brief**:
+The plan triage posts as a comment on a ticket, which replaces the ticket's body as what the work answers.
+_Avoid_: Brief (alone), triage notes
 
 **Solution**:
 What an agent builds from a plan.

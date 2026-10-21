@@ -1,7 +1,8 @@
 The skills that skills-lock.json lists are copies of skills by other authors,
 installed with `npx skills add`. Each keeps its own license, listed below, and
 the MIT License in the root LICENSE file does not cover them. The licenses
-follow the list. A skill that differs from its source says so at its top.
+follow the list. A skill that differs from its source names its upstream commit
+and its editor in the `metadata` of its SKILL.md frontmatter.
 
 | Skills | Source | License |
 |---|---|---|
