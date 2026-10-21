@@ -90,9 +90,9 @@ Iterate until the user approves the breakdown.
 
 ### 6. Publish the tickets to the configured tracker
 
-Publish the approved tickets. How depends on the tracker `/factory setup` configured; the tickets are the same either way, only the shape of the blocking edges changes:
+Call the Skill tool with "protocol-plan" and write each approved ticket in its ticket sections, adding the acceptance criteria each slice needs on its own. Then publish the approved tickets. How depends on the tracker `/factory setup` configured; the tickets are the same either way, only the shape of the blocking edges changes:
 
-- **Local files** → write one file per ticket under `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket file template below: one ticket per file, never a single combined file.
+- **Local files** → write one file per ticket under `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Write each file in protocol-plan's ticket sections: one ticket per file, never a single combined file.
 - **A real issue tracker (GitHub, Linear, …)** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the platform's native blocking relationship where it has one; otherwise set each ticket's "Blocked by" to the blocking issues. If the source was an existing issue, make each ticket its sub-issue (tracker doc's operation). Apply the `ready-for-agent` triage label unless instructed otherwise; the tickets are agent-grabbable by construction.
 
 Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.
@@ -100,5 +100,3 @@ Work the **frontier**: any ticket whose blockers are all done. For a purely line
 File each followup as an issue for triage, with its title and its one line of what and why.
 
 Do NOT close or modify any parent issue.
-
-Call the Skill tool with "protocol-plan" and write each approved ticket in its ticket sections, adding the acceptance criteria each slice needs on its own.
