@@ -341,19 +341,21 @@ const pluginRoot = ($: EngineInterface): string => $.plugin.root.replace(/\/\.cl
 
 const bundledConfig = ($: EngineInterface): string => `${pluginRoot($)}/vale/.vale.ini`
 
-// The alerts in `text`, linted as a file of type `ext` from `dir` with the
+// The alerts in `text`, linted as the file at `path` from `dir` with the
 // config arguments an earlier lint() settled on, so no config search or label
-// runs again. Undefined, with no toast, when Vale fails: the caller treats that
-// as "no alerts known".
+// runs again. Vale matches a config's sections against the path string as it
+// is given, so `path` and `dir` must be the ones that lint got for the same
+// sections to apply. Undefined, with no toast, when Vale fails: the caller
+// treats that as "no alerts known".
 const lintText = async (
   $: EngineInterface,
   text: string,
-  ext: string,
+  path: string,
   dir: string,
   configArgs: string[],
 ): Promise<ValeAlert[] | undefined> => {
   const run = await $.process
-    .run(['vale', ...configArgs, `--ext=.${ext}`, '--output', 'JSON'], { cwd: dir, timeoutMs: 60_000, stdin: text })
+    .run(['vale', ...configArgs, `--path=${path}`, '--output', 'JSON'], { cwd: dir, timeoutMs: 60_000, stdin: text })
     .catch(() => undefined)
   if (!run || run.exitCode > 1) return undefined
   try {
@@ -432,17 +434,15 @@ const shorten = async ($: EngineInterface, path: string): Promise<string> => {
 // one, and a word removed in one section never hides the same word added in
 // another.
 // When that lint fails, nothing cancels: better a repeated alert than a hidden
-// one. Vale names piped text stdin.<ext>, so a project config whose sections
-// match paths (docs/*.md) lints none of it, and the existing alerts repeat.
+// one.
 const newAlerts = async (
   $: EngineInterface,
   found: ValeAlert[],
   written: { filePath: string; originalFile: string | null; structuredPatch: readonly Hunk[] },
   configArgs: string[],
 ): Promise<ValeAlert[]> => {
-  const ext = extOf(written.filePath)
-  if (found.length === 0 || written.originalFile === null || !ext) return found
-  const before = await lintText($, written.originalFile, ext, dirname(written.filePath), configArgs)
+  if (found.length === 0 || written.originalFile === null) return found
+  const before = await lintText($, written.originalFile, written.filePath, dirname(written.filePath), configArgs)
   if (!before) return found
 
   // Which hunk each removed line (old numbering) and added line (new) is in.
