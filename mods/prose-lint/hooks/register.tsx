@@ -250,9 +250,11 @@ const runs = (text: string, onLine: ProseAlert[]): Run[] => {
 // Lints the written file and hands Claude the alerts on the lines the write
 // added, so it fixes its own prose and leaves the prose that was already there
 // alone. With no original to diff against (a new file, or an old one too large
-// for Claude Code to keep), every line counts; an empty diff (nothing changed,
-// or the diff timed out) lints nothing. Also keeps the alerts under the call's
-// id for its transcript row. Returns `ran` unchanged when no alert lands.
+// for Claude Code to keep), every line counts. An edit that adds no line adds
+// no alerts or words, so it lints nothing, but it still counts a fix edit when
+// it deleted an open alert's words; an empty diff (nothing changed, or the diff
+// timed out) is one such edit. Also keeps the alerts under the call's id for
+// its transcript row. Returns `ran` unchanged when no alert lands.
 const withAlerts = async <R extends { context?: readonly string[] }>(
   $: EngineInterface,
   ran: R,
@@ -267,11 +269,15 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
 ): Promise<R> => {
   const { filePath: path, originalFile, structuredPatch } = written
   const lines = originalFile === null ? undefined : addedLines(structuredPatch)
-  if (lines?.size === 0) return ran
+  const removed = structuredPatch.flatMap(hunk => hunk.lines.filter(l => l.startsWith('-')).map(l => l.slice(1)))
+  if (lines?.size === 0) {
+    // Stats must never fail Claude's edit, so this drops a failure there.
+    await countFixEdit($, path, removed).catch(() => {})
+    return ran
+  }
 
   const linted = await lint($, [path], dirname(path))
   if (!linted) return ran
-  const removed = structuredPatch.flatMap(hunk => hunk.lines.filter(l => l.startsWith('-')).map(l => l.slice(1)))
   const found = await newAlerts(
     $,
     (Object.values(linted.byFile)[0] ?? []).filter(a => lines === undefined || lines.has(a.Line)),
@@ -513,10 +519,7 @@ const recordEdit = async (
   const kind = kindOf(path)
   if (!kind) return
 
-  const removedWords = sameWords(change.removed.join(' '))
-  const isFixEdit = (await read($, open)).some(
-    alert => alert.file === path && removedWords.includes(sameWords(alert.match)),
-  )
+  const isFixEdit = await removesOpen($, path, change.removed)
   await updateStats($, stats => {
     if (!stats.configs.includes(configLabel)) stats.configs.push(configLabel)
     stats.words[kind] = (stats.words[kind] ?? 0) + countWords(change.added, path)
@@ -529,6 +532,25 @@ const recordEdit = async (
   })
   const opened: OpenAlert[] = found.map((a, index) => ({ id, index, file: path, check: a.Check, match: a.Match, kind }))
   if (opened.length > 0) await update($, open, list => [...list, ...opened])
+}
+
+// Adds a fix edit to today's stats for an edit that added no line, when it
+// removed an open alert's words. No config linted it, so `configs` stays as is.
+const countFixEdit = async ($: EngineInterface, path: string, removed: string[]): Promise<void> => {
+  if (await removesOpen($, path, removed)) {
+    await updateStats($, stats => {
+      stats.fixEdits++
+    })
+  }
+}
+
+// True when the removed lines of `path` hold the words of an alert still open
+// in that file. Removing no words fixes nothing, even an alert that matched
+// only spaces.
+const removesOpen = async ($: EngineInterface, path: string, removed: string[]): Promise<boolean> => {
+  const removedWords = sameWords(removed.join(' '))
+  if (removedWords === '') return false
+  return (await read($, open)).some(alert => alert.file === path && removedWords.includes(sameWords(alert.match)))
 }
 
 // Lints each file with open alerts again and counts how often each alert
