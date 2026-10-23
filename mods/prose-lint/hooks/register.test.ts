@@ -28,7 +28,7 @@ const isBundled = (argv: readonly string[]) => argv.includes('--config')
 
 // The run that lints the file as it stood before an edit, piped in, to tell
 // existing alerts from new ones.
-const isPiped = (argv: readonly string[]) => argv.some(arg => arg.startsWith('--ext='))
+const isPiped = (argv: readonly string[]) => argv.some(arg => arg.startsWith('--path='))
 
 const dir = { value: { kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false } }
 
@@ -401,6 +401,102 @@ test('a flagged Write adds its words and alerts to the day\'s stats', async ($, 
     fixEdits: 0,
     examples: { 'AiTells.Adverb': ['just'] },
   })
+})
+
+// A project whose .vale.ini has one prose section, [**/docs/*.md]. Like Vale,
+// the mock matches the section against the name a run lints: the path it
+// names, the path --path gives piped text, or stdin.<ext> for --ext. A run
+// whose name doesn't match finds nothing. Piped runs find `before`, the others
+// `after`; each run lands in `runs`.
+const docsConfig = (
+  on: On,
+  before: unknown[] | 'fails',
+  after: unknown[],
+  runs: { argv: readonly string[]; cwd?: string; stdin?: string }[] = [],
+) => {
+  const store = session(on)
+  on('env.get', () => ({ value: '/home/someone' }))
+  on('fs.stat', (_, e) => (e.path === '/work/newsroom/.vale.ini' ? dir : { deny: 'ENOENT' }))
+  on('fs.read', () => ({ value: 'a\nIt just works now.\n' }))
+  on('process.run', (_, e) => {
+    runs.push({ argv: e.argv, cwd: e.init?.cwd, stdin: e.init?.stdin })
+    const ext = e.argv.find(arg => arg.startsWith('--ext='))?.slice('--ext='.length)
+    const name = e.argv.find(arg => arg.startsWith('--path='))?.slice('--path='.length) ?? (ext ? `stdin${ext}` : e.argv.at(-1))
+    if (!/^\/.+\/docs\/[^/]+\.md$/.test(name ?? '')) return vale([])
+    if (!isPiped(e.argv) && !ext) return vale(after)
+    return before === 'fails' ? failure('E100 something broke', 'E100') : vale(before)
+  })
+  return store
+}
+
+// An Edit of /work/newsroom/docs/big.md that rewrites line 2 into `line`.
+const docsEdit = ($: Engine, on: On, line: string) => {
+  on('tool.call', { tool: 'Edit' }, () => ({
+    result: {
+      ...editRecord,
+      filePath: '/work/newsroom/docs/big.md',
+      originalFile: 'a\nIt just works.\n',
+      structuredPatch: [{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 2, lines: [' a', '-It just works.', `+${line}`] }],
+    },
+  }))
+  return $.tool.call({ ...edit, file_path: '/work/newsroom/docs/big.md' })
+}
+
+test('the lint before an edit names the edited file with --path, as the lint after it did, from the same folder', async ($, on) => {
+  const runs: { argv: readonly string[]; cwd?: string; stdin?: string }[] = []
+  docsConfig(on, [alert(2, 'just')], [alert(2, 'just')], runs)
+
+  await docsEdit($, on, 'It just works now.')
+
+  const piped = runs.find(run => run.stdin !== undefined)
+  const file = runs.find(run => run.stdin === undefined)
+  expect(file?.argv.at(-1)).toBe('/work/newsroom/docs/big.md')
+  expect(piped?.argv).toContain('--path=/work/newsroom/docs/big.md')
+  expect(piped?.cwd).toBe(file?.cwd)
+})
+
+test('the lint before an edit gives Vale no --ext', async ($, on) => {
+  const runs: { argv: readonly string[]; cwd?: string; stdin?: string }[] = []
+  docsConfig(on, [alert(2, 'just')], [alert(2, 'just')], runs)
+
+  await docsEdit($, on, 'It just works now.')
+
+  const piped = runs.find(run => run.stdin !== undefined)
+  expect(piped).toBeDefined()
+  expect(piped?.argv.some(arg => arg.startsWith('--ext'))).toBe(false)
+})
+
+test("a project config scoped to **/docs/*.md doesn't report an alert the edited line already had", async ($, on) => {
+  docsConfig(on, [alert(2, 'just')], [alert(2, 'just')])
+
+  const ran = await docsEdit($, on, 'It just works now.')
+
+  expect(ran.context).toBeUndefined()
+})
+
+test("a project config scoped to **/docs/*.md doesn't count an alert the edited line already had as written", async ($, on) => {
+  const store = docsConfig(on, [alert(2, 'just')], [alert(2, 'just')])
+
+  await docsEdit($, on, 'It just works now.')
+
+  const stats = store.get(STATS) as { rules?: Record<string, { docs?: { written: number } }> } | undefined
+  expect(stats?.rules?.['AiTells.Adverb']?.docs?.written ?? 0).toBe(0)
+})
+
+test('a project config scoped to **/docs/*.md reports the second instance an edit adds to a line, once', async ($, on) => {
+  docsConfig(on, [alert(2, 'just')], [alert(2, 'just'), alert(2, 'just')])
+
+  const ran = await docsEdit($, on, 'It just works, just now.')
+
+  expect(rowsOf(ran.context?.[0])).toEqual(["- 2:1 Filler adverb 'just': let the verb carry it."])
+})
+
+test('when the lint before an edit fails, the note lists every alert on the added lines', async ($, on) => {
+  docsConfig(on, 'fails', [alert(2, 'just'), alert(2, 'really')])
+
+  const ran = await docsEdit($, on, 'It just really works.')
+
+  expect(rowsOf(ran.context?.[0])).toHaveLength(2)
 })
 
 test("the turn's end counts what Claude fixed and what it kept", async ($, on) => {
