@@ -493,6 +493,84 @@ test('the turn\'s end counts every alert an Edit removed from a long Write, past
   })
 })
 
+// A session's Write, w1, of a new /work/newsroom/notes.md whose line 1 raises
+// one alert, then an Edit, e1, with this patch, which adds no line. Vale finds
+// the alert until the Edit lands. Returns the day's stats before the Edit, the
+// Edit's result, and the Vale runs from the Edit on.
+const deleteInSession = async ($: Engine, on: On, structuredPatch: unknown[]) => {
+  let isEdited = false
+  const runs: string[] = []
+  const store = session(on)
+  on('fs.stat', () => dir)
+  on('fs.read', () => ({ value: isEdited ? 'Notes.\n' : 'It just works.\nNotes.\n' }))
+  on('process.run', (_, e) => {
+    if (isEdited) runs.push(e.argv.join(' '))
+    return isBundled(e.argv) ? vale(isEdited ? [] : [alert(1, 'just')]) : noConfig
+  })
+  on('tool.call', { tool: 'Write' }, created('/work/newsroom/notes.md'))
+  on('tool.call', { tool: 'Edit' }, () => {
+    isEdited = true
+    return {
+      result: { ...editRecord, filePath: '/work/newsroom/notes.md', originalFile: 'It just works.\nNotes.\n', structuredPatch },
+    }
+  })
+  on('turn.complete', () => ({ text: '' }))
+
+  await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/work/newsroom/notes.md', content: '...' })
+  // A copy, since the store hands out the record the next update changes.
+  const before = JSON.parse(JSON.stringify(store.get(STATS)))
+  const ran = await $.tool.call({ ...edit, tool_use_id: 'e1', file_path: '/work/newsroom/notes.md' })
+  return { store, before, ran, runs }
+}
+
+// Removes line 1, which holds the alert.
+const deleteFlaggedLine = [{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 1, lines: ['-It just works.', ' Notes.'] }]
+
+test('an Edit that only deletes the line of an open alert counts a fix edit', async ($, on) => {
+  const { store, before } = await deleteInSession($, on, deleteFlaggedLine)
+
+  expect((store.get(STATS) as { fixEdits: number }).fixEdits).toBe(before.fixEdits + 1)
+})
+
+test('an Edit that only deletes lines runs no Vale', async ($, on) => {
+  const { runs } = await deleteInSession($, on, deleteFlaggedLine)
+
+  expect(runs).toEqual([])
+})
+
+test("an Edit that only deletes lines leaves the day's words alone", async ($, on) => {
+  const { store, before } = await deleteInSession($, on, deleteFlaggedLine)
+
+  expect((store.get(STATS) as { words: unknown }).words).toEqual(before.words)
+})
+
+test('an Edit that only deletes lines hands Claude no note', async ($, on) => {
+  const { ran } = await deleteInSession($, on, deleteFlaggedLine)
+
+  expect(ran.context).toBeUndefined()
+})
+
+test('an alert whose line an Edit deleted counts fixed at the turn\'s end', async ($, on) => {
+  const { store } = await deleteInSession($, on, deleteFlaggedLine)
+  await $.turn.complete(answered)
+
+  expect(store.get(STATS)).toMatchObject({ rules: { 'AiTells.Adverb': { docs: { written: 1, fixed: 1, kept: 0 } } } })
+})
+
+test("an Edit that only deletes lines without an open alert's words counts no fix edit", async ($, on) => {
+  const { store, before } = await deleteInSession($, on, [
+    { oldStart: 1, oldLines: 2, newStart: 1, newLines: 1, lines: [' It just works.', '-Notes.'] },
+  ])
+
+  expect((store.get(STATS) as { fixEdits: number }).fixEdits).toBe(before.fixEdits)
+})
+
+test('an Edit with an empty diff counts no fix edit', async ($, on) => {
+  const { store, before } = await deleteInSession($, on, [])
+
+  expect((store.get(STATS) as { fixEdits: number }).fixEdits).toBe(before.fixEdits)
+})
+
 test("a fixed alert's row names its rule in full after the struck message", async ($, on) => {
   let lints = 0
   session(on)
