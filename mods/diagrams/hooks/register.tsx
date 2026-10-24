@@ -8,9 +8,14 @@ import { draw } from './drawing'
 // after. The hook changes only the drawing: the stored reply, and what /copy
 // gives, keeps the Source. GLOSSARY.md defines the terms.
 
-// A line that opens a mermaid fence: up to three spaces, then three or more
-// backticks or tildes, then the info string `mermaid`. It narrows the hook to
-// the blocks that may hold a Diagram, so every other block skips the mod.
+// A line that opens a fence, by CommonMark: up to three spaces, then three or
+// more backticks or tildes, then the info string, whose first word names the
+// language. Captures the indent, the marker and the info string.
+const FENCE_OPENER = /^( {0,3})(`{3,}|~{3,})(.*)$/
+
+// A FENCE_OPENER line whose language is `mermaid`, anywhere in a block. It
+// only narrows the hook to the blocks that may hold a Diagram, so every other
+// block skips the mod; split() decides which fences are Diagrams.
 const MERMAID_OPENER = /^ {0,3}(?:`{3,}|~{3,})[ \t]*mermaid(?:[ \t]|$)/m
 
 export const register: Register = on => {
@@ -54,9 +59,15 @@ const split = (text: string): Part[] => {
   const lines = text.split('\n')
   const parts: Part[] = []
   let markdown: string[] = []
+  // Lines that hold only whitespace, between two Diagrams or after the last,
+  // would draw as an empty Markdown that adds a gap.
+  const pushMarkdown = () => {
+    if (markdown.some(line => line.trim() !== '')) parts.push({ kind: 'markdown', text: markdown.join('\n') })
+    markdown = []
+  }
   let i = 0
   while (i < lines.length) {
-    const opener = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(lines[i] ?? '')
+    const opener = FENCE_OPENER.exec(lines[i] ?? '')
     if (!opener) {
       markdown.push(lines[i++] ?? '')
       continue
@@ -67,7 +78,7 @@ const split = (text: string): Part[] => {
       markdown.push(lines[i++] ?? '')
       continue
     }
-    const closer = new RegExp(`^ {0,3}${marker[0] === '`' ? '`' : '~'}{${marker.length},}[ \\t]*$`)
+    const closer = new RegExp(`^ {0,3}${marker[0]}{${marker.length},}[ \\t]*$`)
     const end = lines.findIndex((line, j) => j > i && closer.test(line))
     const isMermaid = info.trim().split(/[ \t]/)[0] === 'mermaid'
     if (end < 0 || !isMermaid) {
@@ -78,8 +89,7 @@ const split = (text: string): Part[] => {
       i = stop
       continue
     }
-    if (markdown.length > 0) parts.push({ kind: 'markdown', text: markdown.join('\n') })
-    markdown = []
+    pushMarkdown()
     // CommonMark strips as many leading spaces from each content line as
     // the opening fence had.
     const strip = new RegExp(`^ {0,${indent.length}}`)
@@ -87,6 +97,6 @@ const split = (text: string): Part[] => {
     parts.push({ kind: 'diagram', source, fence: lines.slice(i, end + 1).join('\n') })
     i = end + 1
   }
-  if (markdown.length > 0) parts.push({ kind: 'markdown', text: markdown.join('\n') })
+  pushMarkdown()
   return parts
 }

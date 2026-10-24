@@ -31,6 +31,8 @@ export interface RenderOptions {
     limit?: number;
     outputLimit?: number;
     maxEdges?: number;
+    links?: boolean;
+    images?: boolean;
 }
 export interface RenderResult {
     svg: string;

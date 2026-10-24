@@ -15,7 +15,11 @@ const SVG_LIMIT = 131_072
 // Pele measures text with a Helvetica/Arial width table when it has no
 // canvas, as here; its default `sans-serif` lets label widths drift where
 // that font isn't Helvetica-like.
-const FONT = 'Helvetica, Arial, sans-serif'
+//
+// Images and links off: Claude's reply can quote text it read, and a
+// Diagram's `img` or `click` would have the picture fetch or open an address
+// that text chose. An image draws no link anyway.
+const OPTIONS = { fontFamily: 'Helvetica, Arial, sans-serif', images: false, links: false }
 
 // Each Source's Drawing. The engine runs the hook again on every width or
 // onScreen change, and a Drawing depends on the Source alone, so a scroll
@@ -38,7 +42,7 @@ export const draw = (source: string): Drawing => {
 // it another, since no Source makes Pele fail with anything but a PeleError.
 export const drawingOf = (source: string, renderer: typeof render = render): Drawing => {
   try {
-    const drawn = renderer(source, { fontFamily: FONT })
+    const drawn = renderer(source, OPTIONS)
     const svg = onCard(drawn.svg)
     if (svg.length > SVG_LIMIT) {
       return {
@@ -47,6 +51,9 @@ export const drawingOf = (source: string, renderer: typeof render = render): Dra
     }
     return { svg, alt: `Mermaid ${drawn.type} diagram` }
   } catch (error) {
+    // Pele's `limit`: a Source past its 50,000 characters or its edge cap.
+    // The Source is fine, so the note says it is too big.
+    if (error instanceof PeleError && error.code === 'limit') return { note: `diagrams: too big to draw. ${error.message}` }
     if (error instanceof PeleError) {
       const line = error.line > 0 ? ` (line ${error.line})` : ''
       return { note: `diagrams: Pele can't draw this Diagram${line}.`, detail: error.message }

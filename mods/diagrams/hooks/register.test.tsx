@@ -199,3 +199,37 @@ test('the mod sends Claude no message, context or hook feedback about a Broken D
   expect(stopped).toEqual({})
   expect(session.appended()).toEqual([])
 })
+
+test('desktop draws a Source past Pele\'s own size limit as too big to draw, not as a Broken Diagram', async ($, on) => {
+  engine(on)
+  // 3,000 edges: about 54,000 characters, past the 50,000 Pele takes.
+  const huge = ['flowchart TD', ...Array.from({ length: 3000 }, (_, i) => `  N${i} --> N${i + 1}`)].join('\n')
+
+  const ui = await mount($, fenced(huge))
+
+  expect(await ui.find({ type: 'Text', text: /too big to draw/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /can't draw/ })).toBeUndefined()
+})
+
+test('desktop draws two Diagrams a blank line apart with no empty Markdown between or after them', async ($, on) => {
+  engine(on)
+
+  const ui = await mount($, `${fenced('sequenceDiagram\n  A->>B: hi')}\n\n${fenced('pie title Share\n  "a" : 1')}\n`)
+
+  expect((await ui.findAll({})).map(element => element.type).filter(type => type === 'Svg' || type === 'Markdown')).toEqual([
+    'Svg',
+    'Svg',
+  ])
+})
+
+test("desktop draws a Diagram's images and links as neither, so the picture loads nothing", async ($, on) => {
+  engine(on)
+  const linked = 'flowchart TD\n  A@{ img: "https://example.com/x.png", label: "x" } --> B\n  click B "https://example.com" "tip"'
+
+  const ui = await mount($, fenced(linked))
+
+  const source = String((await ui.find({ type: 'Svg' }))?.props.source)
+  expect(source).not.toContain('<image')
+  expect(source).not.toContain('<a ')
+  expect(source).not.toContain('example.com')
+})
