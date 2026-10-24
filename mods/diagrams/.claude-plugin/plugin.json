@@ -1,0 +1,7 @@
+{
+  "name": "diagrams",
+  "description": "Draws the Mermaid diagrams in Claude's replies as pictures",
+  "author": { "name": "André Jonas" },
+  "homepage": "https://github.com/andrezzoid/newsroom/tree/main/mods/diagrams",
+  "repository": "https://github.com/andrezzoid/newsroom"
+}
