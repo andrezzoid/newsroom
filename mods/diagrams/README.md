@@ -20,7 +20,7 @@ claude plugin marketplace add andrezzoid/newsroom
 claude plugin install diagrams@newsroom
 ```
 
-Claude Code holds a Mermaid mod of its own, which Anthropic keeps off for now and which draws in the terminal. If it's ever on, the two mods race to draw the same block: turn one of them off. To turn off the built-in one:
+Claude Code holds a Mermaid mod of its own, which Anthropic keeps off for now. It draws flowcharts and sequence diagrams in the terminal only, where this mod shows the Source for now, so the two can run side by side. Once this mod draws in the terminal too, turn the built-in one off if it's on, so only one of them draws each Diagram:
 
 ```sh
 claude plugin disable mermaid@builtin

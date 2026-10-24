@@ -1,6 +1,10 @@
 import type { On } from 'claude-code'
 import { type Engine, expect, mock, test } from 'claude-code/testing'
 
+// Each mount loads the mod, and with it Pele's 700 KB, in a fresh
+// environment: about 1.5 s, past the kit's 5 s default on a busy machine.
+const LOADS_PELE = { timeoutMs: 30_000 }
+
 const FLOWCHART = 'flowchart LR\n  A[Claude writes a reply] --> B{Has a Diagram?}\n  B -->|yes| C[Draw it]'
 
 const fenced = (source: string) => '```mermaid\n' + source + '\n```'
@@ -28,7 +32,7 @@ const mount = ($: Engine, text: string, surface: 'terminal' | 'desktop' | 'vscod
     viewport: { columns: 100, rows: 40 },
   })
 
-test('desktop draws a closed flowchart fence as an Svg where the fence stood', async ($, on) => {
+test('desktop draws a closed flowchart fence as an Svg where the fence stood', LOADS_PELE, async ($, on) => {
   engine(on)
 
   const ui = await mount($, `Here is the flow:\n\n${fenced(FLOWCHART)}\n\nThat's all.`)
@@ -37,7 +41,7 @@ test('desktop draws a closed flowchart fence as an Svg where the fence stood', a
   expect(elements.filter(type => type === 'Svg' || type === 'Markdown')).toEqual(['Markdown', 'Svg', 'Markdown'])
 })
 
-test('desktop draws the text before and after the fence as Markdown, in their order', async ($, on) => {
+test('desktop draws the text before and after the fence as Markdown, in their order', LOADS_PELE, async ($, on) => {
   engine(on)
 
   const ui = await mount($, `Here is the flow:\n\n${fenced(FLOWCHART)}\n\nThat's all.`)
@@ -47,7 +51,7 @@ test('desktop draws the text before and after the fence as Markdown, in their or
 })
 
 for (const surface of ['mobile', 'vscode'] as const) {
-  test(`${surface} draws a closed flowchart fence as an Svg`, async ($, on) => {
+  test(`${surface} draws a closed flowchart fence as an Svg`, LOADS_PELE, async ($, on) => {
     engine(on)
 
     const ui = await mount($, `Here is the flow:\n\n${fenced(FLOWCHART)}`, surface)
@@ -56,7 +60,7 @@ for (const surface of ['mobile', 'vscode'] as const) {
   })
 }
 
-test('desktop draws two closed fences as two Svgs, in the order of the fences', async ($, on) => {
+test('desktop draws two closed fences as two Svgs, in the order of the fences', LOADS_PELE, async ($, on) => {
   engine(on)
 
   const ui = await mount($, `${fenced('sequenceDiagram\n  A->>B: hi')}\n\nThen:\n\n${fenced('pie title Share\n  "a" : 1\n  "b" : 2')}`)
@@ -80,7 +84,7 @@ const channels = (hex: string) => {
   return [0, 2, 4].map(at => Number.parseInt(full.slice(at, at + 2), 16))
 }
 
-test("desktop paints a light background under the whole Diagram, as the Svg's first shape", async ($, on) => {
+test("desktop paints a light background under the whole Diagram, as the Svg's first shape", LOADS_PELE, async ($, on) => {
   engine(on)
 
   const ui = await mount($, fenced(FLOWCHART))
@@ -99,7 +103,7 @@ test("desktop paints a light background under the whole Diagram, as the Svg's fi
   expect(channels(attribute('fill') ?? '#000').every(channel => channel >= 230)).toBe(true)
 })
 
-test("desktop gives the Svg an alt that names the Diagram's type", async ($, on) => {
+test("desktop gives the Svg an alt that names the Diagram's type", LOADS_PELE, async ($, on) => {
   engine(on)
 
   const ui = await mount($, fenced('sequenceDiagram\n  A->>B: hi'))
@@ -111,7 +115,7 @@ test("desktop gives the Svg an alt that names the Diagram's type", async ($, on)
 // SVG, past the 131,072 an Svg takes.
 const CHAIN = ['flowchart TD', ...Array.from({ length: 300 }, (_, i) => `  N${i} --> N${i + 1}`)].join('\n')
 
-test('desktop draws a Diagram whose SVG passes 131,072 characters as its Source, with a note that it is too big', async ($, on) => {
+test('desktop draws a Diagram whose SVG passes 131,072 characters as its Source, with a note that it is too big', LOADS_PELE, async ($, on) => {
   engine(on)
 
   const ui = await mount($, fenced(CHAIN))
@@ -121,7 +125,7 @@ test('desktop draws a Diagram whose SVG passes 131,072 characters as its Source,
   expect(await ui.find({ type: 'Text', text: /too big to draw/ })).toBeDefined()
 })
 
-test('desktop draws a gantt chart, a type only Pele draws, as an Svg', async ($, on) => {
+test('desktop draws a gantt chart, a type only Pele draws, as an Svg', LOADS_PELE, async ($, on) => {
   engine(on)
 
   const gantt = 'gantt\n  title Plan\n  dateFormat YYYY-MM-DD\n  section Build\n  Mod :a1, 2026-10-24, 3d\n  Tests :after a1, 2d'
@@ -131,7 +135,7 @@ test('desktop draws a gantt chart, a type only Pele draws, as an Svg', async ($,
 })
 
 for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
-  test(`${surface} hands a block with no mermaid fence on unchanged`, async ($, on) => {
+  test(`${surface} hands a block with no mermaid fence on unchanged`, LOADS_PELE, async ($, on) => {
     const handed = engine(on)
     const text = 'Run it with:\n\n```sh\nclaude plugin test mods/diagrams\n```'
 
@@ -146,7 +150,7 @@ for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
 // with no error; Pele rejects it.
 const BROKEN = 'flowchart TD\n  A[open --> B'
 
-test("desktop draws a Diagram Pele rejects as its Source, in a mermaid code block", async ($, on) => {
+test("desktop draws a Diagram Pele rejects as its Source, in a mermaid code block", LOADS_PELE, async ($, on) => {
   engine(on)
 
   const ui = await mount($, `Look:\n\n${fenced(BROKEN)}`)
@@ -155,7 +159,7 @@ test("desktop draws a Diagram Pele rejects as its Source, in a mermaid code bloc
   expect(await ui.find({ type: 'Markdown', text: fenced(BROKEN) })).toBeDefined()
 })
 
-test("desktop shows a Broken Diagram's error from Pele with its line number", async ($, on) => {
+test("desktop shows a Broken Diagram's error from Pele with its line number", LOADS_PELE, async ($, on) => {
   engine(on)
 
   const ui = await mount($, fenced('sequenceDiagram\n  A->>: hi'))
@@ -168,7 +172,7 @@ test("desktop shows a Broken Diagram's error from Pele with its line number", as
 // Claude is still writing it, a Broken Diagram so far.
 const UNCLOSED = `Here is the flow:\n\n\`\`\`mermaid\n${BROKEN}\n  B --> C`
 
-test('desktop hands a block whose mermaid fence has no closing line yet on unchanged', async ($, on) => {
+test('desktop hands a block whose mermaid fence has no closing line yet on unchanged', LOADS_PELE, async ($, on) => {
   const handed = engine(on)
 
   const ui = await mount($, UNCLOSED)
@@ -177,7 +181,7 @@ test('desktop hands a block whose mermaid fence has no closing line yet on uncha
   expect((await ui.findAll({})).map(element => element.text)).toEqual(['engine'])
 })
 
-test('desktop shows no Pele error for a block whose mermaid fence has no closing line yet', async ($, on) => {
+test('desktop shows no Pele error for a block whose mermaid fence has no closing line yet', LOADS_PELE, async ($, on) => {
   engine(on)
 
   const ui = await mount($, UNCLOSED)
@@ -185,7 +189,7 @@ test('desktop shows no Pele error for a block whose mermaid fence has no closing
   expect(await ui.find({ text: /Parse error|Expecting/ })).toBeUndefined()
 })
 
-test('the mod sends Claude no message, context or hook feedback about a Broken Diagram when the turn ends', async ($, on) => {
+test('the mod sends Claude no message, context or hook feedback about a Broken Diagram when the turn ends', LOADS_PELE, async ($, on) => {
   engine(on)
   const session = mock.session(on)
   on('turn.complete', () => ({ text: 'Here is the flow.' }))
@@ -200,7 +204,7 @@ test('the mod sends Claude no message, context or hook feedback about a Broken D
   expect(session.appended()).toEqual([])
 })
 
-test('desktop draws a Source past Pele\'s own size limit as too big to draw, not as a Broken Diagram', async ($, on) => {
+test("desktop draws a Source past Pele's own size limit as too big to draw, not as a Broken Diagram", LOADS_PELE, async ($, on) => {
   engine(on)
   // 3,000 edges: about 54,000 characters, past the 50,000 Pele takes.
   const huge = ['flowchart TD', ...Array.from({ length: 3000 }, (_, i) => `  N${i} --> N${i + 1}`)].join('\n')
@@ -211,7 +215,7 @@ test('desktop draws a Source past Pele\'s own size limit as too big to draw, not
   expect(await ui.find({ type: 'Text', text: /can't draw/ })).toBeUndefined()
 })
 
-test('desktop draws two Diagrams a blank line apart with no empty Markdown between or after them', async ($, on) => {
+test('desktop draws two Diagrams a blank line apart with no empty Markdown between or after them', LOADS_PELE, async ($, on) => {
   engine(on)
 
   const ui = await mount($, `${fenced('sequenceDiagram\n  A->>B: hi')}\n\n${fenced('pie title Share\n  "a" : 1')}\n`)
@@ -222,7 +226,7 @@ test('desktop draws two Diagrams a blank line apart with no empty Markdown betwe
   ])
 })
 
-test("desktop draws a Diagram's images and links as neither, so the picture loads nothing", async ($, on) => {
+test("desktop draws a Diagram's images and links as neither, so the picture loads nothing", LOADS_PELE, async ($, on) => {
   engine(on)
   const linked = 'flowchart TD\n  A@{ img: "https://example.com/x.png", label: "x" } --> B\n  click B "https://example.com" "tip"'
 
