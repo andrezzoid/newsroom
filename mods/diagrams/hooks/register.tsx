@@ -18,9 +18,14 @@ const FENCE_OPENER = /^( {0,3})(`{3,}|~{3,})(.*)$/
 // block skips the mod; split() decides which fences are Diagrams.
 const MERMAID_OPENER = /^ {0,3}(?:`{3,}|~{3,})[ \t]*mermaid(?:[ \t]|$)/m
 
+// The engine draws only the first 100,000 characters of a tree's texts, its
+// Markdown and notes, and drops the rest. Past this, a block that keeps a long
+// Source would lose the text after it, so the engine draws the block itself.
+const TEXT_LIMIT = 90_000
+
 export const register: Register = on => {
   on('ui.render', { component: 'AssistantMessage', props: { text: MERMAID_OPENER } }, ($, e, next) => {
-    if (e.surface === 'terminal') return next(e)
+    if (e.surface === 'terminal' || e.props.text.length > TEXT_LIMIT) return next(e)
     const parts = split(e.props.text)
     if (!parts.some(part => part.kind === 'diagram')) return next(e)
 

@@ -232,8 +232,23 @@ test("desktop draws a Diagram's images and links as neither, so the picture load
 
   const ui = await mount($, fenced(linked))
 
-  const source = String((await ui.find({ type: 'Svg' }))?.props.source)
+  const svg = await ui.find({ type: 'Svg' })
+  expect(svg).toBeDefined()
+  const source = String(svg?.props.source)
   expect(source).not.toContain('<image')
   expect(source).not.toContain('<a ')
   expect(source).not.toContain('example.com')
+})
+
+test('desktop hands on unchanged a block too long for a tree, so the text after its Diagram stays', LOADS_PELE, async ($, on) => {
+  const handed = engine(on)
+  // A Source of about 105,000 characters: the engine draws only the first
+  // 100,000 characters of a tree's texts, and this one would show it whole.
+  const long = ['flowchart TD', ...Array.from({ length: 6000 }, (_, i) => `  N${i} --> N${i + 1}`)].join('\n')
+  const text = `${fenced(long)}\n\nThe end.`
+
+  const ui = await mount($, text)
+
+  expect(handed).toEqual([text])
+  expect((await ui.findAll({})).map(element => element.text)).toEqual(['engine'])
 })

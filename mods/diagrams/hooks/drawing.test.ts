@@ -15,3 +15,13 @@ test('a Diagram that makes Pele throw an error that is not a PeleError shows its
   expect('svg' in drawing).toBe(false)
   expect('note' in drawing && drawing.note).toContain("Cannot read properties of undefined (reading 'x')")
 })
+
+test('a renderer that throws a value with no string form still leaves a note, and the drawing throws nothing', () => {
+  const bug = () => {
+    throw Object.create(null)
+  }
+
+  const drawing = drawingOf('flowchart TD\n  A --> B', bug)
+
+  expect('note' in drawing && drawing.note).toContain('Pele failed')
+})

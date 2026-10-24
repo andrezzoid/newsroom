@@ -58,7 +58,9 @@ export const drawingOf = (source: string, renderer: typeof render = render): Dra
       const line = error.line > 0 ? ` (line ${error.line})` : ''
       return { note: `diagrams: Pele can't draw this Diagram${line}.`, detail: error.message }
     }
-    return { note: `diagrams: Pele failed on this Diagram: ${String(error)}` }
+    // Any value can be thrown, and one with no string form makes String() throw.
+    const reason = error instanceof Error ? error.message : 'it threw something other than an error'
+    return { note: `diagrams: Pele failed on this Diagram: ${reason}` }
   }
 }
 
