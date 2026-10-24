@@ -252,3 +252,15 @@ test('desktop hands on unchanged a block too long for a tree, so the text after 
   expect(handed).toEqual([text])
   expect((await ui.findAll({})).map(element => element.text)).toEqual(['engine'])
 })
+
+test('desktop draws the Diagram of a long block whose tree still fits the engine', LOADS_PELE, async ($, on) => {
+  engine(on)
+  // About 95,000 characters of prose before a small Diagram: the tree's texts
+  // stay under the 100,000 the engine draws.
+  const prose = 'Claude explains the flow at length.\n'.repeat(2600)
+
+  const ui = await mount($, `${prose}\n${fenced('flowchart TD\n  A --> B')}\n\nThe end.`)
+
+  expect(await ui.find({ type: 'Svg' })).toBeDefined()
+  expect(await ui.find({ type: 'Markdown', text: 'The end.' })).toBeDefined()
+})

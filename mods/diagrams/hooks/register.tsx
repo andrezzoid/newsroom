@@ -1,6 +1,6 @@
 import type { Register } from 'claude-code'
 
-import { draw } from './drawing'
+import { type Drawing, draw } from './drawing'
 
 // Draws each Diagram in Claude's replies where its mermaid block stood. On
 // desktop, VS Code and mobile, a reply block that holds a closed mermaid fence
@@ -18,23 +18,25 @@ const FENCE_OPENER = /^( {0,3})(`{3,}|~{3,})(.*)$/
 // block skips the mod; split() decides which fences are Diagrams.
 const MERMAID_OPENER = /^ {0,3}(?:`{3,}|~{3,})[ \t]*mermaid(?:[ \t]|$)/m
 
-// The engine draws only the first 100,000 characters of a tree's texts, its
-// Markdown and notes, and drops the rest. Past this, a block that keeps a long
-// Source would lose the text after it, so the engine draws the block itself.
-const TEXT_LIMIT = 90_000
+// The engine draws only the first 100,000 characters of a tree's texts (its
+// Markdown, notes, Code and alts) and drops the rest. A tree past that would
+// lose the text after a long Source or a long Pele error, so the engine draws
+// the block itself instead.
+const TREE_TEXT_LIMIT = 100_000
 
 export const register: Register = on => {
   on('ui.render', { component: 'AssistantMessage', props: { text: MERMAID_OPENER } }, ($, e, next) => {
-    if (e.surface === 'terminal' || e.props.text.length > TEXT_LIMIT) return next(e)
-    const parts = split(e.props.text)
+    if (e.surface === 'terminal') return next(e)
+    const parts = split(e.props.text).map((part): DrawnPart => (part.kind === 'markdown' ? part : { ...part, drawing: draw(part.source) }))
     if (!parts.some(part => part.kind === 'diagram')) return next(e)
+    if (parts.reduce((sum, part) => sum + textOf(part), 0) > TREE_TEXT_LIMIT) return next(e)
 
     const { Box, Code, Markdown, Svg, Text } = $.ui.resolve(e)
     return (
       <Box flexDirection="column">
         {parts.map(part => {
           if (part.kind === 'markdown') return <Markdown text={part.text} />
-          const drawing = draw(part.source)
+          const { drawing } = part
           if ('svg' in drawing) return <Svg source={drawing.svg} alt={drawing.alt} />
           // The Source as Claude wrote it, then why it isn't drawn.
           return (
@@ -50,9 +52,19 @@ export const register: Register = on => {
   })
 }
 
+// The characters of text a part adds to the tree, as the engine counts them.
+const textOf = (part: DrawnPart): number => {
+  if (part.kind === 'markdown') return part.text.length
+  const { drawing } = part
+  return 'svg' in drawing ? drawing.alt.length : part.fence.length + drawing.note.length + (drawing.detail?.length ?? 0)
+}
+
 // A reply block cut at its closed mermaid fences, in order. `fence` is the
 // Diagram's lines as Claude wrote them, fences included.
 type Part = { kind: 'markdown'; text: string } | { kind: 'diagram'; source: string; fence: string }
+
+// A Part with each Diagram's Drawing.
+type DrawnPart = Exclude<Part, { kind: 'diagram' }> | (Extract<Part, { kind: 'diagram' }> & { drawing: Drawing })
 
 // Cuts a block's markdown at each closed, top-level mermaid fence, by
 // CommonMark's fence rules: a fence closes on a line of the same character,
