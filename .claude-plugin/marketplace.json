@@ -7,6 +7,11 @@
       "name": "prose-lint",
       "source": "./mods/prose-lint",
       "description": "Lints the prose Claude writes with Vale and hands the alerts back to Claude"
+    },
+    {
+      "name": "diagrams",
+      "source": "./mods/diagrams",
+      "description": "Draws the Mermaid diagrams in Claude's replies as pictures"
     }
   ]
 }

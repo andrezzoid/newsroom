@@ -4,6 +4,7 @@
 cd "$(dirname "$0")/.." || exit 2
 claude plugin validate . &&
   claude plugin test mods/prose-lint &&
+  claude plugin test mods/diagrams &&
   sh mods/prose-lint/vale/test.sh || exit 1
 
 # Every third-party skill's source names its license in skills/NOTICE.
