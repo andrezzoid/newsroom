@@ -24,9 +24,9 @@ A revert cannot undo a change here, so it never merges without a human.
 Issues live in GitHub Issues on this repo. Use `gh issue`. Blockers are issue
 dependencies, or a `## Blocked by` section listing `#12`.
 
-An agent claims a ticket by adding `in-progress` and removing
-`ready-for-agent`. A hand-back removes `in-progress` and adds
-`ready-for-human`. Change labels one at a time, with `gh issue edit
+An agent claims a ticket by adding `in-progress`, and keeps `ready-for-agent`.
+A hand-back removes both and adds `ready-for-human`. The factory CLI makes
+these changes. Change labels one at a time, with `gh issue edit
 --add-label` and `--remove-label`: rewriting the whole list drops any label
 someone added in between.
 

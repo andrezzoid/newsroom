@@ -26,6 +26,24 @@ _Avoid_: Meta skill, router
 The way a codebase means you to do things, as its docs, lint rules and best-kept code show it.
 _Avoid_: Golden path, broken windows
 
+### Factory
+
+**Flow**:
+The order the orchestrator runs workflows in, from a request to its outcome: Shape, Tickets, Build or Review.
+_Avoid_: Pipeline, process
+
+**Inbox**:
+What waits on the user, and what an agent can pick up now.
+_Avoid_: Queue, backlog
+
+**Claim**:
+The `in-progress` label an agent adds to a ticket before it builds, so no other session takes the ticket.
+_Avoid_: Assign, lock
+
+**Phase**:
+Where a ticket stands for the factory: shape, iterate, babysit or done.
+_Avoid_: Status, state
+
 ### Work
 
 **Plan**:

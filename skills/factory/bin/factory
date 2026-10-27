@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Thin shim so `factory` works from PATH, in hooks and in cloud sessions alike.
+# Node 22.18+ runs the TypeScript directly; nothing is installed or built.
+set -euo pipefail
+here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+command -v node >/dev/null 2>&1 || { echo "factory needs Node 22.18 or later (mise install node)" >&2; exit 127; }
+# Node's fetch ignores HTTPS_PROXY unless asked, and cloud sessions reach
+# Linear only through the proxy.
+if [ -n "${HTTPS_PROXY:-${https_proxy:-}}" ]; then export NODE_USE_ENV_PROXY=1; fi
+exec node --disable-warning=ExperimentalWarning --disable-warning=UNDICI-EHPA "$here/../scripts/cli.ts" "$@"
