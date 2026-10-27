@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Thin shim so `factory` works from PATH, in hooks and in cloud sessions alike.
+# Thin shim so the factory skill can run the CLI wherever it loads, locally and in cloud sessions.
 # Node 22.18+ runs the TypeScript directly; nothing is installed or built.
 set -euo pipefail
 here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"

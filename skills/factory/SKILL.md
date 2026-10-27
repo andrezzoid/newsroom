@@ -55,14 +55,15 @@ Say in one line which flow and step the request belongs to, then run from that s
 | an agreed spec | the end of Shape: Tickets or Build. Recommend Build when the spec fits one ticket |
 | a ticket, with `--take-over` or without | its `phase` in `factory tickets show <ID> --json`: shape → triage it, from `<this skill's folder>/../triage/SKILL.md`; iterate → Build, at implement; babysit → Build, at babysit-pr; done → retro |
 | a pull request | Build, at babysit-pr |
-| a look back at the week | Review |
+| a look back at the week, or `stats` | Review |
 
 Run each step's skill. Call the Skill tool with it, or, for a skill only the user may invoke (grill-with-docs, to-spec, to-tickets, triage, retro and correct), read `<this skill's folder>/../<skill>/SKILL.md` and follow it as the step. Hand the next step what the last one produced: the spec, the ticket ids, the pull request. Say the next step before you start it, so the user can steer. In a session nobody watches, go on. Done when the flow's last step finishes, or a step hands back. End with one line: the work, its step and what it waits on.
 
 ## The CLI at each step
 
 - **Claim:** `factory tickets claim <ID>`, with `--take-over` when the request carried it. Exit 3 means it isn't yours to build: say why and stop.
-- **Hand-back:** post the report with `factory tickets handback <ID> --body-file <report>` before the pull request opens, and `factory pr report <PR> --body-file <report>` after.
+- **Pull request:** open it with `factory pr open --ticket <ID> --title <title> --body-file <file>`, with the body the "pr" skill wrote. It pushes the branch and ends the body with the ticket's closing line, which the merge check and the tracker read. Without a ticket, the same command works without `--ticket`.
+- **Hand-back:** post the report with `factory tickets handback <ID> --body-file <report>` before the pull request opens, and `factory pr report <PR> --body-file <report>` after. A hand-back on a pull request turns it into a draft: once the user answers and the work goes on, mark it ready again with `gh pr ready <PR>`, or it can't merge.
 - **Debrief:** post it on the pull request with `factory pr report <PR> --body-file <report>`.
 - **A plan change the user agreed:** `factory tickets revise <ID> --body-file <report>`, with a `Revised ·` title.
 - **Followups:** file each one beside the ticket, where triage picks it up: `factory tickets new --from <ID> --title <title> --body-file <file>`.

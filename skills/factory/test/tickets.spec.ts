@@ -69,6 +69,13 @@ describe("ordering and branches", () => {
     expect(ticketsOfPr({ headRef: "main", body: null }, "o/r")).toEqual([]);
   });
 
+  // `pr merge` passes the repository as --repo or the PR's URL spells it.
+  test("the branch and closing line a ticket gives name that ticket, and only it", () => {
+    for (const [t, repo] of [[githubTicket(githubIssue(), "o/r"), "O/R"], [linearTicket(linearIssue()), "o/r"]] as const) {
+      expect(ticketsOfPr({ headRef: t.branchName, body: `Does it.\n\n${t.closes}` }, repo)).toEqual([t.id]);
+    }
+  });
+
   test("slugs are short, ascii and hyphenated", () => {
     expect(slug("Café: fix the  Login flow!")).toBe("cafe-fix-the-login-flow");
     expect(slug("a".repeat(60)).length).toBe(40);
@@ -101,8 +108,8 @@ describe("reports", () => {
   for (const [title, kind] of [
     ["## Handed back · acceptance line 2 cannot hold", "Handed back"],
     ["**Revised · the export drops archived rows**", "Revised"],
-    ["Done - the export skips archived rows", "Done"],
-    ["### done: the export skips archived rows", "Done"],
+    ["Done · the export skips archived rows", "Done"],
+    ["### done · the export skips archived rows", "Done"],
     ["**Done · the export skips archived rows**", "Done"],
   ]) {
     test(`"${title}" is a ${kind} report`, () => {
@@ -113,6 +120,10 @@ describe("reports", () => {
   test("other comments are not reports, and Needs you marks the ones only the user can move", () => {
     expect(report({ id: "r", createdAt: at, body: "Revised the plan, see below" })).toBe(null);
     expect(report({ id: "r", createdAt: at, body: "Claimed by a cloud session." })).toBe(null);
+    expect(report({ id: "r", createdAt: at, body: "Revised: no, I meant the title" })).toBe(null);
+    expect(report({ id: "r", createdAt: at, body: "Done: thanks" })).toBe(null);
+    expect(report({ id: "r", createdAt: at, body: "**Done - thanks**" })).toBe(null);
+    expect(report({ id: "r", createdAt: at, body: "## Handed back — see the thread" })).toBe(null);
     expect(report({ id: "r", createdAt: at, body: "## Handed back · x\n\n**Needs you:** pick one" })?.needsYou).toBe(true);
     expect(report({ id: "r", createdAt: at, body: "## Handed back · x\n\n### Needs you\n\nPick one" })?.needsYou).toBe(true);
     expect(report({ id: "r", createdAt: at, body: "## Done · x\n\nNothing needs you." })?.needsYou).toBe(false);

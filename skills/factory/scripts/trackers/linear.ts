@@ -7,17 +7,24 @@
 
 import { run } from "../proc.ts";
 import { CLAIMED_LABEL, FACTORY_LABELS, HUMAN_LABEL, latestBrief, READY_LABEL } from "../tickets.ts";
-import type { Ticket, TicketComment, TicketState, Tracker } from "./types.ts";
+import { NotFound, type Ticket, type TicketComment, type TicketState, type Tracker } from "./types.ts";
 
 const ENDPOINT = process.env.FACTORY_LINEAR_URL ?? "https://api.linear.app/graphql";
 export const PROXY_INJECTED = "proxy-injected";
 
 export class LinearError extends Error {}
 
+// The linear CLI's token, asked for once per process, since a command makes
+// many requests.
+let cliToken: string | null | undefined;
+
 export function linearToken(): string | null {
   if (process.env.LINEAR_API_KEY) return process.env.LINEAR_API_KEY;
-  const r = run("linear", ["auth", "token"]);
-  return r.code === 0 && r.stdout.trim() ? r.stdout.trim() : null;
+  if (cliToken === undefined) {
+    const r = run("linear", ["auth", "token"]);
+    cliToken = r.code === 0 && r.stdout.trim() ? r.stdout.trim() : null;
+  }
+  return cliToken;
 }
 
 export async function linear<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
@@ -221,9 +228,12 @@ export class LinearTracker implements Tracker {
   readonly name = "linear" as const;
   private raw = new Map<string, WithComments>();
 
+  // Linear answers an unknown identifier with null or an "Entity not found" error.
   private async issue(id: string): Promise<WithComments> {
-    const d = await linear<{ issue: WithComments | null }>(ISSUE_QUERY, { id });
-    if (!d.issue) throw new LinearError(`no Linear issue ${id}`);
+    const d = await linear<{ issue: WithComments | null }>(ISSUE_QUERY, { id }).catch((e) => {
+      throw e instanceof LinearError && /not found/i.test(e.message) ? new NotFound(`no Linear issue ${id}`) : e;
+    });
+    if (!d.issue) throw new NotFound(`no Linear issue ${id}`);
     this.raw.set(id, d.issue);
     return d.issue;
   }
@@ -256,6 +266,11 @@ export class LinearTracker implements Tracker {
   async get(id: string): Promise<{ ticket: Ticket; comments: TicketComment[] }> {
     const i = await this.issue(id);
     return { ticket: toTicket(i), comments: i.comments.nodes.map((c) => ({ id: c.id, body: c.body, createdAt: c.createdAt })) };
+  }
+
+  // The issue query already carries the comments, so one request costs the same.
+  async comments(id: string): Promise<TicketComment[]> {
+    return (await this.get(id)).comments;
   }
 
   async start(t: Ticket): Promise<void> {

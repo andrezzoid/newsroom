@@ -17,10 +17,11 @@ export const FACTORY_LABELS = [TRIAGE_LABEL, INFO_LABEL, READY_LABEL, HUMAN_LABE
 
 export type Readiness = { ready: true } | { ready: false; reason: string };
 
-export function readiness(t: Ticket, opts: { repo?: string } = {}): Readiness {
+// Whether an agent may build the ticket, whichever session holds it now:
+// `tickets claim` asks this, and a take-over passes a claimed ticket.
+export function claimable(t: Ticket): Readiness {
   if (!t.labels.includes(READY_LABEL)) return { ready: false, reason: `no ${READY_LABEL} label` };
-  if (t.labels.includes(CLAIMED_LABEL)) return { ready: false, reason: `claimed (${CLAIMED_LABEL})` };
-  if (t.state !== "queued") return { ready: false, reason: `state is ${t.stateName}` };
+  if (t.state === "done" || t.state === "canceled") return { ready: false, reason: `state is ${t.stateName}` };
   const open = t.blockers.filter((b) => !b.done);
   if (open.length > 0) return { ready: false, reason: `blocked by ${open.map((b) => b.id).join(", ")}` };
   // A parent with open children is a spec, so building it would build every
@@ -32,6 +33,15 @@ export function readiness(t: Ticket, opts: { repo?: string } = {}): Readiness {
   if (t.assignees.length > 0 && !t.assignees.some((a) => a.me)) {
     return { ready: false, reason: `assigned to ${t.assignees.map((a) => a.name).join(", ")}` };
   }
+  return { ready: true };
+}
+
+// Whether `tickets next` offers the ticket: claimable, and nobody holds it.
+export function readiness(t: Ticket, opts: { repo?: string } = {}): Readiness {
+  const c = claimable(t);
+  if (!c.ready) return c;
+  if (t.labels.includes(CLAIMED_LABEL)) return { ready: false, reason: `claimed (${CLAIMED_LABEL})` };
+  if (t.state !== "queued") return { ready: false, reason: `state is ${t.stateName}` };
   if (opts.repo && t.repo !== opts.repo.toLowerCase()) return { ready: false, reason: `belongs to ${t.repo}` };
   return { ready: true };
 }
@@ -78,7 +88,7 @@ export function claimant(c: Pick<TicketComment, "body">): string {
 // bold. Hand-backs and revisions go on the ticket, the debrief (Done) and a
 // hand-back after the pull request opens go on the pull request. Needs you
 // marks one only the user can move.
-const REPORT_TITLE = /^(Handed back|Revised|Done)\s*[·:–—-]\s*\S/i;
+const REPORT_TITLE = /^(Handed back|Revised|Done)\s*·\s*\S/i;
 const NEEDS_YOU = /^\s*(?:#{1,6}\s*|\*\*|__)?Needs you\b/im;
 
 export type Report = { kind: string; title: string; needsYou: boolean; at: string };
@@ -135,20 +145,25 @@ export function phaseOf(t: Pick<Ticket, "state" | "labels">, openPrs: string[]):
 // branch names carry the key, as in andre/eng-123-fix-login.
 export function ticketFromBranch(branch: string, repo: string | null): string | null {
   const gh = /(?:^|\/)issue-(\d+)(?:-|$)/.exec(branch);
-  if (gh) return repo ? `${repo}#${gh[1]}` : null;
+  if (gh) return repo ? `${repo.toLowerCase()}#${gh[1]}` : null;
   const m = /(?:^|[/_-])([a-z][a-z0-9]{1,9}-\d+)(?:[/_-]|$)/i.exec(branch);
   return m ? m[1].toUpperCase() : null;
 }
 
 // The tickets a pull request names itself: in its branch, or on a closing
-// line of its body (Closes ENG-123, Fixes #12, Resolves o/r#12 or an issue
-// URL). `pr merge` checks these for a hand-back and clears their labels.
-const CLOSING = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+(https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+|[\w.-]+\/[\w.-]+#\d+|#\d+|[a-z][a-z0-9]{1,9}-\d+)\b/gi;
+// line of its body. `pr merge` checks these for a hand-back and clears their
+// labels.
 export function ticketsOfPr(pr: { body: string | null; headRef: string }, repo: string): string[] {
-  const out = new Set<string>();
   const branch = ticketFromBranch(pr.headRef, repo);
-  if (branch) out.add(branch);
-  for (const m of (pr.body ?? "").matchAll(CLOSING)) {
+  return [...new Set([...(branch ? [branch] : []), ...closedBy(pr.body ?? "", repo)])];
+}
+
+// The tickets a body closes, one per closing line: Closes ENG-123, Fixes #12,
+// Resolves o/r#12 or an issue URL. A bare #12 is an issue of `repo`.
+const CLOSING = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+(https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+|[\w.-]+\/[\w.-]+#\d+|#\d+|[a-z][a-z0-9]{1,9}-\d+)\b/gi;
+export function closedBy(body: string, repo: string): string[] {
+  const out = new Set<string>();
+  for (const m of body.matchAll(CLOSING)) {
     const ref = m[1] ?? "";
     const url = /github\.com\/([\w.-]+\/[\w.-]+)\/issues\/(\d+)/.exec(ref);
     if (url) out.add(`${url[1]}#${url[2]}`.toLowerCase());

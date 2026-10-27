@@ -211,6 +211,25 @@ export function prFacts(r: Repo, number: number): PrFacts {
   };
 }
 
+// Opens a pull request from the current branch to the repository's default
+// branch, ready for review. Pushes the branch to origin first, unless origin's
+// push URL already holds its last commit. Asks the remote itself, since the
+// clone's tracking ref outlives a branch the remote deleted after a merge.
+export function openPr(r: Repo, title: string, body: string): { number: number; url: string } {
+  const head = currentBranch();
+  if (!head) throw new Error("detached HEAD: check out the branch the pull request comes from");
+  // The full ref name keeps a branch such as --force from reading as an option.
+  const ref = `refs/heads/${head}`;
+  const remote = git(["ls-remote", git(["remote", "get-url", "--push", "origin"]) ?? "origin", ref])?.split("\t")[0];
+  if (remote !== git(["rev-parse", "HEAD"])) {
+    const push = run("git", ["push", "-u", "origin", ref]);
+    if (push.code !== 0) throw new Error(`git push: ${push.stderr.trim()}`);
+  }
+  const base = api<any>(`repos/${r.owner}/${r.repo}`).default_branch;
+  const pull = api<any>(`repos/${r.owner}/${r.repo}/pulls`, { method: "POST", body: { title, head, base, body, draft: false } });
+  return { number: pull.number, url: pull.html_url };
+}
+
 // Merge the way the repository allows: squash where it can, else a merge
 // commit, else rebase.
 export function mergeMethod(r: Repo): "squash" | "merge" | "rebase" {

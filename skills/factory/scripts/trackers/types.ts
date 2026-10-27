@@ -39,12 +39,18 @@ export type Ticket = {
 
 export type TicketComment = { id: string; body: string; createdAt: string };
 
+// The tracker answered that no ticket has this id. Every other failure to read
+// a ticket is a plain error, since the ticket may still exist.
+export class NotFound extends Error {}
+
 export interface Tracker {
   readonly name: TrackerName;
   // Open tickets the factory reads: those with a factory label, and new ones
   // with none. Ready tickets come with their blockers and children.
   open(): Promise<Ticket[]>;
   get(id: string): Promise<{ ticket: Ticket; comments: TicketComment[] }>;
+  // Only the comments, for a caller that already holds the ticket from open().
+  comments(id: string): Promise<TicketComment[]>;
   // The claim: label it in-progress, mark it started where the tracker has
   // states, and assign the viewer only when nobody is assigned: the assignee
   // stays the human's.

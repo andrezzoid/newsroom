@@ -2,13 +2,13 @@
 // a mock Linear.
 
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, beforeEach, describe, test } from "node:test";
-import { expectedSkills } from "../scripts/cli.ts";
+import { expectedSkills, parseArgs } from "../scripts/cli.ts";
 import { claimLog } from "../scripts/tickets.ts";
 import { expect } from "./expect.ts";
 import { githubIssue, linearIssue } from "./fixtures.ts";
@@ -29,6 +29,8 @@ let commentsFor: Record<string, any[]> = {};
 let missingLabels: string[] = [];
 // Linear pages every issue list; a test shrinks the page to make the CLI follow the cursor.
 let pageSize = 100;
+// The error Linear answers every request with, as for a disabled account.
+let linearDown: string | null = null;
 
 function page(nodes: any[], after: string | null | undefined) {
   const start = after ? Number(after) : 0;
@@ -80,7 +82,7 @@ const server = createServer((req, res) => {
     const { query, variables } = JSON.parse(raw);
     const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "?";
     linearCalls.push({ op, variables, auth: req.headers.authorization });
-    const { status, body } = answer(op, variables);
+    const { status, body } = linearDown ? { status: 200, body: { errors: [{ message: linearDown }] } } : answer(op, variables);
     res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(body));
   });
 });
@@ -141,6 +143,7 @@ function run(args: string[], env: Record<string, string> = {}, cwd = dir): Promi
       FAKE_GH_DIR: dir,
       FACTORY_LINEAR_URL: linearUrl,
       FACTORY_CLAUDE: "/nonexistent/claude",
+      FACTORY_MERGEABLE_RETRY_MS: "0",
       LINEAR_API_KEY: "lin_api_test",
       FACTORY_GITHUB_REPOS: "",
       CLAUDE_CODE_REMOTE: "",
@@ -171,6 +174,7 @@ beforeEach(() => {
   missingLabels = [];
   doneIssues = [];
   pageSize = 100;
+  linearDown = null;
   linearIssues = [linearIssue({ identifier: "ENG-1" })];
   routes();
 });
@@ -206,6 +210,19 @@ describe("pr status", () => {
     const r = await run(["pr", "status", "7", "--repo", "o/r"]);
     expect(r.code).toBe(0);
     expect(r.out).toContain("blocks a merge: failing: lint");
+  });
+});
+
+describe("pr watch", () => {
+  test("refuses an interval that is not a positive number of seconds", async () => {
+    // A closed pull request ends the watch after one poll, should the interval get through.
+    routes({ "GET repos/o/r/pulls/7": pull(7, { state: "closed" }) });
+    for (const interval of ["1m", "0"]) {
+      const r = await run(["pr", "watch", "7", "--repo", "o/r", "--interval", interval]);
+      expect(r.code).toBe(64);
+      expect(r.err).toContain("usage: factory pr watch");
+    }
+    expect(ghCalls()).toEqual([]);
   });
 });
 
@@ -250,6 +267,7 @@ describe("pr merge", () => {
       "GET repos/o/r/pulls/7": pull(7, { body: null, head: { sha: SHA, ref: "issue-12-thing" } }),
       "GET repos/o/r/issues/12": githubIssue({ labels: ["ready-for-agent", "in-progress"] }),
       "GET repos/o/r/issues/12/comments": [],
+      "GET repos/o/r/pulls?state=open": [pull(7, { body: null, head: { sha: SHA, ref: "issue-12-thing" } })],
       "DELETE repos/o/r/issues/12/labels/ready-for-agent": [],
       "DELETE repos/o/r/issues/12/labels/in-progress": [],
     });
@@ -260,11 +278,26 @@ describe("pr merge", () => {
     expect(linearCalls).toEqual([]);
   });
 
-  test("a ticket id it cannot read is noted, not checked", async () => {
-    routes({ "GET repos/o/r/pulls/7": pull(7, { body: null, head: { sha: SHA, ref: "fix-utf-8" } }) });
+  test("an id its tracker does not know is noted, not checked, and the merge goes on", async () => {
+    routes({ "GET repos/o/r/pulls/7": pull(7, { body: "Fixes #99", head: { sha: SHA, ref: "fix-utf-8" } }) });
     const r = await run(["pr", "merge", "7", "--repo", "o/r"]);
     expect(r.code).toBe(0);
-    expect(r.out).toContain("UTF-8 could not be read");
+    expect(r.out).toContain("UTF-8 names no ticket");
+    expect(r.out).toContain("o/r#99 names no ticket");
+    // Linear can also answer an unknown identifier with an error instead of null.
+    linearDown = "Entity not found: Issue - Could not find referenced Issue.";
+    const again = await run(["pr", "merge", "7", "--repo", "o/r"]);
+    expect(again.code).toBe(0);
+    expect(again.out).toContain("UTF-8 names no ticket");
+    expect(sent("PUT", "repos/o/r/pulls/7/merge")).toHaveLength(2);
+  });
+
+  test("refuses when the tracker fails to answer for a ticket the pull request names", async () => {
+    linearDown = "Rate limit exceeded";
+    const r = await run(["pr", "merge", "7", "--repo", "o/r"]);
+    expect(r.code).toBe(3);
+    expect(r.out).toContain("ENG-1 could not be read: Linear: Rate limit exceeded");
+    expect(ghCalls().some((c) => c.args.includes("PUT"))).toBe(false);
   });
 });
 
@@ -334,6 +367,14 @@ describe("pr reply and resolve", () => {
     expect(graphqlCalls()).toEqual([]);
   });
 
+  test("a Done report with a Needs you line leaves the PR as it is", async () => {
+    routes({ "POST repos/o/r/issues/7/comments": { id: 1 }, "POST repos/o/r/pulls/7/ccr/convert_to_draft": {} });
+    const r = await run(["pr", "report", "7", "--repo", "o/r", "--body", "## Done · the export skips archived rows\n\n**Needs you:** nothing"], { CLAUDE_CODE_REMOTE: "true" });
+    expect(r.err).toBe("");
+    expect(r.out).not.toContain("draft");
+    expect(ghCalls().filter((c) => c.args[1] === "repos/o/r/pulls/7/ccr/convert_to_draft")).toHaveLength(0);
+  });
+
   test("report turns the PR into a draft through the ccr route in a cloud session", async () => {
     routes({ "POST repos/o/r/issues/7/comments": { id: 1 }, "POST repos/o/r/pulls/7/ccr/convert_to_draft": {} });
     const r = await run(["pr", "report", "7", "--repo", "o/r", "--body", "## Handed back · x\n\n**Needs you:** pick one"], { CLAUDE_CODE_REMOTE: "true" });
@@ -361,8 +402,158 @@ describe("pr reply and resolve", () => {
   });
 });
 
+describe("pr open", () => {
+  const PR = { number: 41, html_url: "https://github.com/o/r/pull/41" };
+  const opened = () => sent("POST", "repos/o/r/pulls");
+  const bodyFile = (text: string) => {
+    const path = join(dir, "body.md");
+    writeFileSync(path, text);
+    return path;
+  };
+
+  // A clone on branch feature with one commit. Its pushes land in a local bare
+  // repository instead of GitHub, and its pre-push hook logs each push to the
+  // fake gh's call log, so a test sees whether the push came before the pull
+  // request. The hook runs even for a push with nothing to send, which the
+  // bare repository never hears of.
+  function branch(): string {
+    const path = clone();
+    const origin = join(dir, "origin.git");
+    spawnSync("git", ["init", "-q", "--bare", origin]);
+    const hook = join(path, ".git", "hooks", "pre-push");
+    writeFileSync(hook, `#!/bin/sh\necho '{"args":["git push"],"stdin":null}' >> "${join(dir, "calls.jsonl")}"\n`);
+    chmodSync(hook, 0o755);
+    const git = (...args: string[]) => spawnSync("git", ["-C", path, ...args]);
+    git("remote", "set-url", "--push", "origin", origin);
+    git("checkout", "-q", "-b", "feature");
+    git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "Do it");
+    return path;
+  }
+
+  // GitHub issue 12 of a repository, as the GitHub tracker reads it.
+  const issue = (repo: string) => ({
+    [`GET repos/${repo}/issues/12`]: githubIssue({ html_url: `https://github.com/${repo}/issues/12` }),
+    [`GET repos/${repo}/issues/12/comments`]: [],
+    [`GET repos/${repo}/pulls?state=open`]: [],
+  });
+  const pushedOrOpened = () => ghCalls().filter((c) => c.args[0] === "git push" || c.args.includes("POST"));
+
+  beforeEach(() => {
+    routes({ "GET repos/o/r": { default_branch: "trunk" }, "POST repos/o/r/pulls": PR });
+    linearIssues = [linearIssue({ identifier: "ENG-1", description: "Repo: o/r\n\n## What to build" })];
+  });
+
+  test("without --title, exits 64 with the usage", async () => {
+    const r = await run(["pr", "open", "--body", "Does it."], {}, branch());
+    expect(r.code).toBe(64);
+    expect(r.err).toContain("usage: factory pr open");
+    expect(pushedOrOpened()).toEqual([]);
+  });
+
+  test("outside a clone, says to run inside one", async () => {
+    const r = await run(["pr", "open", "--title", "Do it", "--body", "Does it."]);
+    expect(r.code).toBe(64);
+    expect(r.err).toBe("cannot tell which repository: run inside a clone\n");
+  });
+
+  test("without --ticket, sends the file's content unchanged, ready for review, to the default branch", async () => {
+    const r = await run(["pr", "open", "--title", "Do it", "--body-file", bodyFile("Does it.\n\nSee #12 for why.")], {}, branch());
+    expect(r.err).toBe("");
+    expect(r.code).toBe(0);
+    expect(opened()).toEqual([{ title: "Do it", head: "feature", base: "trunk", body: "Does it.\n\nSee #12 for why.", draft: false }]);
+  });
+
+  test("with --ticket, ends a body that doesn't close the ticket with its closes line", async () => {
+    const r = await run(["pr", "open", "--ticket", "ENG-1", "--title", "Do it", "--body", "Does it."], {}, branch());
+    expect(r.err).toBe("");
+    expect(opened().map((p) => p.body)).toEqual(["Does it.\n\nCloses ENG-1"]);
+  });
+
+  test("with --ticket, sends a body that already closes the ticket unchanged", async () => {
+    const r = await run(["pr", "open", "--ticket", "eng-1", "--title", "Do it", "--body", "Does it.\n\nFixes eng-1"], {}, branch());
+    expect(r.err).toBe("");
+    expect(opened().map((p) => p.body)).toEqual(["Does it.\n\nFixes eng-1"]);
+  });
+
+  test("with a GitHub --ticket in the same repository, ends the body with Closes #12", async () => {
+    routes({ ...current(), ...issue("o/r") });
+    const r = await run(["pr", "open", "--ticket", "#12", "--title", "Do it", "--body", "Does it."], {}, branch());
+    expect(r.err).toBe("");
+    expect(opened().map((p) => p.body)).toEqual(["Does it.\n\nCloses #12"]);
+  });
+
+  test("refuses a GitHub --ticket from another repository before it pushes or opens anything", async () => {
+    routes({ ...current(), ...issue("other/x") });
+    const r = await run(["pr", "open", "--ticket", "other/x#12", "--title", "Do it", "--body", "Does it."], {}, branch());
+    expect(r.code).toBe(3);
+    expect(r.err).toContain("other/x");
+    expect(r.err).toContain("o/r");
+    expect(pushedOrOpened()).toEqual([]);
+  });
+
+  test("refuses a Linear --ticket whose repository is another one before it pushes or opens anything", async () => {
+    linearIssues = [linearIssue({ identifier: "ENG-1" })];
+    const r = await run(["pr", "open", "--ticket", "ENG-1", "--title", "Do it", "--body", "Does it."], {}, branch());
+    expect(r.code).toBe(3);
+    expect(r.err).toContain("andrezzoid/app");
+    expect(r.err).toContain("o/r");
+    expect(pushedOrOpened()).toEqual([]);
+  });
+
+  test("pushes a branch the remote lacks before it opens the pull request", async () => {
+    const r = await run(["pr", "open", "--title", "Do it", "--body", "Does it."], {}, branch());
+    expect(r.err).toBe("");
+    const steps = ghCalls().map((c) => c.args.join(" ")).filter((s) => s === "git push" || s.includes("--method POST"));
+    expect(steps).toEqual(["git push", "api repos/o/r/pulls --method POST --input -"]);
+  });
+
+  test("doesn't push a branch the remote already holds", async () => {
+    const path = branch();
+    spawnSync("git", ["-C", path, "push", "-q", "-u", "origin", "feature"]);
+    rmSync(join(dir, "calls.jsonl"));
+    const r = await run(["pr", "open", "--title", "Do it", "--body", "Does it."], {}, path);
+    expect(r.err).toBe("");
+    expect(opened()).toHaveLength(1);
+    expect(ghCalls().filter((c) => c.args[0] === "git push")).toEqual([]);
+  });
+
+  test("pushes a branch the remote deleted, though the clone still tracks it at its last commit", async () => {
+    const path = branch();
+    spawnSync("git", ["-C", path, "push", "-q", "-u", "origin", "feature"]);
+    spawnSync("git", ["-C", join(dir, "origin.git"), "update-ref", "-d", "refs/heads/feature"]);
+    rmSync(join(dir, "calls.jsonl"));
+    const r = await run(["pr", "open", "--title", "Do it", "--body", "Does it."], {}, path);
+    expect(r.err).toBe("");
+    expect(ghCalls().filter((c) => c.args[0] === "git push")).toHaveLength(1);
+    expect(opened()).toHaveLength(1);
+  });
+
+  test("pushes a branch whose name looks like an option", async () => {
+    const path = branch();
+    spawnSync("git", ["-C", path, "branch", "-m", "feature", "tmp"]);
+    spawnSync("git", ["-C", path, "update-ref", "refs/heads/--dry-run", "HEAD"]);
+    spawnSync("git", ["-C", path, "symbolic-ref", "HEAD", "refs/heads/--dry-run"]);
+    const r = await run(["pr", "open", "--title", "Do it", "--body", "Does it."], {}, path);
+    expect(r.err).toBe("");
+    expect(spawnSync("git", ["-C", join(dir, "origin.git"), "for-each-ref", "--format=%(refname)"], { encoding: "utf8" }).stdout).toBe("refs/heads/--dry-run\n");
+    expect(opened().map((p) => p.head)).toEqual(["--dry-run"]);
+  });
+
+  test("prints the pull request's number and URL once it opens", async () => {
+    const r = await run(["pr", "open", "--title", "Do it", "--body", "Does it."], {}, branch());
+    expect(r.out).toBe("opened #41 https://github.com/o/r/pull/41\n");
+  });
+
+  test("a ticket that can't be read fails the command before it pushes or opens anything", async () => {
+    const r = await run(["pr", "open", "--ticket", "ENG-404", "--title", "Do it", "--body", "Does it."], {}, branch());
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("ENG-404");
+    expect(pushedOrOpened()).toEqual([]);
+  });
+});
+
 describe("Linear tickets", () => {
-  const file = (name: string, text: string) => {
+  const file =(name: string, text: string) => {
     const path = join(dir, name);
     writeFileSync(path, text);
     return path;
@@ -411,6 +602,19 @@ describe("Linear tickets", () => {
     const r = await run(["tickets", "show", "ENG-1"], { LINEAR_API_KEY: "proxy-injected" });
     expect(r.code).toBe(0);
     expect(linearCalls.map((c) => c.auth)).toEqual([undefined]);
+  });
+
+  test("with no LINEAR_API_KEY, asks the linear CLI for its token once per command", async () => {
+    const bin = join(dir, "bin");
+    mkdirSync(bin);
+    const linear = join(bin, "linear");
+    writeFileSync(linear, `#!/bin/sh\necho "$@" >> "${join(dir, "linear-calls")}"\necho lin_api_from_cli\n`);
+    chmodSync(linear, 0o755);
+    const env = { LINEAR_API_KEY: "", PATH: `${bin}:${process.env.PATH}` };
+    expect((await run(["tickets", "claim", "ENG-1"], env)).code).toBe(0);
+    expect((await run(["inbox"], env)).code).toBe(0);
+    expect(linearCalls.every((c) => c.auth === "lin_api_from_cli")).toBe(true);
+    expect(readFileSync(join(dir, "linear-calls"), "utf8")).toBe("auth token\nauth token\n");
   });
 
   test("claim labels it in-progress, assigns, starts it and logs the local session", async () => {
@@ -463,6 +667,18 @@ describe("Linear tickets", () => {
     linearIssues = [linearIssue({ identifier: "ENG-1", children: { nodes: [{ identifier: "ENG-2", state: { type: "unstarted" } }] } })];
     expect((await run(["tickets", "claim", "ENG-1"])).err).toContain("parent of 1 open ticket(s)");
     expect([...ops("FactoryAddLabel"), ...ops("FactoryComment")]).toEqual([]);
+  });
+
+  test("claim refuses what tickets next refuses: a colleague's ticket, or one with no repository", async () => {
+    linearIssues = [linearIssue({ identifier: "ENG-1", assignee: { id: "r", name: "Rita", isMe: false } })];
+    const theirs = await run(["tickets", "claim", "ENG-1"]);
+    expect(theirs.code).toBe(3);
+    expect(theirs.err).toContain("assigned to Rita");
+    linearIssues = [linearIssue({ identifier: "ENG-1", description: "No repo line." })];
+    const nowhere = await run(["tickets", "claim", "ENG-1"]);
+    expect(nowhere.code).toBe(3);
+    expect(nowhere.err).toContain("no repository");
+    expect([...ops("FactoryUpdate"), ...ops("FactoryAddLabel"), ...ops("FactoryComment")]).toEqual([]);
   });
 
   test("claim fails before writing anything when Linear has no in-progress label", async () => {
@@ -605,11 +821,19 @@ describe("GitHub Issues tickets", () => {
     expect(sent("POST", "repos/o/r/issues/12/comments")[0].body).toMatch(/^Claimed by a local session on .+\.$/);
   });
 
-  test("claim leaves a colleague's assignee", async () => {
-    routes({ ...current(), "GET repos/o/r/issues/12": githubIssue({ number: 12, assignees: [{ login: "rita" }] }) });
+  test("claim leaves the assignee of a ticket assigned to the viewer", async () => {
+    routes({ ...current(), "GET repos/o/r/issues/12": githubIssue({ number: 12, assignees: [{ login: "andrezzoid" }] }) });
     expect((await run(["tickets", "claim", "o/r#12"], gh)).code).toBe(0);
     expect(sent("POST", "repos/o/r/issues/12/assignees")).toEqual([]);
     expect(sent("POST", "repos/o/r/issues/12/labels")).toEqual([{ labels: ["in-progress"] }]);
+  });
+
+  test("claim refuses a colleague's ticket, as tickets next does", async () => {
+    routes({ ...current(), "GET repos/o/r/issues/12": githubIssue({ number: 12, assignees: [{ login: "rita" }] }) });
+    const r = await run(["tickets", "claim", "o/r#12"], gh);
+    expect(r.code).toBe(3);
+    expect(r.err).toContain("assigned to rita");
+    expect(ghCalls().some((c) => c.args.includes("POST"))).toBe(false);
   });
 
   test("show is in babysit while a pull request from its branch is open", async () => {
@@ -617,6 +841,51 @@ describe("GitHub Issues tickets", () => {
     const d = JSON.parse((await run(["tickets", "show", "o/r#12", "--json"], gh)).out);
     expect(d.phase).toBe("babysit");
     expect(d.openPrs).toEqual(["https://github.com/o/r/pull/7"]);
+  });
+
+  test("show is in babysit while a pull request that closes the issue is open, whatever its branch", async () => {
+    routes({ ...current(), "GET repos/o/r/pulls?state=open": [pull(8, { body: "Closes #12", head: { sha: SHA, ref: "fix-the-thing" } })], "GET repos/o/r/pulls/8": pull(8) });
+    const d = JSON.parse((await run(["tickets", "show", "o/r#12", "--json"], gh)).out);
+    expect(d.phase).toBe("babysit");
+    expect(d.openPrs).toEqual(["https://github.com/o/r/pull/8"]);
+  });
+
+  test("inbox reads a handed-back issue's comments without fetching the issue again", async () => {
+    routes({
+      ...current(),
+      "GET repos/o/r/issues?state=open": [githubIssue({ number: 17, title: "Bounced", labels: ["ready-for-human"] })],
+      "GET repos/o/r/issues/17": githubIssue({ number: 17, title: "Bounced", labels: ["ready-for-human"] }),
+      "GET repos/o/r/issues/17/comments": [{ id: 1, body: "## Handed back · line 2 cannot hold", created_at: hoursAgo(1) }],
+    });
+    const r = await run(["inbox", "--human", "--json"], gh);
+    expect(r.err).toBe("");
+    expect(JSON.parse(r.out).human.map((i: any) => [i.id, i.why])).toEqual([["o/r#17", "waiting on your decision: Handed back · line 2 cannot hold"]]);
+    expect(ghCalls().filter((c) => c.args[1] === "repos/o/r/issues/17")).toEqual([]);
+  });
+
+  test("a tracker that fails is named on stderr, and every command goes on with the others", async () => {
+    linearDown = "Account disabled";
+    routes({ ...current(), "GET repos/o/r/issues": [], "GET repos/o/r/pulls?state=closed&sort=updated&direction=desc": [] });
+    const env = { FACTORY_GITHUB_REPOS: "O/R" };
+    const next = await run(["tickets", "next", "--json"], env);
+    expect(next.code).toBe(0);
+    expect(next.err).toContain("Linear: Account disabled");
+    expect(JSON.parse(next.out).ready.map((t: any) => t.id)).toEqual(["o/r#12"]);
+    const inbox = await run(["inbox", "--human", "--json"], env);
+    expect(inbox.code).toBe(0);
+    expect(JSON.parse(inbox.out).human.map((i: any) => i.id)).toEqual(["o/r#16"]);
+    expect((await run(["stats", "--json"], env)).code).toBe(0);
+    const doctor = await run(["doctor"], env);
+    expect(doctor.out).toMatch(/^warn\s+linear\s+Linear: Account disabled$/m);
+    expect(doctor.out).toMatch(/^ok\s+github\s/m);
+  });
+
+  test("a command fails when every tracker fails", async () => {
+    linearDown = "Account disabled";
+    const r = await run(["inbox"], { FACTORY_GITHUB_REPOS: "" });
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("Linear: Account disabled");
+    expect((await run(["doctor"])).out).toMatch(/^fail\s+linear\s+Linear: Account disabled$/m);
   });
 
   test("handback posts the report, takes off ready-for-agent and in-progress, and labels it ready-for-human", async () => {
@@ -821,6 +1090,10 @@ describe("stats", () => {
   test("a since it cannot read is a usage error", async () => {
     expect((await run(["stats", "--since", "last week"])).code).toBe(64);
   });
+});
+
+test("a flag's value keeps every = after the first", () => {
+  expect(parseArgs(["tickets", "new", "--title=Fix a=b parsing"]).flags.title).toBe("Fix a=b parsing");
 });
 
 test("unknown commands print help and exit 64", async () => {

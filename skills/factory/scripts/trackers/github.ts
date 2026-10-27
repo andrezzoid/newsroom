@@ -5,7 +5,7 @@
 
 import { api, comments, paginate, viewer as forgeViewer } from "../forge.ts";
 import { CLAIMED_LABEL, HUMAN_LABEL, READY_LABEL, slug } from "../tickets.ts";
-import type { Ticket, TicketComment, TicketRef, Tracker } from "./types.ts";
+import { NotFound, type Ticket, type TicketComment, type TicketRef, type Tracker } from "./types.ts";
 
 export class GithubError extends Error {}
 
@@ -78,6 +78,11 @@ export function closedIssue(pr: any): number | null {
   return br ? Number(br[1]) : null;
 }
 
+// The pull requests, of those given, that close the issue.
+function closing(prs: any[], number: number): string[] {
+  return prs.filter((p) => closedIssue(p) === number).map((p) => p.html_url);
+}
+
 export class GithubTracker implements Tracker {
   readonly name = "github" as const;
   readonly repos: string[];
@@ -135,7 +140,7 @@ export class GithubTracker implements Tracker {
       for (const i of this.issues(repo, "state=open")) {
         let t = toTicket(i, repo, [], me);
         if (t.state === "queued" && t.labels.includes(READY_LABEL)) t = this.full(repo, i);
-        t.prs = prs.filter((p) => closedIssue(p) === i.number).map((p) => p.html_url);
+        t.prs = closing(prs, i.number);
         out.push(t);
       }
     }
@@ -144,9 +149,21 @@ export class GithubTracker implements Tracker {
 
   async get(id: string): Promise<{ ticket: Ticket; comments: TicketComment[] }> {
     const { repo, number } = parseId(id);
-    const issue = api<any>(`repos/${repo}/issues/${number}`);
-    if (issue.pull_request) throw new GithubError(`${id} is a pull request, not an issue`);
-    return { ticket: this.full(repo, issue), comments: comments(repo, number) };
+    let issue: any;
+    try {
+      issue = api<any>(`repos/${repo}/issues/${number}`);
+    } catch (e) {
+      throw /HTTP 404\b/.test((e as Error).message) ? new NotFound(`no GitHub issue ${id}`) : e;
+    }
+    if (issue.pull_request) throw new NotFound(`${id} is a pull request, not an issue`);
+    const ticket = this.full(repo, issue);
+    ticket.prs = closing(paginate<any>(`repos/${repo}/pulls?state=open`), number);
+    return { ticket, comments: comments(repo, number) };
+  }
+
+  async comments(id: string): Promise<TicketComment[]> {
+    const { repo, number } = parseId(id);
+    return comments(repo, number);
   }
 
   async start(t: Ticket): Promise<void> {

@@ -13,8 +13,10 @@ import { byAgent, fingerprint, mergeBlockers, status as statusFromFacts, type St
 import { run } from "./proc.ts";
 import {
   CLAIMED_LABEL,
+  claimable,
   claimant,
   claimLog,
+  closedBy,
   plan,
   FACTORY_LABELS,
   HUMAN_LABEL,
@@ -30,7 +32,7 @@ import {
 } from "./tickets.ts";
 import type { GithubTracker } from "./trackers/github.ts";
 import { enabledTrackers, githubRepos, normalizeId, repoTracker, trackerFor, trackerLine } from "./trackers/index.ts";
-import type { Ticket, Tracker } from "./trackers/types.ts";
+import { NotFound, type Ticket, type Tracker } from "./trackers/types.ts";
 
 // The folder holding every skill, two levels above this file in skills/factory/scripts/.
 const SKILLS_DIR = resolve(import.meta.dirname, "..", "..");
@@ -52,7 +54,8 @@ export function parseArgs(argv: string[]): Args {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith("--")) {
-      const [k, v] = a.slice(2).split("=", 2);
+      const eq = a.indexOf("=");
+      const [k, v] = eq < 0 ? [a.slice(2), undefined] : [a.slice(2, eq), a.slice(eq + 1)];
       if (v !== undefined) out.flags[k] = v;
       else if (!SWITCHES.has(k) && i + 1 < argv.length && !argv[i + 1].startsWith("--")) out.flags[k] = argv[++i];
       else out.flags[k] = true;
@@ -104,7 +107,18 @@ function trackersFor(repo: string | null): Tracker[] {
   return trackers;
 }
 
-const openTickets = async (repo: string | null) => (await Promise.all(trackersFor(repo).map((t) => t.open()))).flat();
+// Asks every tracker at once. A tracker that fails, such as Linear with a dead
+// login, is named on stderr and the command goes on with the others; it fails
+// only when every tracker fails.
+async function fromEach<T>(trackers: Tracker[], ask: (t: Tracker) => Promise<T[]>): Promise<T[]> {
+  const results = await Promise.allSettled(trackers.map(ask));
+  const failed = results.flatMap((r, i) => (r.status === "rejected" ? [{ name: trackers[i].name, message: (r.reason as Error).message }] : []));
+  if (failed.length === results.length) throw new Error(failed.map((f) => f.message).join("; "));
+  for (const f of failed) console.error(`factory: skipped ${f.name}, which failed: ${f.message}`);
+  return results.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+}
+
+const openTickets = (repo: string | null) => fromEach(trackersFor(repo), (t) => t.open());
 
 // The text of a report or reply, from --body-file or --body.
 function bodyArg(a: Args, usage: string): string {
@@ -122,12 +136,14 @@ function reportArg(a: Args, kind: string, usage: string): string {
   return body;
 }
 
-// GitHub computes mergeability after each push: ask once more before
-// reporting it unknown.
+// GitHub computes mergeability after each push: ask once more, this many
+// milliseconds later, before reporting it unknown. The tests set it to 0.
+const MERGEABLE_RETRY_MS = Number(process.env.FACTORY_MERGEABLE_RETRY_MS ?? 3000);
+
 async function statusOf(ref: forge.Repo & { number: number }): Promise<{ status: Status; body: string | null }> {
   let facts = forge.prFacts(ref, ref.number);
   if (facts.state === "open" && facts.mergeable === null) {
-    await sleep(3000);
+    await sleep(MERGEABLE_RETRY_MS);
     facts = forge.prFacts(ref, ref.number);
   }
   return { status: statusFromFacts(facts), body: facts.body };
@@ -159,8 +175,10 @@ async function prStatus(a: Args) {
 // tool, which turns each line into a wake-up. Ends once the PR is merged or
 // closed.
 async function prWatch(a: Args) {
+  const seconds = Number(str(a.flags.interval) ?? 60);
+  if (!Number.isFinite(seconds) || seconds <= 0) throw new Exit(64, "usage: factory pr watch [PR] [--interval <seconds above zero>]");
   const ref = forge.resolvePr(a._[2], str(a.flags.repo));
-  const interval = Number(str(a.flags.interval) ?? 60) * 1000;
+  const interval = seconds * 1000;
   let last = "";
   let failures = 0;
   for (;;) {
@@ -212,9 +230,8 @@ async function prResolve(a: Args) {
 
 const PR_REPORT_USAGE = "usage: factory pr report [PR] --body-file <report>";
 
-// Reports on the work go on its pull request. A hand-back, or any report that
-// needs the user, also turns the pull request back into a draft: the inbox
-// lists drafts as theirs.
+// Reports on the work go on its pull request. A hand-back also turns the pull
+// request back into a draft: the inbox lists drafts as the user's.
 async function prReport(a: Args) {
   const body = bodyArg(a, PR_REPORT_USAGE);
   const r = report({ id: "", body, createdAt: "" });
@@ -222,9 +239,37 @@ async function prReport(a: Args) {
   if (!r) throw new Exit(64, `the report must start with its title line, such as "Done · <subject>"`);
   const ref = forge.resolvePr(a._[2], str(a.flags.repo));
   forge.comment(ref, ref.number, body);
-  const draft = r.needsYou || r.kind === "Handed back";
+  const draft = r.kind === "Handed back";
   if (draft) forge.convertToDraft(ref, ref.number);
   console.log(`posted the report on #${ref.number}${draft ? ", and turned it into a draft: it needs the user" : ""}`);
+  return 0;
+}
+
+const OPEN_USAGE = "usage: factory pr open [--ticket <ticket or issue ID>] --title <title> (--body <text> | --body-file <file>)";
+
+// Opens a pull request from the current branch, in the clone's own
+// repository, since the branch goes to origin. With --ticket, the body ends
+// with the ticket's closes line, which the merge check reads to find the
+// ticket and the tracker reads to close it on merge.
+async function prOpen(a: Args) {
+  const title = str(a.flags.title);
+  if (!title) throw new Exit(64, OPEN_USAGE);
+  let body = bodyArg(a, OPEN_USAGE);
+  const repo = forge.currentRepo();
+  if (!repo) throw new Exit(64, "cannot tell which repository: run inside a clone");
+  const slug = `${repo.owner}/${repo.repo}`.toLowerCase();
+  const ticketFlag = str(a.flags.ticket);
+  if (ticketFlag) {
+    const id = normalizeId(ticketFlag, slug);
+    const { ticket } = await trackerFor(id).get(id);
+    // A closes line names the ticket only within its own repository: a bare
+    // #5 would close issue 5 of this one.
+    if (ticket.repo && ticket.repo !== slug) throw new Exit(3, `${ticket.id} ships in ${ticket.repo}, not in ${slug}, where the pull request would open`);
+    // Only the body counts: a branch named after an issue does not close it.
+    if (!closedBy(body, slug).includes(ticket.id)) body = `${body}\n\n${ticket.closes}`;
+  }
+  const pr = forge.openPr(repo, title, body);
+  console.log(`opened #${pr.number} ${pr.url}`);
   return 0;
 }
 
@@ -242,7 +287,10 @@ async function prMerge(a: Args) {
       named.push({ id, tracker });
       if (ticket.labels.includes(HUMAN_LABEL)) blockers.push(`${id} is handed back (${HUMAN_LABEL})`);
     } catch (e) {
-      console.log(`${id} could not be read, so it was not checked: ${(e as Error).message}`);
+      // A false match, as in "Fixes utf-8 handling", names no ticket. Any other
+      // failure leaves a real ticket unchecked, so it blocks the merge.
+      if (!(e instanceof NotFound)) blockers.push(`${id} could not be read: ${(e as Error).message}`);
+      else console.log(`${id} names no ticket, so it was not checked: ${e.message}`);
     }
   }
   if (blockers.length) {
@@ -336,11 +384,8 @@ async function ticketsClaim(a: Args) {
   const id = idArg(a, "usage: factory tickets claim <ID> [--take-over]");
   const tracker = trackerFor(id);
   const { ticket, comments } = await tracker.get(id);
-  if (ticket.state === "done" || ticket.state === "canceled") throw new Exit(3, `${id} is ${ticket.stateName}`);
-  if (!ticket.labels.includes(READY_LABEL)) throw new Exit(3, `${id} has no ${READY_LABEL} label`);
-  const blockers = ticket.blockers.filter((b) => !b.done).map((b) => b.id);
-  if (blockers.length) throw new Exit(3, `${id} is blocked by ${blockers.join(", ")}`);
-  if (ticket.openChildren > 0) throw new Exit(3, `${id} is the parent of ${ticket.openChildren} open ticket(s): build those instead`);
+  const ok = claimable(ticket);
+  if (!ok.ready) throw new Exit(3, `cannot claim ${id}: ${ok.reason}`);
   const me = session();
   let replaces: string | null = null;
   if (ticket.labels.includes(CLAIMED_LABEL)) {
@@ -397,62 +442,70 @@ async function ticketsHandback(a: Args) {
 }
 
 type Item = { id: string; title: string; url: string; repo?: string; why: string; pr?: string; session?: string };
+type Sorted = { human: Item[]; agent: Item[] };
+
+const isQuiet = (at: string) => Date.now() - Date.parse(at) > QUIET_MS;
+const inboxItem = (t: Ticket, why: string, more: Partial<Item> = {}): Item => ({ id: t.id, title: t.title, url: t.url, ...(t.repo ? { repo: t.repo } : {}), why, ...more });
+
+// Where a claimed ticket's open pull request goes, if anywhere. The comments
+// and the last word depend on the status, so they come after it.
+async function sortPr(t: Ticket, url: string, session: string | undefined): Promise<Sorted> {
+  const item = (why: string) => [inboxItem(t, why, { pr: url, session })];
+  const ref = forge.resolvePr(url, undefined);
+  const { status: s } = await statusOf(ref);
+  if (s.draft) {
+    const last = latestReport(forge.comments(`${ref.owner}/${ref.repo}`, ref.number));
+    return { human: item(last ? `a draft pull request: ${last.title}` : "a draft pull request"), agent: [] };
+  }
+  if (!mergeBlockers(s).length) return { human: item("ready to merge"), agent: [] };
+  // What its session would fix, had it not gone. Babysit leaves open the
+  // threads that wait on someone else, so a thread counts only when
+  // someone other than an agent spoke last.
+  const broken = [
+    s.conflicts ? "conflicts" : "",
+    s.mergeState === "behind" ? `is behind ${s.baseRef}` : "",
+    s.checks.failing.length ? `fails ${s.checks.failing.join(", ")}` : "",
+    s.reviews.changesRequested.length ? "has changes requested" : "",
+  ].filter(Boolean);
+  const stalled = isQuiet(s.updatedAt);
+  if (stalled && (s.unresolvedThreads ?? 0) > 0 && !byAgent(forge.lastWord(ref, ref.number) ?? "")) broken.push(`has ${s.unresolvedThreads} open thread(s) waiting on an answer`);
+  if (broken.length && stalled) return { human: [], agent: item(`its pull request ${broken.join(", ")}, quiet for over 3h`) };
+  if (!broken.length && s.mergeState === "blocked") return { human: item("its pull request waits on a required review"), agent: [] };
+  return { human: [], agent: [] };
+}
+
+// Sorts one ticket into the list for the user, the list for agents, or neither.
+async function sortTicket(t: Ticket): Promise<Sorted> {
+  const claimed = t.labels.includes(CLAIMED_LABEL);
+  if (!t.labels.includes(HUMAN_LABEL) && !claimed) {
+    if (t.labels.includes(INFO_LABEL)) return { human: [inboxItem(t, "waiting on more information")], agent: [] };
+    if (t.labels.includes(TRIAGE_LABEL) || !t.labels.some((l) => FACTORY_LABELS.includes(l))) return { human: [inboxItem(t, "new, needs triage")], agent: [] };
+    return { human: [], agent: [] };
+  }
+  const comments = await trackerFor(t.id).comments(t.id);
+  const held = latestClaim(comments);
+  const session = held ? claimant(held) : undefined;
+  if (t.labels.includes(HUMAN_LABEL)) {
+    const last = latestReport(comments);
+    return { human: [inboxItem(t, last ? `waiting on your decision: ${last.title}` : "waiting on your decision", { session })], agent: [] };
+  }
+  const prs = t.repo ? forge.openPrs(t.repo, t.branchName, t.prs) : [];
+  const quiet = !prs.length && isQuiet(t.updatedAt) ? [inboxItem(t, "claimed, but no pull request and quiet for over 3h", { session })] : [];
+  const each = await Promise.all(prs.map((url) => sortPr(t, url, session)));
+  return { human: [...quiet, ...each.flatMap((e) => e.human)], agent: each.flatMap((e) => e.agent) };
+}
 
 // What waits on the user, and what an agent can pick up now. A line names the
-// session behind it, so the user can open that session and steer it.
+// session behind it, so the user can open that session and steer it. Tickets
+// are read in parallel; the lists keep the order open() returned.
 async function inbox(a: Args) {
   const tickets = await openTickets(repoArg(a));
-  const human: Item[] = [];
-  const agent: Item[] = [];
-  const quiet = (at: string) => Date.now() - Date.parse(at) > QUIET_MS;
-  const item = (t: Ticket, why: string, more: Partial<Item> = {}): Item => ({ id: t.id, title: t.title, url: t.url, ...(t.repo ? { repo: t.repo } : {}), why, ...more });
-  for (const t of tickets) {
-    const claimed = t.labels.includes(CLAIMED_LABEL);
-    if (!t.labels.includes(HUMAN_LABEL) && !claimed) {
-      if (t.labels.includes(INFO_LABEL)) human.push(item(t, "waiting on more information"));
-      else if (t.labels.includes(TRIAGE_LABEL) || !t.labels.some((l) => FACTORY_LABELS.includes(l))) human.push(item(t, "new, needs triage"));
-      continue;
-    }
-    const { comments } = await trackerFor(t.id).get(t.id);
-    const held = latestClaim(comments);
-    const session = held ? claimant(held) : undefined;
-    if (t.labels.includes(HUMAN_LABEL)) {
-      const last = latestReport(comments);
-      human.push(item(t, last ? `waiting on your decision: ${last.title}` : "waiting on your decision", { session }));
-      continue;
-    }
-    const prs = t.repo ? forge.openPrs(t.repo, t.branchName, t.prs) : [];
-    if (!prs.length && quiet(t.updatedAt)) human.push(item(t, "claimed, but no pull request and quiet for over 3h", { session }));
-    for (const url of prs) {
-      const ref = forge.resolvePr(url, undefined);
-      const { status: s } = await statusOf(ref);
-      if (s.draft) {
-        const last = latestReport(forge.comments(`${ref.owner}/${ref.repo}`, ref.number));
-        human.push(item(t, last ? `a draft pull request: ${last.title}` : "a draft pull request", { pr: url, session }));
-        continue;
-      }
-      if (!mergeBlockers(s).length) {
-        human.push(item(t, "ready to merge", { pr: url, session }));
-        continue;
-      }
-      // What its session would fix, had it not gone. Babysit leaves open the
-      // threads that wait on someone else, so a thread counts only when
-      // someone other than an agent spoke last.
-      const broken = [
-        s.conflicts ? "conflicts" : "",
-        s.mergeState === "behind" ? `is behind ${s.baseRef}` : "",
-        s.checks.failing.length ? `fails ${s.checks.failing.join(", ")}` : "",
-        s.reviews.changesRequested.length ? "has changes requested" : "",
-      ].filter(Boolean);
-      const stalled = quiet(s.updatedAt);
-      if (stalled && (s.unresolvedThreads ?? 0) > 0 && !byAgent(forge.lastWord(ref, ref.number) ?? "")) broken.push(`has ${s.unresolvedThreads} open thread(s) waiting on an answer`);
-      if (broken.length && stalled) agent.push(item(t, `its pull request ${broken.join(", ")}, quiet for over 3h`, { pr: url, session }));
-      else if (!broken.length && s.mergeState === "blocked") human.push(item(t, "its pull request waits on a required review", { pr: url, session }));
-    }
-  }
+  const sorted = await Promise.all(tickets.map(sortTicket));
+  const human = sorted.flatMap((s) => s.human);
+  const agent = sorted.flatMap((s) => s.agent);
   // Work already claimed comes first: finish before starting.
   const { ready } = nextTickets(tickets.filter((t) => t.labels.includes(READY_LABEL)));
-  agent.push(...ready.map((t) => item(t, "ready to build")));
+  agent.push(...ready.map((t) => inboxItem(t, "ready to build")));
   const both = !a.flags.human && !a.flags.agent;
   const data = { ...(both || a.flags.human ? { human } : {}), ...(both || a.flags.agent ? { agent } : {}) };
   print(a, data, () => {
@@ -477,7 +530,7 @@ async function stats(a: Args) {
   const since = sinceArg(a);
   const repo = repoArg(a);
   const trackers = trackersFor(repo);
-  const done = (await Promise.all(trackers.map((t) => t.done(since)))).flat();
+  const done = await fromEach(trackers, (t) => t.done(since));
   const open = await openTickets(repo);
   const recent = (at: string) => Date.parse(at) >= Date.parse(since);
   const repos = new Set([...githubRepos(repo ? [repo] : []), ...[...done.map((d) => d.ticket), ...open].map((t) => t.repo).filter((r) => r !== null)]);
@@ -565,14 +618,17 @@ async function doctor(a: Args) {
   const repo = here ? `${here.owner}/${here.repo}` : null;
   const trackers = enabledTrackers(repo && repoTracker(repo) === "github" ? [repo] : []);
   if (!trackers.length) add("trackers", "fail", "none: set LINEAR_API_KEY for Linear, FACTORY_GITHUB_REPOS=owner/a,owner/b for GitHub Issues");
+  const failed: { name: string; message: string }[] = [];
   for (const t of trackers) {
     try {
       const who = await t.viewer();
       add(t.name, "ok", t.name === "github" ? `issues in ${(t as GithubTracker).repos.join(", ")} as ${who}` : `authenticated as ${who}`);
     } catch (e) {
-      add(t.name, "fail", (e as Error).message);
+      failed.push({ name: t.name, message: (e as Error).message });
     }
   }
+  // Commands go on without a failing tracker while another one works.
+  for (const f of failed) add(f.name, failed.length < trackers.length ? "warn" : "fail", f.message);
 
   // A skill counts as installed in the user's skills or in the clone's own
   // .claude/skills, where a cloud session on this repo finds it.
@@ -619,8 +675,11 @@ Tickets are ENG-123 (Linear), owner/repo#123 (GitHub Issues), or #123 inside a c
                                                 reply in a review comment's thread, with the Claude Code
                                                 footer; --resolve also resolves the thread
   factory pr resolve [PR] --comment ID          resolve the review thread holding the comment
-  factory pr report [PR] --body-file F          post a report on the pull request; a hand-back, or a
-                                                report that needs you, turns it into a draft
+  factory pr open [--ticket ID] --title T (--body TEXT | --body-file F)
+                                                push the branch and open a pull request to the default
+                                                branch; --ticket ends the body with the ticket's closes line
+  factory pr report [PR] --body-file F          post a report on the pull request; a hand-back turns
+                                                it into a draft
   factory pr merge [PR]                         merge if nothing blocks it, else exit 3 with what does
 
 Trackers: Linear when LINEAR_API_KEY is set (or \`linear auth login\` locally); GitHub Issues for
@@ -644,6 +703,7 @@ export async function main(argv: string[]): Promise<number> {
     "pr watch": prWatch,
     "pr reply": prReply,
     "pr resolve": prResolve,
+    "pr open": prOpen,
     "pr report": prReport,
     "pr merge": prMerge,
   };

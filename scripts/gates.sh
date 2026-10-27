@@ -21,9 +21,13 @@ fi
 # or ships with Claude Code, and the model may invoke it. A skill that only
 # exists on one machine is missing from every cloud session, and the Skill tool
 # refuses a skill only the user may invoke: read that one by its path instead.
+# A name is any quoted or backticked word in the rest of a sentence that
+# mentions the Skill tool, or the argument of Skill("name"). The sed drops the
+# dots of e.g. and i.e. so a sentence runs on past them.
 builtin="code-review security-review run"
-missing=$(grep -rhoiE 'call (the|your) Skill tool( twice,)? (with|for)[^.]*' skills agents |
-  grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u | while read -r name; do
+missing=$(grep -rhiE 'Skill tool|Skill\(' skills agents | sed 's/e\.g\./eg/g; s/i\.e\./ie/g' |
+  grep -oiE 'Skill tool[^.]*|Skill\([^)]*\)' |
+  grep -oE '["`][a-z0-9-]+["`]' | tr -d '"`' | sort -u | while read -r name; do
     case " $builtin " in (*" $name "*) continue ;; esac
     if [ ! -f ".claude/skills/$name/SKILL.md" ]; then echo "$name: missing from .claude/skills"
     elif grep -q '^disable-model-invocation: true' ".claude/skills/$name/SKILL.md"; then echo "$name: only the user may invoke it"

@@ -27,5 +27,5 @@ every open ticket has its line.
 
 Send it all in one message, ending with the question of which mistakes to fix.
 End the turn, so the routine's notification carries it. For each one the user
-picks, read `../correct/SKILL.md`, beside this skill's folder, and follow it in
+picks, read `<this skill's folder>/../correct/SKILL.md` and follow it in
 the repo it happened in: it proposes the fix.
