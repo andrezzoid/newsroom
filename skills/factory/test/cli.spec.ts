@@ -143,7 +143,6 @@ function run(args: string[], env: Record<string, string> = {}, cwd = dir): Promi
       FAKE_GH_DIR: dir,
       FACTORY_LINEAR_URL: linearUrl,
       FACTORY_CLAUDE: "/nonexistent/claude",
-      FACTORY_MERGEABLE_RETRY_MS: "0",
       LINEAR_API_KEY: "lin_api_test",
       FACTORY_GITHUB_REPOS: "",
       CLAUDE_CODE_REMOTE: "",
@@ -290,6 +289,14 @@ describe("pr merge", () => {
     expect(again.code).toBe(0);
     expect(again.out).toContain("UTF-8 names no ticket");
     expect(sent("PUT", "repos/o/r/pulls/7/merge")).toHaveLength(2);
+  });
+
+  test("refuses when Linear fails with an error that only mentions not found", async () => {
+    linearDown = "Credential not found for api.linear.app";
+    const r = await run(["pr", "merge", "7", "--repo", "o/r"]);
+    expect(r.code).toBe(3);
+    expect(r.out).toContain("ENG-1 could not be read: Linear: Credential not found for api.linear.app");
+    expect(ghCalls().some((c) => c.args.includes("PUT"))).toBe(false);
   });
 
   test("refuses when the tracker fails to answer for a ticket the pull request names", async () => {
@@ -447,6 +454,25 @@ describe("pr open", () => {
     const r = await run(["pr", "open", "--body", "Does it."], {}, branch());
     expect(r.code).toBe(64);
     expect(r.err).toContain("usage: factory pr open");
+    expect(pushedOrOpened()).toEqual([]);
+  });
+
+  test("refuses a --ticket with no value or an empty one before it pushes or opens anything", async () => {
+    const path = branch();
+    for (const ticket of [["--ticket"], ["--ticket", ""]]) {
+      const r = await run(["pr", "open", ...ticket, "--title", "Do it", "--body", "Does it."], {}, path);
+      expect(r.code).toBe(64);
+      expect(r.err).toContain("usage: factory pr open");
+    }
+    expect(pushedOrOpened()).toEqual([]);
+  });
+
+  test("refuses to open from the default branch before it pushes anything", async () => {
+    const path = branch();
+    spawnSync("git", ["-C", path, "checkout", "-q", "-b", "trunk"]);
+    const r = await run(["pr", "open", "--title", "Do it", "--body", "Does it."], {}, path);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("feature branch");
     expect(pushedOrOpened()).toEqual([]);
   });
 
@@ -874,7 +900,9 @@ describe("GitHub Issues tickets", () => {
     const inbox = await run(["inbox", "--human", "--json"], env);
     expect(inbox.code).toBe(0);
     expect(JSON.parse(inbox.out).human.map((i: any) => i.id)).toEqual(["o/r#16"]);
-    expect((await run(["stats", "--json"], env)).code).toBe(0);
+    const stats = await run(["stats", "--json"], env);
+    expect(stats.code).toBe(0);
+    expect(stats.err.match(/skipped linear/g)).toHaveLength(1);
     const doctor = await run(["doctor"], env);
     expect(doctor.out).toMatch(/^warn\s+linear\s+Linear: Account disabled$/m);
     expect(doctor.out).toMatch(/^ok\s+github\s/m);

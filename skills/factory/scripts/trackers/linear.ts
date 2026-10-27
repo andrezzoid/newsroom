@@ -231,7 +231,7 @@ export class LinearTracker implements Tracker {
   // Linear answers an unknown identifier with null or an "Entity not found" error.
   private async issue(id: string): Promise<WithComments> {
     const d = await linear<{ issue: WithComments | null }>(ISSUE_QUERY, { id }).catch((e) => {
-      throw e instanceof LinearError && /not found/i.test(e.message) ? new NotFound(`no Linear issue ${id}`) : e;
+      throw e instanceof LinearError && /^Linear: Entity not found\b/.test(e.message) ? new NotFound(`no Linear issue ${id}`) : e;
     });
     if (!d.issue) throw new NotFound(`no Linear issue ${id}`);
     this.raw.set(id, d.issue);

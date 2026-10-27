@@ -109,12 +109,17 @@ function trackersFor(repo: string | null): Tracker[] {
 
 // Asks every tracker at once. A tracker that fails, such as Linear with a dead
 // login, is named on stderr and the command goes on with the others; it fails
-// only when every tracker fails.
+// only when every tracker fails. A command that asks twice, as stats does,
+// names each failed tracker once.
+const named = new Set<string>();
 async function fromEach<T>(trackers: Tracker[], ask: (t: Tracker) => Promise<T[]>): Promise<T[]> {
   const results = await Promise.allSettled(trackers.map(ask));
   const failed = results.flatMap((r, i) => (r.status === "rejected" ? [{ name: trackers[i].name, message: (r.reason as Error).message }] : []));
   if (failed.length === results.length) throw new Error(failed.map((f) => f.message).join("; "));
-  for (const f of failed) console.error(`factory: skipped ${f.name}, which failed: ${f.message}`);
+  for (const f of failed.filter((f) => !named.has(f.name))) {
+    named.add(f.name);
+    console.error(`factory: skipped ${f.name}, which failed: ${f.message}`);
+  }
   return results.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
 }
 
@@ -136,14 +141,12 @@ function reportArg(a: Args, kind: string, usage: string): string {
   return body;
 }
 
-// GitHub computes mergeability after each push: ask once more, this many
-// milliseconds later, before reporting it unknown. The tests set it to 0.
-const MERGEABLE_RETRY_MS = Number(process.env.FACTORY_MERGEABLE_RETRY_MS ?? 3000);
-
+// GitHub computes mergeability after each push: ask once more, 3 seconds
+// later, before reporting it unknown.
 async function statusOf(ref: forge.Repo & { number: number }): Promise<{ status: Status; body: string | null }> {
   let facts = forge.prFacts(ref, ref.number);
   if (facts.state === "open" && facts.mergeable === null) {
-    await sleep(MERGEABLE_RETRY_MS);
+    await sleep(3000);
     facts = forge.prFacts(ref, ref.number);
   }
   return { status: statusFromFacts(facts), body: facts.body };
@@ -258,8 +261,9 @@ async function prOpen(a: Args) {
   const repo = forge.currentRepo();
   if (!repo) throw new Exit(64, "cannot tell which repository: run inside a clone");
   const slug = `${repo.owner}/${repo.repo}`.toLowerCase();
-  const ticketFlag = str(a.flags.ticket);
-  if (ticketFlag) {
+  if (a.flags.ticket !== undefined) {
+    const ticketFlag = str(a.flags.ticket);
+    if (!ticketFlag) throw new Exit(64, OPEN_USAGE);
     const id = normalizeId(ticketFlag, slug);
     const { ticket } = await trackerFor(id).get(id);
     // A closes line names the ticket only within its own repository: a bare
