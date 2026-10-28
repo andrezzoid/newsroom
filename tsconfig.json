@@ -1,0 +1,30 @@
+{
+  // The base every TypeScript project here extends. Node runs the .ts files
+  // directly, with nothing built, so the compiler only checks types.
+  "compilerOptions": {
+    // Environment Settings
+    // See also https://aka.ms/tsconfig/module
+    "module": "nodenext",
+    "target": "es2024",
+    "types": [],
+
+    // Node's type stripping runs only erasable syntax, imported by its .ts path.
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+
+    // Stricter Typechecking Options
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    // Recommended Options
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noUncheckedSideEffectImports": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+  },
+  // A base only: each project names its own files.
+  "files": [],
+}
