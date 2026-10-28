@@ -13,7 +13,14 @@ export const WONTFIX_LABEL = "wontfix";
 export const CLAIMED_LABEL = "in-progress";
 // A ticket with none of these is new, whatever else it carries: a reporter's
 // `bug` label is not triage.
-export const FACTORY_LABELS = [TRIAGE_LABEL, INFO_LABEL, READY_LABEL, HUMAN_LABEL, WONTFIX_LABEL, CLAIMED_LABEL];
+export const FACTORY_LABELS = [
+  TRIAGE_LABEL,
+  INFO_LABEL,
+  READY_LABEL,
+  HUMAN_LABEL,
+  WONTFIX_LABEL,
+  CLAIMED_LABEL,
+];
 
 export type Readiness = { ready: true } | { ready: false; reason: string };
 
@@ -21,12 +28,15 @@ export type Readiness = { ready: true } | { ready: false; reason: string };
 // `tickets claim` asks this, and a take-over passes a claimed ticket.
 export function claimable(t: Ticket): Readiness {
   if (!t.labels.includes(READY_LABEL)) return { ready: false, reason: `no ${READY_LABEL} label` };
-  if (t.state === "done" || t.state === "canceled") return { ready: false, reason: `state is ${t.stateName}` };
+  if (t.state === "done" || t.state === "canceled")
+    return { ready: false, reason: `state is ${t.stateName}` };
   const open = t.blockers.filter((b) => !b.done);
-  if (open.length > 0) return { ready: false, reason: `blocked by ${open.map((b) => b.id).join(", ")}` };
+  if (open.length > 0)
+    return { ready: false, reason: `blocked by ${open.map((b) => b.id).join(", ")}` };
   // A parent with open children is a spec, so building it would build every
   // child at once (Matt Pocock's to-spec hazard).
-  if (t.openChildren > 0) return { ready: false, reason: `parent of ${t.openChildren} open ticket(s)` };
+  if (t.openChildren > 0)
+    return { ready: false, reason: `parent of ${t.openChildren} open ticket(s)` };
   if (!t.repo) return { ready: false, reason: "no repository: add a Repo: owner/name line" };
   // The assignee is the human the ticket belongs to, and a colleague's ticket
   // is for their agents.
@@ -40,9 +50,11 @@ export function claimable(t: Ticket): Readiness {
 export function readiness(t: Ticket, opts: { repo?: string } = {}): Readiness {
   const c = claimable(t);
   if (!c.ready) return c;
-  if (t.labels.includes(CLAIMED_LABEL)) return { ready: false, reason: `claimed (${CLAIMED_LABEL})` };
+  if (t.labels.includes(CLAIMED_LABEL))
+    return { ready: false, reason: `claimed (${CLAIMED_LABEL})` };
   if (t.state !== "queued") return { ready: false, reason: `state is ${t.stateName}` };
-  if (opts.repo && t.repo !== opts.repo.toLowerCase()) return { ready: false, reason: `belongs to ${t.repo}` };
+  if (opts.repo && t.repo !== opts.repo.toLowerCase())
+    return { ready: false, reason: `belongs to ${t.repo}` };
   return { ready: true };
 }
 
@@ -65,7 +77,8 @@ export function nextTickets(tickets: Ticket[], opts: { repo?: string } = {}) {
   return { ready, skipped };
 }
 
-const oldestFirst = (a: TicketComment, b: TicketComment) => Date.parse(a.createdAt) - Date.parse(b.createdAt);
+const oldestFirst = (a: TicketComment, b: TicketComment) =>
+  Date.parse(a.createdAt) - Date.parse(b.createdAt);
 
 // The claim is the in-progress label. Each claim also logs a comment naming
 // the session, so anyone reading the ticket can find that session and steer
@@ -76,7 +89,12 @@ export function claimLog(session: string, replaces: string | null): string {
 }
 
 export function latestClaim(comments: TicketComment[]): TicketComment | null {
-  return comments.filter((c) => c.body.startsWith("Claimed by ")).sort(oldestFirst).at(-1) ?? null;
+  return (
+    comments
+      .filter((c) => c.body.startsWith("Claimed by "))
+      .sort(oldestFirst)
+      .at(-1) ?? null
+  );
 }
 
 // Who a claim log names: the session link, or the local session and host.
@@ -94,7 +112,10 @@ const NEEDS_YOU = /^\s*(?:#{1,6}\s*|\*\*|__)?Needs you\b/im;
 export type Report = { kind: string; title: string; needsYou: boolean; at: string };
 
 export function report(c: TicketComment): Report | null {
-  const title = (c.body.trimStart().split("\n", 1)[0] ?? "").replace(/^#{1,6}\s*/, "").replace(/^(\*\*|__)(.*)\1$/, "$2").trim();
+  const title = (c.body.trimStart().split("\n", 1)[0] ?? "")
+    .replace(/^#{1,6}\s*/, "")
+    .replace(/^(\*\*|__)(.*)\1$/, "$2")
+    .trim();
   const m = REPORT_TITLE.exec(title);
   if (!m) return null;
   const kind = m[1]!.charAt(0).toUpperCase() + m[1]!.slice(1).toLowerCase();
@@ -102,13 +123,24 @@ export function report(c: TicketComment): Report | null {
 }
 
 export function latestReport(comments: TicketComment[]): Report | null {
-  return [...comments].sort(oldestFirst).map(report).filter((r) => r !== null).at(-1) ?? null;
+  return (
+    [...comments]
+      .sort(oldestFirst)
+      .map(report)
+      .filter((r) => r !== null)
+      .at(-1) ?? null
+  );
 }
 
 // Triage posts its agent brief as a comment and leaves the reporter's text
 // alone, so the latest comment with an "## Agent Brief" heading is the brief.
 export function latestBrief(comments: TicketComment[]): TicketComment | null {
-  return comments.filter((c) => /^## Agent Brief\s*$/m.test(c.body)).sort(oldestFirst).at(-1) ?? null;
+  return (
+    comments
+      .filter((c) => /^## Agent Brief\s*$/m.test(c.body))
+      .sort(oldestFirst)
+      .at(-1) ?? null
+  );
 }
 
 export type PlanPart = { kind: "body" | "brief" | "revised"; at: string; text: string };
@@ -124,7 +156,9 @@ export function plan(t: Pick<Ticket, "body" | "createdAt">, comments: TicketComm
     .sort(oldestFirst)
     .filter((c) => Date.parse(c.createdAt) > since && report(c)?.kind === "Revised")
     .map((c) => ({ kind: "revised" as const, at: c.createdAt, text: c.body }));
-  const head: PlanPart = brief ? { kind: "brief", at: brief.createdAt, text: brief.body } : { kind: "body", at: t.createdAt, text: t.body };
+  const head: PlanPart = brief
+    ? { kind: "brief", at: brief.createdAt, text: brief.body }
+    : { kind: "body", at: t.createdAt, text: t.body };
   return [head, ...revisions];
 }
 
@@ -160,7 +194,8 @@ export function ticketsOfPr(pr: { body: string | null; headRef: string }, repo: 
 
 // The tickets a body closes, one per closing line: Closes ENG-123, Fixes #12,
 // Resolves o/r#12 or an issue URL. A bare #12 is an issue of `repo`.
-const CLOSING = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+(https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+|[\w.-]+\/[\w.-]+#\d+|#\d+|[a-z][a-z0-9]{1,9}-\d+)\b/gi;
+const CLOSING =
+  /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+(https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+|[\w.-]+\/[\w.-]+#\d+|#\d+|[a-z][a-z0-9]{1,9}-\d+)\b/gi;
 export function closedBy(body: string, repo: string): string[] {
   const out = new Set<string>();
   for (const m of body.matchAll(CLOSING)) {

@@ -20,13 +20,17 @@ const routes: Record<string, any> = JSON.parse(readFileSync(file, "utf8"));
 if (args[0] !== "api") process.exit(2);
 const path = args[1] ?? "";
 const method = args.includes("--method") ? args[args.indexOf("--method") + 1] : "GET";
-const accept = args.includes("-H") ? args[args.indexOf("-H") + 1] ?? "" : "";
+const accept = args.includes("-H") ? (args[args.indexOf("-H") + 1] ?? "") : "";
 
 const page = /[?&]page=(\d+)/.exec(path)?.[1];
 const query = path.replace(/[?&](per_page|page)=\d+/g, "").replace(/^([^?]*)&/, "$1?");
 const bare = path.split("?")[0] ?? "";
 const keys =
-  path === "graphql" ? ["GRAPHQL"] : accept.includes("diff") ? [`DIFF ${bare}`] : [`${method} ${query}`, `${method} ${bare}`, `${method} ${bare.replace(/\/\d+$/, "/:id")}`];
+  path === "graphql"
+    ? ["GRAPHQL"]
+    : accept.includes("diff")
+      ? [`DIFF ${bare}`]
+      : [`${method} ${query}`, `${method} ${bare}`, `${method} ${bare.replace(/\/\d+$/, "/:id")}`];
 const key = keys.find((k) => k in routes);
 
 if (page && page !== "1") {
@@ -41,7 +45,11 @@ if (!key) {
 let body = routes[key];
 if (body === "$append") {
   const list: any[] = (routes[`GET ${bare}`] ??= []);
-  body = { id: 9000 + list.length, created_at: new Date().toISOString(), ...JSON.parse(stdin ?? "{}") };
+  body = {
+    id: 9000 + list.length,
+    created_at: new Date().toISOString(),
+    ...JSON.parse(stdin ?? "{}"),
+  };
   list.push(body);
   writeFileSync(file, JSON.stringify(routes));
 }

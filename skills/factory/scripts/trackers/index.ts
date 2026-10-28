@@ -20,14 +20,18 @@ export function trackerOf(id: string): TrackerName | null {
 // "#12" means issue 12 of the repository at hand.
 export function normalizeId(id: string, repo: string | null): string {
   if (/^#\d+$/.test(id)) {
-    if (!repo) throw new Error(`${id} needs a repository: pass --repo owner/name or run inside a clone`);
+    if (!repo)
+      throw new Error(`${id} needs a repository: pass --repo owner/name or run inside a clone`);
     return `${repo.toLowerCase()}${id}`;
   }
   return trackerOf(id) === "linear" ? id.toUpperCase() : id;
 }
 
 export function githubRepos(extra: string[] = []): string[] {
-  const env = (process.env.FACTORY_GITHUB_REPOS ?? "").split(",").map((r) => r.trim()).filter(Boolean);
+  const env = (process.env.FACTORY_GITHUB_REPOS ?? "")
+    .split(",")
+    .map((r) => r.trim())
+    .filter(Boolean);
   return [...new Set([...env, ...extra].map((r) => r.toLowerCase()))];
 }
 
@@ -46,7 +50,8 @@ export function enabledTrackers(extraGithubRepos: string[] = []): Tracker[] {
 // The Tracker line of the "## Agent skills" block that /factory setup writes
 // into a repo's CLAUDE.md or AGENTS.md.
 export function trackerLine(text: string | null): TrackerName | null {
-  const block = /^## Agent skills[ \t]*$([\s\S]*?)(?=^#{1,2} |(?![\s\S]))/m.exec(text ?? "")?.[1] ?? "";
+  const block =
+    /^## Agent skills[ \t]*$([\s\S]*?)(?=^#{1,2} |(?![\s\S]))/m.exec(text ?? "")?.[1] ?? "";
   const line = /^[ \t>*_-]*Tracker[*_]*\s*:(.*)$/im.exec(block)?.[1]?.toLowerCase() ?? "";
   return line.includes("github") ? "github" : line.includes("linear") ? "linear" : null;
 }

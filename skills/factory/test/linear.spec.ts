@@ -66,7 +66,12 @@ function price(sel: Selection[], fragments: Map<string, Selection[]>): number {
       const nodes = s.children.find((c) => "name" in c && c.name === "nodes");
       if (nodes && "name" in nodes) {
         const per = Number(/\b(?:first|last):\s*(\d+)/.exec(s.args)?.[1] ?? 50);
-        sum += per * (1 + price(nodes.children ?? [], fragments)) + price(s.children.filter((c) => c !== nodes), fragments);
+        sum +=
+          per * (1 + price(nodes.children ?? [], fragments)) +
+          price(
+            s.children.filter((c) => c !== nodes),
+            fragments,
+          );
       } else sum += 1 + price(s.children, fragments);
     }
   }
@@ -92,8 +97,14 @@ function complexity(doc: string): number {
 }
 
 test("the calculator matches Linear's two published examples", () => {
-  expect(complexity(`query { user(id: "me") { createdIssues { nodes { id title createdAt } } } }`)).toBe(66);
-  expect(complexity(`query MyCreatedIssues { user(id: "me") { createdIssues(first: 10) { nodes { id title createdAt } } } }`)).toBe(14);
+  expect(
+    complexity(`query { user(id: "me") { createdIssues { nodes { id title createdAt } } } }`),
+  ).toBe(66);
+  expect(
+    complexity(
+      `query MyCreatedIssues { user(id: "me") { createdIssues(first: 10) { nodes { id title createdAt } } } }`,
+    ),
+  ).toBe(14);
 });
 
 test("every Linear query fits Linear's complexity cap", () => {

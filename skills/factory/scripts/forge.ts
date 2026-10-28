@@ -65,16 +65,22 @@ export function repoRoot(): string | null {
 }
 
 // Accepts a number, a PR URL, or nothing (the PR for the current branch).
-export function resolvePr(arg: string | undefined, repoFlag: string | undefined): Repo & { number: number } {
+export function resolvePr(
+  arg: string | undefined,
+  repoFlag: string | undefined,
+): Repo & { number: number } {
   const url = arg ? /github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/.exec(arg) : null;
   if (url) return { owner: url[1]!, repo: url[2]!, number: Number(url[3]) };
   const repo = (repoFlag ? parseRepo(repoFlag) : null) ?? currentRepo();
-  if (!repo) throw new GhError("cannot tell which repository: pass --repo owner/name or run inside a clone");
+  if (!repo)
+    throw new GhError("cannot tell which repository: pass --repo owner/name or run inside a clone");
   if (arg && /^\d+$/.test(arg)) return { ...repo, number: Number(arg) };
   if (arg) throw new GhError(`not a PR number or URL: ${arg}`);
   const branch = currentBranch();
   if (!branch) throw new GhError("detached HEAD: pass a PR number");
-  const pulls = api<any[]>(`repos/${repo.owner}/${repo.repo}/pulls?head=${repo.owner}:${encodeURIComponent(branch)}&state=all&per_page=5`);
+  const pulls = api<any[]>(
+    `repos/${repo.owner}/${repo.repo}/pulls?head=${repo.owner}:${encodeURIComponent(branch)}&state=all&per_page=5`,
+  );
   if (!pulls?.length) throw new GhError(`no pull request for branch ${branch}`);
   return { ...repo, number: pulls[0].number };
 }
@@ -102,7 +108,10 @@ export function countUnresolved(payload: unknown): number | null {
   if (!Array.isArray(list)) return null;
   let open = 0;
   for (const t of list) {
-    const resolved = t?.is_resolved ?? t?.isResolved ?? t?.resolved ??
+    const resolved =
+      t?.is_resolved ??
+      t?.isResolved ??
+      t?.resolved ??
       (typeof t?.state === "string" ? t.state.toLowerCase() === "resolved" : undefined);
     if (typeof resolved !== "boolean") return null;
     if (!resolved) open++;
@@ -113,12 +122,25 @@ export function countUnresolved(payload: unknown): number | null {
 const THREADS_QUERY = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}`;
 
 export function unresolvedThreads(r: Repo, number: number): number | null {
-  const viaCcr = () => countUnresolved(api(`repos/${r.owner}/${r.repo}/pulls/${number}/ccr/review_threads`));
+  const viaCcr = () =>
+    countUnresolved(api(`repos/${r.owner}/${r.repo}/pulls/${number}/ccr/review_threads`));
   const viaGraphql = () => {
-    const out = gh(["api", "graphql", "-f", `query=${THREADS_QUERY}`, "-f", `owner=${r.owner}`, "-f", `name=${r.repo}`, "-F", `number=${number}`]);
+    const out = gh([
+      "api",
+      "graphql",
+      "-f",
+      `query=${THREADS_QUERY}`,
+      "-f",
+      `owner=${r.owner}`,
+      "-f",
+      `name=${r.repo}`,
+      "-F",
+      `number=${number}`,
+    ]);
     return countUnresolved(JSON.parse(out)?.data?.repository?.pullRequest?.reviewThreads?.nodes);
   };
-  const order = process.env.CLAUDE_CODE_REMOTE === "true" ? [viaCcr, viaGraphql] : [viaGraphql, viaCcr];
+  const order =
+    process.env.CLAUDE_CODE_REMOTE === "true" ? [viaCcr, viaGraphql] : [viaGraphql, viaCcr];
   for (const attempt of order) {
     try {
       const n = attempt();
@@ -133,7 +155,8 @@ export function unresolvedThreads(r: Repo, number: number): number | null {
 // A write REST does not expose: the ccr route first in a cloud session, which
 // blocks GraphQL, and GraphQL first locally, each the other's fallback.
 function eitherRoute(what: string, viaCcr: () => void, viaGraphql: () => void): void {
-  const order = process.env.CLAUDE_CODE_REMOTE === "true" ? [viaCcr, viaGraphql] : [viaGraphql, viaCcr];
+  const order =
+    process.env.CLAUDE_CODE_REMOTE === "true" ? [viaCcr, viaGraphql] : [viaGraphql, viaCcr];
   const failures: string[] = [];
   for (const attempt of order) {
     try {
@@ -153,13 +176,32 @@ const RESOLVE_MUTATION = `mutation($id:ID!){resolveReviewThread(input:{threadId:
 export function resolveThread(r: Repo, number: number, commentId: number): void {
   eitherRoute(
     `resolve the thread of comment ${commentId}`,
-    () => api(`repos/${r.owner}/${r.repo}/pulls/${number}/ccr/comments/${commentId}/resolve`, { method: "POST" }),
+    () =>
+      api(`repos/${r.owner}/${r.repo}/pulls/${number}/ccr/comments/${commentId}/resolve`, {
+        method: "POST",
+      }),
     () => {
-      const out = JSON.parse(gh(["api", "graphql", "-f", `query=${THREAD_OF_QUERY}`, "-f", `owner=${r.owner}`, "-f", `name=${r.repo}`, "-F", `number=${number}`]));
+      const out = JSON.parse(
+        gh([
+          "api",
+          "graphql",
+          "-f",
+          `query=${THREAD_OF_QUERY}`,
+          "-f",
+          `owner=${r.owner}`,
+          "-f",
+          `name=${r.repo}`,
+          "-F",
+          `number=${number}`,
+        ]),
+      );
       const threads: any[] = out?.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
-      const thread = threads.find((t) => t?.comments?.nodes?.some((c: any) => c?.databaseId === commentId));
+      const thread = threads.find((t) =>
+        t?.comments?.nodes?.some((c: any) => c?.databaseId === commentId),
+      );
       if (!thread) throw new GhError("no review thread holds it");
-      if (!thread.isResolved) gh(["api", "graphql", "-f", `query=${RESOLVE_MUTATION}`, "-f", `id=${thread.id}`]);
+      if (!thread.isResolved)
+        gh(["api", "graphql", "-f", `query=${RESOLVE_MUTATION}`, "-f", `id=${thread.id}`]);
     },
   );
 }
@@ -171,19 +213,34 @@ const DRAFT_MUTATION = `mutation($id:ID!){convertPullRequestToDraft(input:{pullR
 export function convertToDraft(r: Repo, number: number): void {
   eitherRoute(
     `turn #${number} into a draft`,
-    () => api(`repos/${r.owner}/${r.repo}/pulls/${number}/ccr/convert_to_draft`, { method: "POST" }),
-    () => gh(["api", "graphql", "-f", `query=${DRAFT_MUTATION}`, "-f", `id=${api<any>(`repos/${r.owner}/${r.repo}/pulls/${number}`).node_id}`]),
+    () =>
+      api(`repos/${r.owner}/${r.repo}/pulls/${number}/ccr/convert_to_draft`, { method: "POST" }),
+    () =>
+      gh([
+        "api",
+        "graphql",
+        "-f",
+        `query=${DRAFT_MUTATION}`,
+        "-f",
+        `id=${api<any>(`repos/${r.owner}/${r.repo}/pulls/${number}`).node_id}`,
+      ]),
   );
 }
 
 // Posts a comment on a pull request or issue, with the Claude Code footer.
 export function comment(r: Repo, number: number, body: string): void {
-  api(`repos/${r.owner}/${r.repo}/issues/${number}/comments`, { method: "POST", body: { body: attributed(body) } });
+  api(`repos/${r.owner}/${r.repo}/issues/${number}/comments`, {
+    method: "POST",
+    body: { body: attributed(body) },
+  });
 }
 
 // Replies in the review thread of a comment, with the Claude Code footer.
 export function replyTo(r: Repo, number: number, commentId: number, body: string): void {
-  api(`repos/${r.owner}/${r.repo}/pulls/${number}/comments/${commentId}/replies`, { method: "POST", body: { body: attributed(body) } });
+  api(`repos/${r.owner}/${r.repo}/pulls/${number}/comments/${commentId}/replies`, {
+    method: "POST",
+    body: { body: attributed(body) },
+  });
 }
 
 export function prFacts(r: Repo, number: number): PrFacts {
@@ -219,15 +276,23 @@ export function openPr(r: Repo, title: string, body: string): { number: number; 
   const head = currentBranch();
   if (!head) throw new Error("detached HEAD: check out the branch the pull request comes from");
   const base = api<any>(`repos/${r.owner}/${r.repo}`).default_branch;
-  if (head === base) throw new Error(`${head} is the default branch: open the pull request from a feature branch`);
+  if (head === base)
+    throw new Error(`${head} is the default branch: open the pull request from a feature branch`);
   // The full ref name keeps a branch such as --force from reading as an option.
   const ref = `refs/heads/${head}`;
-  const remote = git(["ls-remote", git(["remote", "get-url", "--push", "origin"]) ?? "origin", ref])?.split("\t")[0];
+  const remote = git([
+    "ls-remote",
+    git(["remote", "get-url", "--push", "origin"]) ?? "origin",
+    ref,
+  ])?.split("\t")[0];
   if (remote !== git(["rev-parse", "HEAD"])) {
     const push = run("git", ["push", "-u", "origin", ref]);
     if (push.code !== 0) throw new Error(`git push: ${push.stderr.trim()}`);
   }
-  const pull = api<any>(`repos/${r.owner}/${r.repo}/pulls`, { method: "POST", body: { title, head, base, body, draft: false } });
+  const pull = api<any>(`repos/${r.owner}/${r.repo}/pulls`, {
+    method: "POST",
+    body: { title, head, base, body, draft: false },
+  });
   return { number: pull.number, url: pull.html_url };
 }
 
@@ -243,7 +308,11 @@ export type Comment = { id: string; body: string; createdAt: string };
 
 // The conversation on a pull request or issue, oldest first: where reports go.
 export function comments(repo: string, number: number): Comment[] {
-  return paginate<any>(`repos/${repo}/issues/${number}/comments`).map((c) => ({ id: String(c.id), body: c.body ?? "", createdAt: c.created_at }));
+  return paginate<any>(`repos/${repo}/issues/${number}/comments`).map((c) => ({
+    id: String(c.id),
+    body: c.body ?? "",
+    createdAt: c.created_at,
+  }));
 }
 
 // The newest comment on a pull request: in its conversation, on its diff, or
@@ -251,9 +320,17 @@ export function comments(repo: string, number: number): Comment[] {
 export function lastWord(r: Repo, number: number): string | null {
   const base = `repos/${r.owner}/${r.repo}`;
   const all = [
-    ...paginate<any>(`${base}/issues/${number}/comments`).map((c) => ({ at: c.created_at, body: c.body })),
-    ...paginate<any>(`${base}/pulls/${number}/comments`).map((c) => ({ at: c.created_at, body: c.body })),
-    ...paginate<any>(`${base}/pulls/${number}/reviews`).filter((v) => v.body).map((v) => ({ at: v.submitted_at, body: v.body })),
+    ...paginate<any>(`${base}/issues/${number}/comments`).map((c) => ({
+      at: c.created_at,
+      body: c.body,
+    })),
+    ...paginate<any>(`${base}/pulls/${number}/comments`).map((c) => ({
+      at: c.created_at,
+      body: c.body,
+    })),
+    ...paginate<any>(`${base}/pulls/${number}/reviews`)
+      .filter((v) => v.body)
+      .map((v) => ({ at: v.submitted_at, body: v.body })),
   ];
   return all.sort((x, y) => Date.parse(x.at) - Date.parse(y.at)).at(-1)?.body ?? null;
 }
@@ -265,15 +342,28 @@ export type Merged = { repo: string; number: number; url: string; title: string;
 export function mergedSince(repo: string, since: string): Merged[] {
   return paginate<any>(`repos/${repo}/pulls?state=closed&sort=updated&direction=desc`, (p) => p, 3)
     .filter((p) => p.merged_at && Date.parse(p.merged_at) >= Date.parse(since))
-    .map((p) => ({ repo, number: p.number, url: p.html_url, title: p.title, mergedAt: p.merged_at }));
+    .map((p) => ({
+      repo,
+      number: p.number,
+      url: p.html_url,
+      title: p.title,
+      mergedAt: p.merged_at,
+    }));
 }
 
 // The first line of each review comment on a pull request's diff.
-export function reviewComments(repo: string, number: number): { author: string; path: string; text: string }[] {
+export function reviewComments(
+  repo: string,
+  number: number,
+): { author: string; path: string; text: string }[] {
   return paginate<any>(`repos/${repo}/pulls/${number}/comments`).map((c) => ({
     author: c.user?.login ?? "?",
     path: c.path ?? "",
-    text: (String(c.body ?? "").trim().split("\n", 1)[0] ?? "").slice(0, 200),
+    text: (
+      String(c.body ?? "")
+        .trim()
+        .split("\n", 1)[0] ?? ""
+    ).slice(0, 200),
   }));
 }
 
@@ -282,7 +372,10 @@ export function reviewComments(repo: string, number: number): { author: string; 
 export function openPrs(repo: string, branch: string, linked: string[]): string[] {
   const urls = new Set<string>();
   try {
-    for (const p of api<any[]>(`repos/${repo}/pulls?head=${repo.split("/")[0]}:${branch}&state=open`) ?? []) urls.add(p.html_url);
+    for (const p of api<any[]>(
+      `repos/${repo}/pulls?head=${repo.split("/")[0]}:${branch}&state=open`,
+    ) ?? [])
+      urls.add(p.html_url);
   } catch {
     // no such branch or no access: no open pull request we can see
   }
@@ -300,7 +393,9 @@ export function openPrs(repo: string, branch: string, linked: string[]): string[
 
 export function readRepoFile(r: Repo, path: string): string | null {
   try {
-    const f = api<{ content: string; encoding: string }>(`repos/${r.owner}/${r.repo}/contents/${path}`);
+    const f = api<{ content: string; encoding: string }>(
+      `repos/${r.owner}/${r.repo}/contents/${path}`,
+    );
     return f.encoding === "base64" ? Buffer.from(f.content, "base64").toString("utf8") : f.content;
   } catch {
     return null;

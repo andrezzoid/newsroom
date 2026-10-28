@@ -26,7 +26,9 @@ export function ticket(over: Partial<Ticket> = {}): Ticket {
   };
 }
 
-export function linearIssue(over: Omit<Partial<LinearIssue>, "labels"> & { labels?: string[] } = {}): LinearIssue {
+export function linearIssue(
+  over: Omit<Partial<LinearIssue>, "labels"> & { labels?: string[] } = {},
+): LinearIssue {
   const { labels, ...rest } = over;
   return {
     id: "uuid-1",

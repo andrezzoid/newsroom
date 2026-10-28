@@ -5,7 +5,13 @@
 
 import { api, comments, paginate, viewer as forgeViewer } from "../forge.ts";
 import { CLAIMED_LABEL, HUMAN_LABEL, READY_LABEL, slug } from "../tickets.ts";
-import { NotFound, type Ticket, type TicketComment, type TicketRef, type Tracker } from "./types.ts";
+import {
+  NotFound,
+  type Ticket,
+  type TicketComment,
+  type TicketRef,
+  type Tracker,
+} from "./types.ts";
 
 export class GithubError extends Error {}
 
@@ -16,15 +22,23 @@ export function parseId(id: string): { repo: string; number: number } {
 }
 
 const BLOCKED_BY_LINE = /^[ \t>*_-]*blocked[ -]by\b[*_]*\s*:?(.*)$/i;
-const ISSUE_REF = /(?:https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/|(?<![\w/])(?:([\w.-]+\/[\w.-]+))?#)(\d+)\b/g;
+const ISSUE_REF =
+  /(?:https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/|(?<![\w/])(?:([\w.-]+\/[\w.-]+))?#)(\d+)\b/g;
 
 function repoOfUrl(url: string | undefined, fallback: string): string {
   const m = /repos\/([\w.-]+\/[\w.-]+)$/.exec(url ?? "");
   return (m?.[1] ?? fallback).toLowerCase();
 }
 
-export function toTicket(issue: any, repo: string, blockers: TicketRef[] = [], me: string | null = null): Ticket {
-  const labels: string[] = (issue.labels ?? []).map((l: any) => String(typeof l === "string" ? l : l.name).toLowerCase());
+export function toTicket(
+  issue: any,
+  repo: string,
+  blockers: TicketRef[] = [],
+  me: string | null = null,
+): Ticket {
+  const labels: string[] = (issue.labels ?? []).map((l: any) =>
+    String(typeof l === "string" ? l : l.name).toLowerCase(),
+  );
   const closed = issue.state === "closed";
   const started = !closed && labels.includes(CLAIMED_LABEL);
   const subs = issue.sub_issues_summary;
@@ -34,7 +48,13 @@ export function toTicket(issue: any, repo: string, blockers: TicketRef[] = [], m
     title: issue.title,
     body: issue.body ?? "",
     url: issue.html_url,
-    state: closed ? (issue.state_reason === "not_planned" ? "canceled" : "done") : started ? "started" : "queued",
+    state: closed
+      ? issue.state_reason === "not_planned"
+        ? "canceled"
+        : "done"
+      : started
+        ? "started"
+        : "queued",
     stateName: closed ? "closed" : started ? CLAIMED_LABEL : "open",
     labels,
     repo,
@@ -64,7 +84,8 @@ export function blockedByRefs(body: string, repo: string): string[] {
       continue;
     }
     const text = section ? line : BLOCKED_BY_LINE.exec(line)?.[1];
-    for (const m of text?.matchAll(ISSUE_REF) ?? []) out.add(`${(m[1] ?? m[2] ?? repo).toLowerCase()}#${m[3]}`);
+    for (const m of text?.matchAll(ISSUE_REF) ?? [])
+      out.add(`${(m[1] ?? m[2] ?? repo).toLowerCase()}#${m[3]}`);
   }
   return [...out];
 }
@@ -94,9 +115,14 @@ export class GithubTracker implements Tracker {
   private blockers(repo: string, issue: any): TicketRef[] {
     const refs = new Map<string, TicketRef>();
     try {
-      for (const b of api<any[]>(`repos/${repo}/issues/${issue.number}/dependencies/blocked_by`) ?? []) {
+      for (const b of api<any[]>(`repos/${repo}/issues/${issue.number}/dependencies/blocked_by`) ??
+        []) {
         const r = repoOfUrl(b.repository_url, repo);
-        refs.set(`${r}#${b.number}`, { id: `${r}#${b.number}`, title: b.title, done: b.state === "closed" });
+        refs.set(`${r}#${b.number}`, {
+          id: `${r}#${b.number}`,
+          title: b.title,
+          done: b.state === "closed",
+        });
       }
     } catch {
       // repositories without issue dependencies fall back to the body
@@ -120,7 +146,9 @@ export class GithubTracker implements Tracker {
     const t = toTicket(issue, repo, this.blockers(repo, issue), forgeViewer());
     if (!issue.sub_issues_summary) {
       try {
-        t.openChildren = (api<any[]>(`repos/${repo}/issues/${issue.number}/sub_issues`) ?? []).filter((s) => s.state === "open").length;
+        t.openChildren = (
+          api<any[]>(`repos/${repo}/issues/${issue.number}/sub_issues`) ?? []
+        ).filter((s) => s.state === "open").length;
       } catch {
         // no sub-issues on this host
       }
@@ -168,8 +196,16 @@ export class GithubTracker implements Tracker {
 
   async start(t: Ticket): Promise<void> {
     const { repo, number } = parseId(t.id);
-    if (t.assignees.length === 0) api(`repos/${repo}/issues/${number}/assignees`, { method: "POST", body: { assignees: [await this.viewer()] } });
-    if (!t.labels.includes(CLAIMED_LABEL)) api(`repos/${repo}/issues/${number}/labels`, { method: "POST", body: { labels: [CLAIMED_LABEL] } });
+    if (t.assignees.length === 0)
+      api(`repos/${repo}/issues/${number}/assignees`, {
+        method: "POST",
+        body: { assignees: [await this.viewer()] },
+      });
+    if (!t.labels.includes(CLAIMED_LABEL))
+      api(`repos/${repo}/issues/${number}/labels`, {
+        method: "POST",
+        body: { labels: [CLAIMED_LABEL] },
+      });
   }
 
   async comment(id: string, body: string): Promise<void> {
@@ -185,7 +221,10 @@ export class GithubTracker implements Tracker {
   async handBack(id: string): Promise<{ labelled: boolean }> {
     await this.release(id);
     const { repo, number } = parseId(id);
-    api(`repos/${repo}/issues/${number}/labels`, { method: "POST", body: { labels: [HUMAN_LABEL] } });
+    api(`repos/${repo}/issues/${number}/labels`, {
+      method: "POST",
+      body: { labels: [HUMAN_LABEL] },
+    });
     return { labelled: true };
   }
 
@@ -205,9 +244,15 @@ export class GithubTracker implements Tracker {
     const out: { ticket: Ticket; readyAt: string | null }[] = [];
     for (const repo of this.repos) {
       for (const i of this.issues(repo, `state=closed&since=${since}`)) {
-        if (i.state_reason === "not_planned" || Date.parse(i.closed_at) < Date.parse(since)) continue;
-        const labelled = paginate<any>(`repos/${repo}/issues/${i.number}/events`).filter((e) => e.event === "labeled" && e.label?.name?.toLowerCase() === READY_LABEL);
-        out.push({ ticket: toTicket(i, repo, [], me), readyAt: labelled.at(-1)?.created_at ?? null });
+        if (i.state_reason === "not_planned" || Date.parse(i.closed_at) < Date.parse(since))
+          continue;
+        const labelled = paginate<any>(`repos/${repo}/issues/${i.number}/events`).filter(
+          (e) => e.event === "labeled" && e.label?.name?.toLowerCase() === READY_LABEL,
+        );
+        out.push({
+          ticket: toTicket(i, repo, [], me),
+          readyAt: labelled.at(-1)?.created_at ?? null,
+        });
       }
     }
     return out;

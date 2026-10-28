@@ -1,5 +1,12 @@
 import { describe, test } from "node:test";
-import { classifyChecks, classifyReviews, fingerprint, mergeBlockers, status, type PrFacts } from "../scripts/pr.ts";
+import {
+  classifyChecks,
+  classifyReviews,
+  fingerprint,
+  mergeBlockers,
+  status,
+  type PrFacts,
+} from "../scripts/pr.ts";
 import { expect } from "./expect.ts";
 
 const SHA = "a".repeat(40);
@@ -29,7 +36,15 @@ function facts(over: Partial<PrFacts> = {}): PrFacts {
 
 describe("status", () => {
   test("reports facts: state, conflicts, checks, reviews and threads", () => {
-    expect(status(facts())).toMatchObject({ pr: 7, state: "open", draft: false, conflicts: false, mergeState: "clean", checks: { failing: [], pending: [], passing: 1 }, unresolvedThreads: 0 });
+    expect(status(facts())).toMatchObject({
+      pr: 7,
+      state: "open",
+      draft: false,
+      conflicts: false,
+      mergeState: "clean",
+      checks: { failing: [], pending: [], passing: 1 },
+      unresolvedThreads: 0,
+    });
     expect(status(facts({ merged: true, state: "closed" })).state).toBe("merged");
     expect(status(facts({ state: "closed" })).state).toBe("closed");
   });
@@ -52,26 +67,51 @@ describe("mergeBlockers", () => {
   test("each fact that stops a merge names itself", () => {
     expect(blockers({ merged: true, state: "closed" })).toEqual(["it is merged"]);
     expect(blockers({ draft: true, mergeableState: "draft" })).toEqual(["it is a draft"]);
-    expect(blockers({ mergeable: false, mergeableState: "dirty" })).toEqual(["it conflicts with main"]);
-    expect(blockers({ mergeable: null, mergeableState: "unknown" })).toEqual(["GitHub is still computing whether it conflicts"]);
-    expect(blockers({ checkRuns: [{ id: 1, name: "lint", status: "completed", conclusion: "failure" }] })).toEqual(["failing: lint"]);
-    expect(blockers({ checkRuns: [{ id: 1, name: "e2e", status: "in_progress", conclusion: null }] })).toEqual(["pending: e2e"]);
-    expect(blockers({ reviews: [{ user: { login: "kim" }, state: "CHANGES_REQUESTED" }] })).toEqual(["changes requested by kim"]);
+    expect(blockers({ mergeable: false, mergeableState: "dirty" })).toEqual([
+      "it conflicts with main",
+    ]);
+    expect(blockers({ mergeable: null, mergeableState: "unknown" })).toEqual([
+      "GitHub is still computing whether it conflicts",
+    ]);
+    expect(
+      blockers({
+        checkRuns: [{ id: 1, name: "lint", status: "completed", conclusion: "failure" }],
+      }),
+    ).toEqual(["failing: lint"]);
+    expect(
+      blockers({ checkRuns: [{ id: 1, name: "e2e", status: "in_progress", conclusion: null }] }),
+    ).toEqual(["pending: e2e"]);
+    expect(blockers({ reviews: [{ user: { login: "kim" }, state: "CHANGES_REQUESTED" }] })).toEqual(
+      ["changes requested by kim"],
+    );
     expect(blockers({ unresolvedThreads: 2 })).toEqual(["2 open review thread(s)"]);
     expect(blockers({ unresolvedThreads: null })).toEqual(["review threads could not be read"]);
     expect(blockers({ mergeableState: "behind" })).toEqual(["behind main: update the branch"]);
-    expect(blockers({ mergeableState: "blocked" })).toEqual(["branch protection blocks it: a required review or check"]);
+    expect(blockers({ mergeableState: "blocked" })).toEqual([
+      "branch protection blocks it: a required review or check",
+    ]);
   });
 
   test("a failing check blocks even where branch protection requires none", () => {
-    expect(blockers({ mergeableState: "unstable", checkRuns: [{ id: 1, name: "flaky", status: "completed", conclusion: "failure" }] })).toEqual(["failing: flaky"]);
+    expect(
+      blockers({
+        mergeableState: "unstable",
+        checkRuns: [{ id: 1, name: "flaky", status: "completed", conclusion: "failure" }],
+      }),
+    ).toEqual(["failing: flaky"]);
   });
 });
 
 test("the fingerprint changes when something an agent acts on changes", () => {
   const base = fingerprint(status(facts()));
   expect(fingerprint(status(facts({ updatedAt: "2026-10-09T00:00:00Z" })))).toBe(base);
-  for (const over of [{ draft: true }, { unresolvedThreads: 1 }, { mergeable: false }, { headSha: "b".repeat(40) }, { reviews: [{ user: { login: "kim" }, state: "CHANGES_REQUESTED" }] }]) {
+  for (const over of [
+    { draft: true },
+    { unresolvedThreads: 1 },
+    { mergeable: false },
+    { headSha: "b".repeat(40) },
+    { reviews: [{ user: { login: "kim" }, state: "CHANGES_REQUESTED" }] },
+  ]) {
     expect(fingerprint(status(facts(over)))).not.toBe(base);
   }
 });
@@ -92,8 +132,20 @@ describe("classifyChecks", () => {
   test("two workflows with a job of the same name both count", () => {
     const c = classifyChecks(
       [
-        { id: 100, name: "test", status: "completed", conclusion: "failure", check_suite: { id: 1 } },
-        { id: 101, name: "test", status: "completed", conclusion: "success", check_suite: { id: 2 } },
+        {
+          id: 100,
+          name: "test",
+          status: "completed",
+          conclusion: "failure",
+          check_suite: { id: 1 },
+        },
+        {
+          id: 101,
+          name: "test",
+          status: "completed",
+          conclusion: "success",
+          check_suite: { id: 2 },
+        },
       ],
       [],
     );

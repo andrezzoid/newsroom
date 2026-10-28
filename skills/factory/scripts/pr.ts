@@ -33,7 +33,14 @@ export type PrFacts = {
   unresolvedThreads: number | null;
 };
 
-const FAILING_CONCLUSIONS = new Set(["failure", "timed_out", "cancelled", "action_required", "startup_failure", "stale"]);
+const FAILING_CONCLUSIONS = new Set([
+  "failure",
+  "timed_out",
+  "cancelled",
+  "action_required",
+  "startup_failure",
+  "stale",
+]);
 
 export type Checks = { failing: string[]; pending: string[]; passing: number };
 
@@ -68,7 +75,8 @@ export function classifyReviews(reviews: Review[]): ReviewState {
   const latest = new Map<string, string>();
   for (const r of reviews) {
     const login = r.user?.login;
-    if (login && ["APPROVED", "CHANGES_REQUESTED", "DISMISSED"].includes(r.state)) latest.set(login, r.state);
+    if (login && ["APPROVED", "CHANGES_REQUESTED", "DISMISSED"].includes(r.state))
+      latest.set(login, r.state);
   }
   const changesRequested = [...latest].filter(([, s]) => s === "CHANGES_REQUESTED").map(([l]) => l);
   const approved = changesRequested.length === 0 && [...latest.values()].includes("APPROVED");
@@ -111,7 +119,12 @@ export function status(f: PrFacts): Status {
     title: f.title,
     state: f.merged ? "merged" : f.state,
     draft: f.draft,
-    conflicts: f.mergeable === false || f.mergeableState === "dirty" ? true : f.mergeable === null ? null : false,
+    conflicts:
+      f.mergeable === false || f.mergeableState === "dirty"
+        ? true
+        : f.mergeable === null
+          ? null
+          : false,
     mergeState: f.mergeableState,
     checks: classifyChecks(f.checkRuns, f.statuses),
     reviews: classifyReviews(f.reviews),
@@ -133,11 +146,13 @@ export function mergeBlockers(s: Status): string[] {
   else if (s.conflicts) out.push(`it conflicts with ${s.baseRef}`);
   if (s.checks.failing.length) out.push(`failing: ${s.checks.failing.join(", ")}`);
   if (s.checks.pending.length) out.push(`pending: ${s.checks.pending.join(", ")}`);
-  if (s.reviews.changesRequested.length) out.push(`changes requested by ${s.reviews.changesRequested.join(", ")}`);
+  if (s.reviews.changesRequested.length)
+    out.push(`changes requested by ${s.reviews.changesRequested.join(", ")}`);
   if (s.unresolvedThreads === null) out.push("review threads could not be read");
   else if (s.unresolvedThreads > 0) out.push(`${s.unresolvedThreads} open review thread(s)`);
   if (s.mergeState === "behind") out.push(`behind ${s.baseRef}: update the branch`);
-  if (s.mergeState === "blocked") out.push("branch protection blocks it: a required review or check");
+  if (s.mergeState === "blocked")
+    out.push("branch protection blocks it: a required review or check");
   return out;
 }
 

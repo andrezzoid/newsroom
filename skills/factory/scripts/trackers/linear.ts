@@ -6,8 +6,20 @@
 // The query documents are validated against Linear's published schema.
 
 import { run } from "../proc.ts";
-import { CLAIMED_LABEL, FACTORY_LABELS, HUMAN_LABEL, latestBrief, READY_LABEL } from "../tickets.ts";
-import { NotFound, type Ticket, type TicketComment, type TicketState, type Tracker } from "./types.ts";
+import {
+  CLAIMED_LABEL,
+  FACTORY_LABELS,
+  HUMAN_LABEL,
+  latestBrief,
+  READY_LABEL,
+} from "../tickets.ts";
+import {
+  NotFound,
+  type Ticket,
+  type TicketComment,
+  type TicketState,
+  type Tracker,
+} from "./types.ts";
 
 const ENDPOINT = process.env.FACTORY_LINEAR_URL ?? "https://api.linear.app/graphql";
 export const PROXY_INJECTED = "proxy-injected";
@@ -27,10 +39,19 @@ export function linearToken(): string | null {
   return cliToken;
 }
 
-export async function linear<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+export async function linear<T>(
+  query: string,
+  variables: Record<string, unknown> = {},
+): Promise<T> {
   const key = linearToken();
-  if (!key) throw new LinearError("no Linear credentials: run `linear auth login` locally; in the cloud set LINEAR_API_KEY, or add an API credential for api.linear.app and set LINEAR_API_KEY=proxy-injected");
-  const auth: Record<string, string> = key === PROXY_INJECTED ? {} : { Authorization: key.startsWith("lin_api_") ? key : `Bearer ${key}` };
+  if (!key)
+    throw new LinearError(
+      "no Linear credentials: run `linear auth login` locally; in the cloud set LINEAR_API_KEY, or add an API credential for api.linear.app and set LINEAR_API_KEY=proxy-injected",
+    );
+  const auth: Record<string, string> =
+    key === PROXY_INJECTED
+      ? {}
+      : { Authorization: key.startsWith("lin_api_") ? key : `Bearer ${key}` };
   const res = await fetch(ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...auth },
@@ -38,7 +59,9 @@ export async function linear<T>(query: string, variables: Record<string, unknown
   });
   const json: any = await res.json().catch(() => ({}));
   if (!res.ok || json.errors) {
-    throw new LinearError(`Linear: ${json.errors?.map((e: any) => e.message).join("; ") ?? `HTTP ${res.status}`}`);
+    throw new LinearError(
+      `Linear: ${json.errors?.map((e: any) => e.message).join("; ") ?? `HTTP ${res.status}`}`,
+    );
   }
   return json.data as T;
 }
@@ -159,20 +182,34 @@ export type LinearIssue = {
   attachments: { nodes: { url: string; title?: string | null }[] };
   briefs: { nodes: TicketComment[] };
 };
-type WithComments = LinearIssue & { comments: { nodes: { id: string; body: string; createdAt: string }[] } };
-type WithHistory = LinearIssue & { history: { nodes: { createdAt: string; addedLabelIds: string[] | null }[] } };
+type WithComments = LinearIssue & {
+  comments: { nodes: { id: string; body: string; createdAt: string }[] };
+};
+type WithHistory = LinearIssue & {
+  history: { nodes: { createdAt: string; addedLabelIds: string[] | null }[] };
+};
 
 const DONE = ["completed", "canceled"];
-const STATE: Record<string, TicketState> = { triage: "queued", backlog: "queued", unstarted: "queued", started: "started", completed: "done", canceled: "canceled" };
+const STATE: Record<string, TicketState> = {
+  triage: "queued",
+  backlog: "queued",
+  unstarted: "queued",
+  started: "started",
+  completed: "done",
+  canceled: "canceled",
+};
 
-const REPO_LINE = /^[ \t>*_-]*repo(?:sitory)?[*_]*\s*:[\s*_`]*(?:https:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?[`*_]*\s*$/im;
+const REPO_LINE =
+  /^[ \t>*_-]*repo(?:sitory)?[*_]*\s*:[\s*_`]*(?:https:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?[`*_]*\s*$/im;
 const GITHUB_URL = /github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?(?:\/|$)/;
 
 // to-tickets writes a `Repo: owner/name` line in the description, and triage
 // writes one in its agent brief, which is the plan once it exists, so the
 // brief's line wins. Linear's GitHub integration attaches PR and commit links,
 // which name the repo as well.
-export function repoOf(issue: Pick<LinearIssue, "description" | "attachments" | "briefs">): string | null {
+export function repoOf(
+  issue: Pick<LinearIssue, "description" | "attachments" | "briefs">,
+): string | null {
   for (const text of [latestBrief(issue.briefs.nodes)?.body ?? "", issue.description ?? ""]) {
     const line = REPO_LINE.exec(text);
     if (line) return line[1]!.toLowerCase();
@@ -193,7 +230,9 @@ export function toTicket(i: LinearIssue): Ticket {
     url: i.url,
     state: STATE[i.state.type] ?? "queued",
     stateName: i.state.name,
-    labels: i.labels.nodes.map((l) => (l.parent?.name ? `${l.parent.name}:${l.name}` : l.name).toLowerCase()),
+    labels: i.labels.nodes.map((l) =>
+      (l.parent?.name ? `${l.parent.name}:${l.name}` : l.name).toLowerCase(),
+    ),
     repo: repoOf(i),
     branchName: i.branchName,
     priority: i.priority,
@@ -202,7 +241,11 @@ export function toTicket(i: LinearIssue): Ticket {
     completedAt: i.completedAt ?? null,
     blockers: i.inverseRelations.nodes
       .filter((r) => r.type === "blocks")
-      .map((r) => ({ id: r.issue.identifier, title: r.issue.title ?? "", done: DONE.includes(r.issue.state.type) })),
+      .map((r) => ({
+        id: r.issue.identifier,
+        title: r.issue.title ?? "",
+        done: DONE.includes(r.issue.state.type),
+      })),
     openChildren: i.children.nodes.filter((c) => !DONE.includes(c.state.type)).length,
     prs: i.attachments.nodes.map((a) => a.url).filter((u) => /github\.com\/.+\/pull\/\d+/.test(u)),
     closes: `Closes ${i.identifier}`,
@@ -210,10 +253,15 @@ export function toTicket(i: LinearIssue): Ticket {
   };
 }
 
-type IssuePage<T> = { issues: { nodes: T[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } };
+type IssuePage<T> = {
+  issues: { nodes: T[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } };
+};
 
 // Every issue a paged `issues` query matches, following its cursor.
-async function issues<T = LinearIssue>(query: string, variables: Record<string, unknown>): Promise<T[]> {
+async function issues<T = LinearIssue>(
+  query: string,
+  variables: Record<string, unknown>,
+): Promise<T[]> {
   const all: T[] = [];
   let after: string | null = null;
   do {
@@ -231,7 +279,9 @@ export class LinearTracker implements Tracker {
   // Linear answers an unknown identifier with null or an "Entity not found" error.
   private async issue(id: string): Promise<WithComments> {
     const d = await linear<{ issue: WithComments | null }>(ISSUE_QUERY, { id }).catch((e) => {
-      throw e instanceof LinearError && /^Linear: Entity not found\b/.test(e.message) ? new NotFound(`no Linear issue ${id}`) : e;
+      throw e instanceof LinearError && /^Linear: Entity not found\b/.test(e.message)
+        ? new NotFound(`no Linear issue ${id}`)
+        : e;
     });
     if (!d.issue) throw new NotFound(`no Linear issue ${id}`);
     this.raw.set(id, d.issue);
@@ -239,12 +289,22 @@ export class LinearTracker implements Tracker {
   }
 
   private async firstState(teamId: string, type: string): Promise<string | null> {
-    const d = await linear<{ team: { states: { nodes: { id: string; type: string; position: number }[] } } }>(TEAM_STATES_QUERY, { id: teamId });
-    return d.team.states.nodes.filter((s) => s.type === type).sort((a, b) => a.position - b.position)[0]?.id ?? null;
+    const d = await linear<{
+      team: { states: { nodes: { id: string; type: string; position: number }[] } };
+    }>(TEAM_STATES_QUERY, { id: teamId });
+    return (
+      d.team.states.nodes.filter((s) => s.type === type).sort((a, b) => a.position - b.position)[0]
+        ?.id ?? null
+    );
   }
 
   private async labelIds(name: string): Promise<{ id: string; team: { id: string } | null }[]> {
-    return (await linear<{ issueLabels: { nodes: { id: string; team: { id: string } | null }[] } }>(LABEL_QUERY, { name })).issueLabels.nodes;
+    return (
+      await linear<{ issueLabels: { nodes: { id: string; team: { id: string } | null }[] } }>(
+        LABEL_QUERY,
+        { name },
+      )
+    ).issueLabels.nodes;
   }
 
   // The team's own label by that name, else the workspace's.
@@ -265,7 +325,10 @@ export class LinearTracker implements Tracker {
 
   async get(id: string): Promise<{ ticket: Ticket; comments: TicketComment[] }> {
     const i = await this.issue(id);
-    return { ticket: toTicket(i), comments: i.comments.nodes.map((c) => ({ id: c.id, body: c.body, createdAt: c.createdAt })) };
+    return {
+      ticket: toTicket(i),
+      comments: i.comments.nodes.map((c) => ({ id: c.id, body: c.body, createdAt: c.createdAt })),
+    };
   }
 
   // The issue query already carries the comments, so one request costs the same.
@@ -275,11 +338,17 @@ export class LinearTracker implements Tracker {
 
   async start(t: Ticket): Promise<void> {
     const i = this.raw.get(t.id) ?? (await this.issue(t.id));
-    const claimed = t.labels.includes(CLAIMED_LABEL) ? null : await this.labelId(CLAIMED_LABEL, i.team.id);
-    if (!t.labels.includes(CLAIMED_LABEL) && !claimed) throw new LinearError(`no ${CLAIMED_LABEL} label exists in Linear: create it, as /factory setup does`);
+    const claimed = t.labels.includes(CLAIMED_LABEL)
+      ? null
+      : await this.labelId(CLAIMED_LABEL, i.team.id);
+    if (!t.labels.includes(CLAIMED_LABEL) && !claimed)
+      throw new LinearError(
+        `no ${CLAIMED_LABEL} label exists in Linear: create it, as /factory setup does`,
+      );
     if (claimed) await linear(ADD_LABEL, { id: i.id, labelId: claimed });
     const input: Record<string, string> = {};
-    if (t.assignees.length === 0) input.assigneeId = (await linear<{ viewer: { id: string } }>(VIEWER_QUERY)).viewer.id;
+    if (t.assignees.length === 0)
+      input.assigneeId = (await linear<{ viewer: { id: string } }>(VIEWER_QUERY)).viewer.id;
     if (t.state !== "started") {
       const started = await this.firstState(i.team.id, "started");
       if (started) input.stateId = started;
@@ -294,7 +363,9 @@ export class LinearTracker implements Tracker {
 
   async create(from: Ticket, title: string, body: string): Promise<string> {
     const i = this.raw.get(from.id) ?? (await this.issue(from.id));
-    const d = await linear<{ issueCreate: { issue: { identifier: string } } }>(CREATE_ISSUE, { input: { teamId: i.team.id, title, description: body } });
+    const d = await linear<{ issueCreate: { issue: { identifier: string } } }>(CREATE_ISSUE, {
+      input: { teamId: i.team.id, title, description: body },
+    });
     return d.issueCreate.issue.identifier;
   }
 
@@ -316,7 +387,12 @@ export class LinearTracker implements Tracker {
     const ready = new Set((await this.labelIds(READY_LABEL)).map((l) => l.id));
     return (await issues<WithHistory>(DONE_QUERY, { since })).map((i) => ({
       ticket: toTicket(i),
-      readyAt: i.history.nodes.filter((h) => h.addedLabelIds?.some((id) => ready.has(id))).map((h) => h.createdAt).sort().at(-1) ?? null,
+      readyAt:
+        i.history.nodes
+          .filter((h) => h.addedLabelIds?.some((id) => ready.has(id)))
+          .map((h) => h.createdAt)
+          .sort()
+          .at(-1) ?? null,
     }));
   }
 

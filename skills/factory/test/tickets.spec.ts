@@ -1,8 +1,26 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
-import { byPriority, claimant, claimLog, latestClaim, plan, latestReport, nextTickets, phaseOf, readiness, report, slug, ticketFromBranch, ticketsOfPr } from "../scripts/tickets.ts";
-import { blockedByRefs, closedIssue, toTicket as githubTicket } from "../scripts/trackers/github.ts";
+import {
+  byPriority,
+  claimant,
+  claimLog,
+  latestClaim,
+  plan,
+  latestReport,
+  nextTickets,
+  phaseOf,
+  readiness,
+  report,
+  slug,
+  ticketFromBranch,
+  ticketsOfPr,
+} from "../scripts/tickets.ts";
+import {
+  blockedByRefs,
+  closedIssue,
+  toTicket as githubTicket,
+} from "../scripts/trackers/github.ts";
 import { normalizeId, trackerLine, trackerOf } from "../scripts/trackers/index.ts";
 import { repoOf, toTicket as linearTicket } from "../scripts/trackers/linear.ts";
 import { expect } from "./expect.ts";
@@ -14,29 +32,64 @@ describe("readiness", () => {
   });
 
   test("each missing condition names itself", () => {
-    expect(readiness(ticket({ labels: [] }))).toEqual({ ready: false, reason: "no ready-for-agent label" });
-    expect(readiness(ticket({ labels: ["ready-for-agent", "in-progress"] }))).toEqual({ ready: false, reason: "claimed (in-progress)" });
-    expect(readiness(ticket({ state: "started", stateName: "In Progress" }))).toEqual({ ready: false, reason: "state is In Progress" });
-    expect(readiness(ticket({ repo: null }))).toEqual({ ready: false, reason: "no repository: add a Repo: owner/name line" });
+    expect(readiness(ticket({ labels: [] }))).toEqual({
+      ready: false,
+      reason: "no ready-for-agent label",
+    });
+    expect(readiness(ticket({ labels: ["ready-for-agent", "in-progress"] }))).toEqual({
+      ready: false,
+      reason: "claimed (in-progress)",
+    });
+    expect(readiness(ticket({ state: "started", stateName: "In Progress" }))).toEqual({
+      ready: false,
+      reason: "state is In Progress",
+    });
+    expect(readiness(ticket({ repo: null }))).toEqual({
+      ready: false,
+      reason: "no repository: add a Repo: owner/name line",
+    });
   });
 
   test("an open blocker blocks; a done one does not", () => {
-    expect(readiness(ticket({ blockers: [{ id: "ENG-0", title: "", done: false }] }))).toEqual({ ready: false, reason: "blocked by ENG-0" });
-    expect(readiness(ticket({ blockers: [{ id: "ENG-0", title: "", done: true }] })).ready).toBe(true);
+    expect(readiness(ticket({ blockers: [{ id: "ENG-0", title: "", done: false }] }))).toEqual({
+      ready: false,
+      reason: "blocked by ENG-0",
+    });
+    expect(readiness(ticket({ blockers: [{ id: "ENG-0", title: "", done: true }] })).ready).toBe(
+      true,
+    );
   });
 
   test("a parent with open children is a spec, not a slice", () => {
-    expect(readiness(ticket({ openChildren: 1 }))).toEqual({ ready: false, reason: "parent of 1 open ticket(s)" });
+    expect(readiness(ticket({ openChildren: 1 }))).toEqual({
+      ready: false,
+      reason: "parent of 1 open ticket(s)",
+    });
   });
 
   test("a ticket assigned to someone else is theirs; unassigned or mine is ready", () => {
-    expect(readiness(ticket({ assignees: [{ name: "Rita", me: false }] }))).toEqual({ ready: false, reason: "assigned to Rita" });
-    expect(readiness(ticket({ assignees: [{ name: "Rita", me: false }, { name: "André", me: true }] })).ready).toBe(true);
+    expect(readiness(ticket({ assignees: [{ name: "Rita", me: false }] }))).toEqual({
+      ready: false,
+      reason: "assigned to Rita",
+    });
+    expect(
+      readiness(
+        ticket({
+          assignees: [
+            { name: "Rita", me: false },
+            { name: "André", me: true },
+          ],
+        }),
+      ).ready,
+    ).toBe(true);
   });
 
   test("--repo filters to one repository, case-insensitively", () => {
     expect(readiness(ticket(), { repo: "AndreZzoid/App" }).ready).toBe(true);
-    expect(readiness(ticket(), { repo: "andrezzoid/other" })).toEqual({ ready: false, reason: "belongs to andrezzoid/app" });
+    expect(readiness(ticket(), { repo: "andrezzoid/other" })).toEqual({
+      ready: false,
+      reason: "belongs to andrezzoid/app",
+    });
   });
 });
 
@@ -47,7 +100,9 @@ describe("ordering and branches", () => {
     const c = ticket({ id: "C", priority: 3, createdAt: "2026-01-01T00:00:00Z" });
     const d = ticket({ id: "D", priority: 3, createdAt: "2026-02-01T00:00:00Z" });
     expect([a, d, c, b].sort(byPriority).map((t) => t.id)).toEqual(["B", "C", "D", "A"]);
-    expect(nextTickets([a, ticket({ id: "X", labels: [] })]).skipped).toEqual([{ id: "X", reason: "no ready-for-agent label" }]);
+    expect(nextTickets([a, ticket({ id: "X", labels: [] })]).skipped).toEqual([
+      { id: "X", reason: "no ready-for-agent label" },
+    ]);
   });
 
   for (const [branch, repo, expected] of [
@@ -65,14 +120,27 @@ describe("ordering and branches", () => {
   }
 
   test("a PR names its tickets in its branch and its closing lines", () => {
-    expect(ticketsOfPr({ headRef: "andre/eng-1-thing", body: "Closes ENG-2\nfixes #12, resolves o/api#3\nCloses https://github.com/O/Web/issues/9\nSee #99" }, "O/R")).toEqual(["ENG-1", "ENG-2", "o/r#12", "o/api#3", "o/web#9"]);
+    expect(
+      ticketsOfPr(
+        {
+          headRef: "andre/eng-1-thing",
+          body: "Closes ENG-2\nfixes #12, resolves o/api#3\nCloses https://github.com/O/Web/issues/9\nSee #99",
+        },
+        "O/R",
+      ),
+    ).toEqual(["ENG-1", "ENG-2", "o/r#12", "o/api#3", "o/web#9"]);
     expect(ticketsOfPr({ headRef: "main", body: null }, "o/r")).toEqual([]);
   });
 
   // `pr merge` passes the repository as --repo or the PR's URL spells it.
   test("the branch and closing line a ticket gives name that ticket, and only it", () => {
-    for (const [t, repo] of [[githubTicket(githubIssue(), "o/r"), "O/R"], [linearTicket(linearIssue()), "o/r"]] as const) {
-      expect(ticketsOfPr({ headRef: t.branchName, body: `Does it.\n\n${t.closes}` }, repo)).toEqual([t.id]);
+    for (const [t, repo] of [
+      [githubTicket(githubIssue(), "o/r"), "O/R"],
+      [linearTicket(linearIssue()), "o/r"],
+    ] as const) {
+      expect(ticketsOfPr({ headRef: t.branchName, body: `Does it.\n\n${t.closes}` }, repo)).toEqual(
+        [t.id],
+      );
     }
   });
 
@@ -83,12 +151,20 @@ describe("ordering and branches", () => {
 });
 
 describe("claims", () => {
-  const log = (id: string, createdAt: string, session: string) => ({ id, createdAt, body: claimLog(session, null) });
+  const log = (id: string, createdAt: string, session: string) => ({
+    id,
+    createdAt,
+    body: claimLog(session, null),
+  });
 
   test("the latest claim log names the session holding the ticket", () => {
     const comments = [
       log("a", "2026-10-01T10:00:00Z", "[a cloud session](https://claude.ai/code/session_a)"),
-      { id: "x", createdAt: "2026-10-03T10:00:00Z", body: "Unrelated, mentions Claimed by in passing" },
+      {
+        id: "x",
+        createdAt: "2026-10-03T10:00:00Z",
+        body: "Unrelated, mentions Claimed by in passing",
+      },
       log("b", "2026-10-02T10:00:00Z", "local session 1234 on andre-mac.local"),
     ];
     expect(latestClaim(comments)?.id).toBe("b");
@@ -98,7 +174,9 @@ describe("claims", () => {
   });
 
   test("a takeover names the claim it replaces", () => {
-    expect(claimLog("a local session on mac", "a cloud session, claimed 2026-10-07 07:00")).toBe("Claimed by a local session on mac. Takes over from a cloud session, claimed 2026-10-07 07:00.");
+    expect(claimLog("a local session on mac", "a cloud session, claimed 2026-10-07 07:00")).toBe(
+      "Claimed by a local session on mac. Takes over from a cloud session, claimed 2026-10-07 07:00.",
+    );
   });
 });
 
@@ -124,9 +202,17 @@ describe("reports", () => {
     expect(report({ id: "r", createdAt: at, body: "Done: thanks" })).toBe(null);
     expect(report({ id: "r", createdAt: at, body: "**Done - thanks**" })).toBe(null);
     expect(report({ id: "r", createdAt: at, body: "## Handed back — see the thread" })).toBe(null);
-    expect(report({ id: "r", createdAt: at, body: "## Handed back · x\n\n**Needs you:** pick one" })?.needsYou).toBe(true);
-    expect(report({ id: "r", createdAt: at, body: "## Handed back · x\n\n### Needs you\n\nPick one" })?.needsYou).toBe(true);
-    expect(report({ id: "r", createdAt: at, body: "## Done · x\n\nNothing needs you." })?.needsYou).toBe(false);
+    expect(
+      report({ id: "r", createdAt: at, body: "## Handed back · x\n\n**Needs you:** pick one" })
+        ?.needsYou,
+    ).toBe(true);
+    expect(
+      report({ id: "r", createdAt: at, body: "## Handed back · x\n\n### Needs you\n\nPick one" })
+        ?.needsYou,
+    ).toBe(true);
+    expect(
+      report({ id: "r", createdAt: at, body: "## Done · x\n\nNothing needs you." })?.needsYou,
+    ).toBe(false);
     expect(report({ id: "r", createdAt: at, body: "## Deviation · x" })).toBe(null);
     expect(report({ id: "r", createdAt: at, body: "## Unverified · x" })).toBe(null);
   });
@@ -142,15 +228,29 @@ describe("reports", () => {
 });
 
 describe("plan", () => {
-  const brief = (id: string, createdAt: string, text: string) => ({ id, createdAt, body: `> *This was generated by AI during triage.*\n\n## Agent Brief\n\n${text}` });
-  const revised = (id: string, createdAt: string, text: string) => ({ id, createdAt, body: `## Revised · ${text}` });
+  const brief = (id: string, createdAt: string, text: string) => ({
+    id,
+    createdAt,
+    body: `> *This was generated by AI during triage.*\n\n## Agent Brief\n\n${text}`,
+  });
+  const revised = (id: string, createdAt: string, text: string) => ({
+    id,
+    createdAt,
+    body: `## Revised · ${text}`,
+  });
 
   test("the body is the plan until triage posts an agent brief", () => {
-    expect(plan(ticket(), [{ id: "c", createdAt: "2026-10-02T00:00:00Z", body: "Deviation: none" }])).toEqual([{ kind: "body", at: ticket().createdAt, text: ticket().body }]);
+    expect(
+      plan(ticket(), [{ id: "c", createdAt: "2026-10-02T00:00:00Z", body: "Deviation: none" }]),
+    ).toEqual([{ kind: "body", at: ticket().createdAt, text: ticket().body }]);
   });
 
   test("the latest agent brief wins over the body and older briefs", () => {
-    const c = plan(ticket(), [brief("old", "2026-10-02T00:00:00Z", "first"), brief("new", "2026-10-03T00:00:00Z", "second"), { id: "x", createdAt: "2026-10-04T00:00:00Z", body: "Mentions ## Agent Brief inline" }]);
+    const c = plan(ticket(), [
+      brief("old", "2026-10-02T00:00:00Z", "first"),
+      brief("new", "2026-10-03T00:00:00Z", "second"),
+      { id: "x", createdAt: "2026-10-04T00:00:00Z", body: "Mentions ## Agent Brief inline" },
+    ]);
     expect(c).toHaveLength(1);
     expect(c[0]!.kind).toBe("brief");
     expect(c[0]!.text).toContain("second");
@@ -168,7 +268,9 @@ describe("plan", () => {
       ["revised", "2026-10-04T00:00:00Z"],
       ["revised", "2026-10-05T00:00:00Z"],
     ]);
-    expect(plan(ticket(), [revised("r", "2026-10-04T00:00:00Z", "no brief")]).map((p) => p.kind)).toEqual(["body", "revised"]);
+    expect(
+      plan(ticket(), [revised("r", "2026-10-04T00:00:00Z", "no brief")]).map((p) => p.kind),
+    ).toEqual(["body", "revised"]);
   });
 });
 
@@ -176,7 +278,9 @@ describe("phase", () => {
   test("a closed ticket is done, an open PR means babysit, the ready label means iterate", () => {
     expect(phaseOf(ticket({ state: "done" }), [])).toBe("done");
     expect(phaseOf(ticket({ state: "canceled" }), ["https://github.com/o/r/pull/7"])).toBe("done");
-    expect(phaseOf(ticket({ labels: [], state: "started" }), ["https://github.com/o/r/pull/7"])).toBe("babysit");
+    expect(
+      phaseOf(ticket({ labels: [], state: "started" }), ["https://github.com/o/r/pull/7"]),
+    ).toBe("babysit");
     expect(phaseOf(ticket(), [])).toBe("iterate");
     expect(phaseOf(ticket({ state: "started" }), [])).toBe("iterate");
   });
@@ -188,7 +292,11 @@ describe("phase", () => {
   });
 
   test("a ticket handed back with its pull request still open waits on the human", () => {
-    expect(phaseOf(ticket({ labels: ["ready-for-human"], state: "started" }), ["https://github.com/o/r/pull/7"])).toBe("shape");
+    expect(
+      phaseOf(ticket({ labels: ["ready-for-human"], state: "started" }), [
+        "https://github.com/o/r/pull/7",
+      ]),
+    ).toBe("shape");
   });
 });
 
@@ -201,7 +309,8 @@ describe("ticket ids", () => {
   });
 
   test("a repo names its tracker in the Tracker line of its Agent skills block", () => {
-    const md = (block: string) => `# Repo\n\n## Agent skills\n\n${block}\n\n## Testing\n\nTracker: Linear, in another section`;
+    const md = (block: string) =>
+      `# Repo\n\n## Agent skills\n\n${block}\n\n## Testing\n\nTracker: Linear, in another section`;
     expect(trackerLine(md("Tracker: GitHub Issues\nLabels: needs-triage"))).toBe("github");
     expect(trackerLine(md("- **Tracker:** Linear, team ENG"))).toBe("linear");
     expect(trackerLine(md("Labels: needs-triage"))).toBe(null);
@@ -224,34 +333,68 @@ describe("Linear adapter", () => {
     ["> Repo: org/my.repo", "org/my.repo"],
   ] as const) {
     test(`repo from "${description}"`, () => {
-      expect(repoOf({ description, attachments: { nodes: [] }, briefs: { nodes: [] } })).toBe(expected);
+      expect(repoOf({ description, attachments: { nodes: [] }, briefs: { nodes: [] } })).toBe(
+        expected,
+      );
     });
   }
 
   test("repo falls back to a GitHub attachment", () => {
-    expect(repoOf({ description: null, attachments: { nodes: [{ url: "https://github.com/org/app/pull/3" }] }, briefs: { nodes: [] } })).toBe("org/app");
+    expect(
+      repoOf({
+        description: null,
+        attachments: { nodes: [{ url: "https://github.com/org/app/pull/3" }] },
+        briefs: { nodes: [] },
+      }),
+    ).toBe("org/app");
   });
 
   test("triage's agent brief names the repo over the description, as it is the plan", () => {
-    const briefs = { nodes: [{ id: "b1", body: "## Agent Brief\n\nRepo: org/new", createdAt: "2026-10-02T00:00:00Z" }] };
-    expect(repoOf({ description: "Repo: org/old", attachments: { nodes: [] }, briefs })).toBe("org/new");
+    const briefs = {
+      nodes: [
+        { id: "b1", body: "## Agent Brief\n\nRepo: org/new", createdAt: "2026-10-02T00:00:00Z" },
+      ],
+    };
+    expect(repoOf({ description: "Repo: org/old", attachments: { nodes: [] }, briefs })).toBe(
+      "org/new",
+    );
   });
 
   test("a brief with no Repo line leaves the description's", () => {
-    const briefs = { nodes: [{ id: "b1", body: "## Agent Brief\n\nNo repo here.", createdAt: "2026-10-02T00:00:00Z" }] };
-    expect(repoOf({ description: "Repo: org/app", attachments: { nodes: [] }, briefs })).toBe("org/app");
+    const briefs = {
+      nodes: [
+        { id: "b1", body: "## Agent Brief\n\nNo repo here.", createdAt: "2026-10-02T00:00:00Z" },
+      ],
+    };
+    expect(repoOf({ description: "Repo: org/app", attachments: { nodes: [] }, briefs })).toBe(
+      "org/app",
+    );
   });
 
   test("normalizes state, blockers, children and linked PRs", () => {
-    const t = linearTicket(linearIssue({
-      state: { name: "In Review", type: "started" },
-      inverseRelations: { nodes: [
-        { type: "blocks", issue: { identifier: "ENG-0", title: "First", state: { type: "canceled" } } },
-        { type: "related", issue: { identifier: "ENG-9", state: { type: "started" } } },
-      ] },
-      children: { nodes: [{ identifier: "ENG-2", state: { type: "unstarted" } }, { identifier: "ENG-3", state: { type: "completed" } }] },
-      attachments: { nodes: [{ url: "https://github.com/o/r/pull/4" }, { url: "https://figma.com/x" }] },
-    }));
+    const t = linearTicket(
+      linearIssue({
+        state: { name: "In Review", type: "started" },
+        inverseRelations: {
+          nodes: [
+            {
+              type: "blocks",
+              issue: { identifier: "ENG-0", title: "First", state: { type: "canceled" } },
+            },
+            { type: "related", issue: { identifier: "ENG-9", state: { type: "started" } } },
+          ],
+        },
+        children: {
+          nodes: [
+            { identifier: "ENG-2", state: { type: "unstarted" } },
+            { identifier: "ENG-3", state: { type: "completed" } },
+          ],
+        },
+        attachments: {
+          nodes: [{ url: "https://github.com/o/r/pull/4" }, { url: "https://figma.com/x" }],
+        },
+      }),
+    );
     expect(t).toMatchObject({
       id: "ENG-1",
       tracker: "linear",
@@ -266,7 +409,9 @@ describe("Linear adapter", () => {
   });
 
   test("the assignee says whether the ticket is the viewer's", () => {
-    expect(linearTicket(linearIssue({ assignee: { id: "u9", name: "Rita", isMe: false } })).assignees).toEqual([{ name: "Rita", me: false }]);
+    expect(
+      linearTicket(linearIssue({ assignee: { id: "u9", name: "Rita", isMe: false } })).assignees,
+    ).toEqual([{ name: "Rita", me: false }]);
     expect(linearTicket(linearIssue()).assignees).toEqual([]);
   });
 });
@@ -285,30 +430,65 @@ describe("GitHub adapter", () => {
   });
 
   test("assignees are marked as the viewer's by login", () => {
-    const t = githubTicket(githubIssue({ assignees: [{ login: "andrezzoid" }, { login: "rita" }] }), "o/r", [], "andrezzoid");
-    expect(t.assignees).toEqual([{ name: "andrezzoid", me: true }, { name: "rita", me: false }]);
+    const t = githubTicket(
+      githubIssue({ assignees: [{ login: "andrezzoid" }, { login: "rita" }] }),
+      "o/r",
+      [],
+      "andrezzoid",
+    );
+    expect(t.assignees).toEqual([
+      { name: "andrezzoid", me: true },
+      { name: "rita", me: false },
+    ]);
   });
 
   test("in-progress means started; closed means done unless not planned", () => {
-    expect(githubTicket(githubIssue({ labels: ["ready-for-agent", "In-Progress"] }), "o/r").state).toBe("started");
-    expect(githubTicket(githubIssue({ state: "closed", state_reason: "completed", closed_at: "2026-10-02T00:00:00Z" }), "o/r")).toMatchObject({ state: "done", completedAt: "2026-10-02T00:00:00Z" });
-    expect(githubTicket(githubIssue({ state: "closed", state_reason: "not_planned" }), "o/r").state).toBe("canceled");
+    expect(
+      githubTicket(githubIssue({ labels: ["ready-for-agent", "In-Progress"] }), "o/r").state,
+    ).toBe("started");
+    expect(
+      githubTicket(
+        githubIssue({
+          state: "closed",
+          state_reason: "completed",
+          closed_at: "2026-10-02T00:00:00Z",
+        }),
+        "o/r",
+      ),
+    ).toMatchObject({ state: "done", completedAt: "2026-10-02T00:00:00Z" });
+    expect(
+      githubTicket(githubIssue({ state: "closed", state_reason: "not_planned" }), "o/r").state,
+    ).toBe("canceled");
   });
 
   test("open sub-issues make the issue a parent", () => {
-    expect(githubTicket(githubIssue({ sub_issues_summary: { total: 3, completed: 1 } }), "o/r").openChildren).toBe(2);
+    expect(
+      githubTicket(githubIssue({ sub_issues_summary: { total: 3, completed: 1 } }), "o/r")
+        .openChildren,
+    ).toBe(2);
   });
 
   test("Blocked by lines name blockers when native dependencies are not used", () => {
-    expect(blockedByRefs("Do it.\n\nBlocked by: #3, O/Other#4\n**Blocked by** #4 and #9", "o/r")).toEqual(["o/r#3", "o/other#4", "o/r#4", "o/r#9"]);
+    expect(
+      blockedByRefs("Do it.\n\nBlocked by: #3, O/Other#4\n**Blocked by** #4 and #9", "o/r"),
+    ).toEqual(["o/r#3", "o/other#4", "o/r#4", "o/r#9"]);
     expect(blockedByRefs("Fixes #3\n\n## Testing\n\nSee #5", "o/r")).toEqual([]);
-    expect(blockedByRefs("## Blocked by\n\n- https://github.com/O/R/issues/12\n- https://github.com/o/api/issues/3", "o/r")).toEqual(["o/r#12", "o/api#3"]);
+    expect(
+      blockedByRefs(
+        "## Blocked by\n\n- https://github.com/O/R/issues/12\n- https://github.com/o/api/issues/3",
+        "o/r",
+      ),
+    ).toEqual(["o/r#12", "o/api#3"]);
   });
 
   test("the Blocked by section of the plan protocol's ticket template names blockers", () => {
-    const template = readFileSync(join(import.meta.dirname, "../../protocol-plan/references/ticket.md"), "utf8");
+    const template = readFileSync(
+      join(import.meta.dirname, "../../protocol-plan/references/ticket.md"),
+      "utf8",
+    );
     expect(template).toContain("## Blocked by");
-    const body = template.replace(/(## Blocked by\n\n)[^\n]*/, "$1- #12\n- o/api#3")
+    const body = template
+      .replace(/(## Blocked by\n\n)[^\n]*/, "$1- #12\n- o/api#3")
       .replace(/(## Acceptance criteria\n\n)[^\n]*/, "$1- [ ] see #99")
       .replace(/(## Out of scope\n\n)[^\n]*/, "$1- Changing #7");
     expect(blockedByRefs(body, "o/r")).toEqual(["o/r#12", "o/api#3"]);
