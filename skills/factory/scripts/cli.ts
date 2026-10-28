@@ -679,7 +679,7 @@ Tickets are ENG-123 (Linear), owner/repo#123 (GitHub Issues), or #123 inside a c
                                                 reply in a review comment's thread, with the Claude Code
                                                 footer; --resolve also resolves the thread
   factory pr resolve [PR] --comment ID          resolve the review thread holding the comment
-  factory pr open [--ticket ID] --title T (--body TEXT | --body-file F)
+  factory pr open [--ticket <ticket or issue ID>] --title T (--body TEXT | --body-file F)
                                                 push the branch and open a pull request to the default
                                                 branch; --ticket ends the body with the ticket's closes line
   factory pr report [PR] --body-file F          post a report on the pull request; a hand-back turns
