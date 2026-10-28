@@ -1,6 +1,6 @@
 {
-  // The base every TypeScript project here extends. Node runs the .ts files
-  // directly, with nothing built, so the compiler only checks types.
+  // The base for TypeScript that Node runs directly, with nothing built, so the
+  // compiler only checks types. A project extends it and names its own files.
   "compilerOptions": {
     // Environment Settings
     // See also https://aka.ms/tsconfig/module
@@ -25,6 +25,5 @@
     "moduleDetection": "force",
     "skipLibCheck": true,
   },
-  // A base only: each project names its own files.
   "files": [],
 }

@@ -8,6 +8,15 @@ claude plugin validate . &&
   sh mods/prose-lint/vale/test.sh &&
   node --test --test-reporter=dot 'skills/factory/test/*.spec.ts' || exit 1
 
+# The factory CLI typechecks, lints clean, and keeps oxfmt's format. npm ci
+# installs the tools whenever node_modules was not installed from this exact
+# lockfile, as in a fresh clone or worktree, or after a version bump.
+cmp -s package-lock.json node_modules/.gates-lock ||
+  { npm ci && cp package-lock.json node_modules/.gates-lock; } || exit 1
+node_modules/.bin/tsc -p skills/factory &&
+  node_modules/.bin/oxlint skills/factory &&
+  node_modules/.bin/oxfmt --check 'skills/factory/**/*.ts' || exit 1
+
 # Every third-party skill's source names its license in skills/NOTICE.
 missing=$(jq -r '.skills[].source' skills-lock.json | sort -u |
   while read -r source; do grep -qF "$source" skills/NOTICE || echo "$source"; done)
