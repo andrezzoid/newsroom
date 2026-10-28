@@ -8,7 +8,9 @@
   "categories": {
     "correctness": "error"
   },
-  "rules": {},
+  "rules": {
+    "typescript/no-non-null-assertion": "error"
+  },
   "env": {
     "builtin": true
   }

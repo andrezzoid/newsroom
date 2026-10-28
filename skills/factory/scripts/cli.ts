@@ -73,16 +73,16 @@ const SWITCHES = new Set([
 
 export function parseArgs(argv: string[]): Args {
   const out: Args = { _: [], flags: {} };
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i]!;
-    const next = argv[i + 1];
+  const rest = [...argv];
+  for (let a = rest.shift(); a !== undefined; a = rest.shift()) {
+    const next = rest[0];
     if (a.startsWith("--")) {
       const eq = a.indexOf("=");
       const [k, v] = eq < 0 ? [a.slice(2), undefined] : [a.slice(2, eq), a.slice(eq + 1)];
       if (v !== undefined) out.flags[k] = v;
       else if (!SWITCHES.has(k) && next !== undefined && !next.startsWith("--")) {
         out.flags[k] = next;
-        i++;
+        rest.shift();
       } else out.flags[k] = true;
     } else out._.push(a);
   }
@@ -145,18 +145,21 @@ function trackersFor(repo: string | null): Tracker[] {
 // names each failed tracker once.
 const named = new Set<string>();
 async function fromEach<T>(trackers: Tracker[], ask: (t: Tracker) => Promise<T[]>): Promise<T[]> {
-  const results = await Promise.allSettled(trackers.map(ask));
-  const failed = results.flatMap((r, i) =>
-    r.status === "rejected"
-      ? [{ name: trackers[i]!.name, message: (r.reason as Error).message }]
-      : [],
+  const results = await Promise.all(
+    trackers.map((t) =>
+      ask(t).then(
+        (items) => ({ items, failure: null }),
+        (e: Error) => ({ items: [] as T[], failure: { name: t.name, message: e.message } }),
+      ),
+    ),
   );
+  const failed = results.flatMap((r) => (r.failure ? [r.failure] : []));
   if (failed.length === results.length) throw new Error(failed.map((f) => f.message).join("; "));
   for (const f of failed.filter((f) => !named.has(f.name))) {
     named.add(f.name);
     console.error(`factory: skipped ${f.name}, which failed: ${f.message}`);
   }
-  return results.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+  return results.flatMap((r) => r.items);
 }
 
 const openTickets = (repo: string | null) => fromEach(trackersFor(repo), (t) => t.open());

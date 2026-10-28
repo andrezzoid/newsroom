@@ -10,21 +10,23 @@
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const dir = process.env.FAKE_GH_DIR!;
+const dir = process.env.FAKE_GH_DIR;
+if (!dir) throw new Error("fake gh: FAKE_GH_DIR is unset");
 const args = process.argv.slice(2);
 const stdin = args.includes("--input") ? readFileSync(0, "utf8") : null;
 appendFileSync(join(dir, "calls.jsonl"), JSON.stringify({ args, stdin }) + "\n");
 
 const file = join(dir, "routes.json");
 const routes: Record<string, any> = JSON.parse(readFileSync(file, "utf8"));
-if (args[0] !== "api") process.exit(2);
-const path = args[1] ?? "";
-const method = args.includes("--method") ? args[args.indexOf("--method") + 1] : "GET";
-const accept = args.includes("-H") ? (args[args.indexOf("-H") + 1] ?? "") : "";
+const [command, path] = args;
+if (command !== "api" || !path) process.exit(2);
+const flag = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
+const method = flag("--method") ?? "GET";
+const accept = flag("-H") ?? "";
 
 const page = /[?&]page=(\d+)/.exec(path)?.[1];
 const query = path.replace(/[?&](per_page|page)=\d+/g, "").replace(/^([^?]*)&/, "$1?");
-const bare = path.split("?")[0] ?? "";
+const bare = path.replace(/\?.*$/, "");
 const keys =
   path === "graphql"
     ? ["GRAPHQL"]

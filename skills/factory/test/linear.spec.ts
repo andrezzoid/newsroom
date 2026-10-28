@@ -17,7 +17,7 @@ function tokens(src: string): string[] {
   const out: string[] = [];
   let i = 0;
   while (i < src.length) {
-    const c = src[i]!;
+    const c = src.charAt(i);
     if (/[\s,]/.test(c)) {
       i++;
     } else if (c === "(") {
@@ -39,21 +39,25 @@ function tokens(src: string): string[] {
   return out;
 }
 
-function selections(t: string[], at: { i: number }): Selection[] {
-  at.i++; // the opening brace
+// Takes the selections off the front of t, which starts after an opening
+// brace, through the brace that closes it.
+function selections(t: string[]): Selection[] {
   const out: Selection[] = [];
-  while (t[at.i] !== "}") {
-    const word = t[at.i++]!;
+  for (let word = t.shift(); word !== undefined && word !== "}"; word = t.shift()) {
     if (word.startsWith("...")) {
       out.push({ spread: word.slice(3) });
       continue;
     }
     let name = word;
-    if (t[at.i] === ":") name = t[(at.i += 2) - 1]!; // an alias: price the field it names
-    const args = t[at.i]?.startsWith("(") ? t[at.i++]! : "";
-    out.push({ name, args, children: t[at.i] === "{" ? selections(t, at) : null });
+    if (t[0] === ":") name = t.splice(0, 2)[1] ?? word; // an alias: price the field it names
+    const args = t[0]?.startsWith("(") ? (t.shift() ?? "") : "";
+    let children: Selection[] | null = null;
+    if (t[0] === "{") {
+      t.shift();
+      children = selections(t);
+    }
+    out.push({ name, args, children });
   }
-  at.i++;
   return out;
 }
 
@@ -82,16 +86,11 @@ function complexity(doc: string): number {
   const t = tokens(doc);
   const fragments = new Map<string, Selection[]>();
   let operation: Selection[] = [];
-  for (let i = 0; i < t.length; i++) {
-    if (t[i] === "fragment") {
-      const at = { i: t.indexOf("{", i) };
-      fragments.set(t[i + 1]!, selections(t, at));
-      i = at.i - 1;
-    } else if (t[i] === "query") {
-      const at = { i: t.indexOf("{", i) };
-      operation = selections(t, at);
-      i = at.i - 1;
-    }
+  for (let word = t.shift(); word !== undefined; word = t.shift()) {
+    if (word !== "fragment" && word !== "query") continue;
+    const [name] = t.splice(0, t.indexOf("{") + 1);
+    if (word === "query") operation = selections(t);
+    else if (name) fragments.set(name, selections(t));
   }
   return Math.ceil(price(operation, fragments) - 1e-9);
 }

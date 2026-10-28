@@ -158,18 +158,24 @@ describe("claims", () => {
   });
 
   test("the latest claim log names the session holding the ticket", () => {
+    const cloud = log(
+      "a",
+      "2026-10-01T10:00:00Z",
+      "[a cloud session](https://claude.ai/code/session_a)",
+    );
+    const local = log("b", "2026-10-02T10:00:00Z", "local session 1234 on andre-mac.local");
     const comments = [
-      log("a", "2026-10-01T10:00:00Z", "[a cloud session](https://claude.ai/code/session_a)"),
+      cloud,
       {
         id: "x",
         createdAt: "2026-10-03T10:00:00Z",
         body: "Unrelated, mentions Claimed by in passing",
       },
-      log("b", "2026-10-02T10:00:00Z", "local session 1234 on andre-mac.local"),
+      local,
     ];
-    expect(latestClaim(comments)?.id).toBe("b");
-    expect(claimant(latestClaim(comments)!)).toBe("local session 1234 on andre-mac.local");
-    expect(claimant(comments[0]!)).toBe("[a cloud session](https://claude.ai/code/session_a)");
+    expect(latestClaim(comments)).toBe(local);
+    expect(claimant(local)).toBe("local session 1234 on andre-mac.local");
+    expect(claimant(cloud)).toBe("[a cloud session](https://claude.ai/code/session_a)");
     expect(latestClaim([])).toBe(null);
   });
 
@@ -223,7 +229,7 @@ describe("reports", () => {
       { id: "a", createdAt: "2026-10-05T00:00:00Z", body: "## Handed back · first" },
     ];
     expect(latestReport(comments)?.title).toBe("Handed back · second");
-    expect(comments[0]!.id).toBe("b");
+    expect(comments[0]?.id).toBe("b");
   });
 });
 
@@ -252,8 +258,8 @@ describe("plan", () => {
       { id: "x", createdAt: "2026-10-04T00:00:00Z", body: "Mentions ## Agent Brief inline" },
     ]);
     expect(c).toHaveLength(1);
-    expect(c[0]!.kind).toBe("brief");
-    expect(c[0]!.text).toContain("second");
+    expect(c[0]?.kind).toBe("brief");
+    expect(c[0]?.text).toContain("second");
   });
 
   test("revisions after the latest brief join it, oldest first; a newer brief replaces older revisions", () => {

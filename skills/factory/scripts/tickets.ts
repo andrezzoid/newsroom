@@ -116,9 +116,9 @@ export function report(c: TicketComment): Report | null {
     .replace(/^#{1,6}\s*/, "")
     .replace(/^(\*\*|__)(.*)\1$/, "$2")
     .trim();
-  const m = REPORT_TITLE.exec(title);
-  if (!m) return null;
-  const kind = m[1]!.charAt(0).toUpperCase() + m[1]!.slice(1).toLowerCase();
+  const [, word] = REPORT_TITLE.exec(title) ?? [];
+  if (!word) return null;
+  const kind = word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
   return { kind, title, needsYou: NEEDS_YOU.test(c.body), at: c.createdAt };
 }
 
@@ -180,8 +180,8 @@ export function phaseOf(t: Pick<Ticket, "state" | "labels">, openPrs: string[]):
 export function ticketFromBranch(branch: string, repo: string | null): string | null {
   const gh = /(?:^|\/)issue-(\d+)(?:-|$)/.exec(branch);
   if (gh) return repo ? `${repo.toLowerCase()}#${gh[1]}` : null;
-  const m = /(?:^|[/_-])([a-z][a-z0-9]{1,9}-\d+)(?:[/_-]|$)/i.exec(branch);
-  return m ? m[1]!.toUpperCase() : null;
+  const [, id] = /(?:^|[/_-])([a-z][a-z0-9]{1,9}-\d+)(?:[/_-]|$)/i.exec(branch) ?? [];
+  return id ? id.toUpperCase() : null;
 }
 
 // The tickets a pull request names itself: in its branch, or on a closing

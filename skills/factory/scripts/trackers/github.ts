@@ -16,9 +16,9 @@ import {
 export class GithubError extends Error {}
 
 export function parseId(id: string): { repo: string; number: number } {
-  const m = /^([\w.-]+\/[\w.-]+)#(\d+)$/.exec(id);
-  if (!m) throw new GithubError(`not a GitHub issue id (owner/repo#123): ${id}`);
-  return { repo: m[1]!.toLowerCase(), number: Number(m[2]) };
+  const [, repo, number] = /^([\w.-]+\/[\w.-]+)#(\d+)$/.exec(id) ?? [];
+  if (!repo) throw new GithubError(`not a GitHub issue id (owner/repo#123): ${id}`);
+  return { repo: repo.toLowerCase(), number: Number(number) };
 }
 
 const BLOCKED_BY_LINE = /^[ \t>*_-]*blocked[ -]by\b[*_]*\s*:?(.*)$/i;

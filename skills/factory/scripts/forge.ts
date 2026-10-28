@@ -46,8 +46,8 @@ export function paginate<T>(path: string, pick: (page: any) => T[] = (p) => p, m
 export type Repo = { owner: string; repo: string };
 
 export function parseRepo(spec: string): Repo | null {
-  const m = /([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/.exec(spec.trim());
-  return m ? { owner: m[1]!, repo: m[2]! } : null;
+  const [, owner, repo] = /([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/.exec(spec.trim()) ?? [];
+  return owner && repo ? { owner, repo } : null;
 }
 
 export function currentRepo(): Repo | null {
@@ -69,8 +69,9 @@ export function resolvePr(
   arg: string | undefined,
   repoFlag: string | undefined,
 ): Repo & { number: number } {
-  const url = arg ? /github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/.exec(arg) : null;
-  if (url) return { owner: url[1]!, repo: url[2]!, number: Number(url[3]) };
+  const [, owner, name, number] =
+    (arg && /github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/.exec(arg)) || [];
+  if (owner && name) return { owner, repo: name, number: Number(number) };
   const repo = (repoFlag ? parseRepo(repoFlag) : null) ?? currentRepo();
   if (!repo)
     throw new GhError("cannot tell which repository: pass --repo owner/name or run inside a clone");
