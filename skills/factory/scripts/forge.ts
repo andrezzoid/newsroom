@@ -47,7 +47,7 @@ export type Repo = { owner: string; repo: string };
 
 export function parseRepo(spec: string): Repo | null {
   const m = /([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/.exec(spec.trim());
-  return m ? { owner: m[1], repo: m[2] } : null;
+  return m ? { owner: m[1]!, repo: m[2]! } : null;
 }
 
 export function currentRepo(): Repo | null {
@@ -67,7 +67,7 @@ export function repoRoot(): string | null {
 // Accepts a number, a PR URL, or nothing (the PR for the current branch).
 export function resolvePr(arg: string | undefined, repoFlag: string | undefined): Repo & { number: number } {
   const url = arg ? /github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/.exec(arg) : null;
-  if (url) return { owner: url[1], repo: url[2], number: Number(url[3]) };
+  if (url) return { owner: url[1]!, repo: url[2]!, number: Number(url[3]) };
   const repo = (repoFlag ? parseRepo(repoFlag) : null) ?? currentRepo();
   if (!repo) throw new GhError("cannot tell which repository: pass --repo owner/name or run inside a clone");
   if (arg && /^\d+$/.test(arg)) return { ...repo, number: Number(arg) };
@@ -273,7 +273,7 @@ export function reviewComments(repo: string, number: number): { author: string; 
   return paginate<any>(`repos/${repo}/pulls/${number}/comments`).map((c) => ({
     author: c.user?.login ?? "?",
     path: c.path ?? "",
-    text: String(c.body ?? "").trim().split("\n", 1)[0].slice(0, 200),
+    text: (String(c.body ?? "").trim().split("\n", 1)[0] ?? "").slice(0, 200),
   }));
 }
 

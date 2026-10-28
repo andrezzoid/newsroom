@@ -17,7 +17,7 @@ function tokens(src: string): string[] {
   const out: string[] = [];
   let i = 0;
   while (i < src.length) {
-    const c = src[i];
+    const c = src[i]!;
     if (/[\s,]/.test(c)) {
       i++;
     } else if (c === "(") {
@@ -43,14 +43,14 @@ function selections(t: string[], at: { i: number }): Selection[] {
   at.i++; // the opening brace
   const out: Selection[] = [];
   while (t[at.i] !== "}") {
-    const word = t[at.i++];
+    const word = t[at.i++]!;
     if (word.startsWith("...")) {
       out.push({ spread: word.slice(3) });
       continue;
     }
     let name = word;
-    if (t[at.i] === ":") name = t[(at.i += 2) - 1]; // an alias: price the field it names
-    const args = t[at.i]?.startsWith("(") ? t[at.i++] : "";
+    if (t[at.i] === ":") name = t[(at.i += 2) - 1]!; // an alias: price the field it names
+    const args = t[at.i]?.startsWith("(") ? t[at.i++]! : "";
     out.push({ name, args, children: t[at.i] === "{" ? selections(t, at) : null });
   }
   at.i++;
@@ -80,7 +80,7 @@ function complexity(doc: string): number {
   for (let i = 0; i < t.length; i++) {
     if (t[i] === "fragment") {
       const at = { i: t.indexOf("{", i) };
-      fragments.set(t[i + 1], selections(t, at));
+      fragments.set(t[i + 1]!, selections(t, at));
       i = at.i - 1;
     } else if (t[i] === "query") {
       const at = { i: t.indexOf("{", i) };

@@ -93,7 +93,7 @@ describe("claims", () => {
     ];
     expect(latestClaim(comments)?.id).toBe("b");
     expect(claimant(latestClaim(comments)!)).toBe("local session 1234 on andre-mac.local");
-    expect(claimant(comments[0])).toBe("[a cloud session](https://claude.ai/code/session_a)");
+    expect(claimant(comments[0]!)).toBe("[a cloud session](https://claude.ai/code/session_a)");
     expect(latestClaim([])).toBe(null);
   });
 
@@ -137,7 +137,7 @@ describe("reports", () => {
       { id: "a", createdAt: "2026-10-05T00:00:00Z", body: "## Handed back · first" },
     ];
     expect(latestReport(comments)?.title).toBe("Handed back · second");
-    expect(comments[0].id).toBe("b");
+    expect(comments[0]!.id).toBe("b");
   });
 });
 
@@ -152,8 +152,8 @@ describe("plan", () => {
   test("the latest agent brief wins over the body and older briefs", () => {
     const c = plan(ticket(), [brief("old", "2026-10-02T00:00:00Z", "first"), brief("new", "2026-10-03T00:00:00Z", "second"), { id: "x", createdAt: "2026-10-04T00:00:00Z", body: "Mentions ## Agent Brief inline" }]);
     expect(c).toHaveLength(1);
-    expect(c[0].kind).toBe("brief");
-    expect(c[0].text).toContain("second");
+    expect(c[0]!.kind).toBe("brief");
+    expect(c[0]!.text).toContain("second");
   });
 
   test("revisions after the latest brief join it, oldest first; a newer brief replaces older revisions", () => {
@@ -222,7 +222,7 @@ describe("Linear adapter", () => {
     ["**Repo:** `andrezzoid/app`", "andrezzoid/app"],
     ["repository: https://github.com/Org/Thing.git", "org/thing"],
     ["> Repo: org/my.repo", "org/my.repo"],
-  ]) {
+  ] as const) {
     test(`repo from "${description}"`, () => {
       expect(repoOf({ description, attachments: { nodes: [] }, briefs: { nodes: [] } })).toBe(expected);
     });

@@ -52,13 +52,16 @@ const SWITCHES = new Set(["json", "here", "help", "resolve", "take-over", "dispa
 export function parseArgs(argv: string[]): Args {
   const out: Args = { _: [], flags: {} };
   for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
+    const a = argv[i]!;
+    const next = argv[i + 1];
     if (a.startsWith("--")) {
       const eq = a.indexOf("=");
       const [k, v] = eq < 0 ? [a.slice(2), undefined] : [a.slice(2, eq), a.slice(eq + 1)];
       if (v !== undefined) out.flags[k] = v;
-      else if (!SWITCHES.has(k) && i + 1 < argv.length && !argv[i + 1].startsWith("--")) out.flags[k] = argv[++i];
-      else out.flags[k] = true;
+      else if (!SWITCHES.has(k) && next !== undefined && !next.startsWith("--")) {
+        out.flags[k] = next;
+        i++;
+      } else out.flags[k] = true;
     } else out._.push(a);
   }
   return out;
@@ -114,7 +117,7 @@ function trackersFor(repo: string | null): Tracker[] {
 const named = new Set<string>();
 async function fromEach<T>(trackers: Tracker[], ask: (t: Tracker) => Promise<T[]>): Promise<T[]> {
   const results = await Promise.allSettled(trackers.map(ask));
-  const failed = results.flatMap((r, i) => (r.status === "rejected" ? [{ name: trackers[i].name, message: (r.reason as Error).message }] : []));
+  const failed = results.flatMap((r, i) => (r.status === "rejected" ? [{ name: trackers[i]!.name, message: (r.reason as Error).message }] : []));
   if (failed.length === results.length) throw new Error(failed.map((f) => f.message).join("; "));
   for (const f of failed.filter((f) => !named.has(f.name))) {
     named.add(f.name);
@@ -340,7 +343,7 @@ async function ticketsNext(a: Args) {
   const max = Number(str(a.flags.max) ?? Number.POSITIVE_INFINITY);
   if (!(max > 0)) throw new Exit(64, "--max takes a number of tickets above zero");
   const labelled = (await openTickets(repo)).filter((t) => t.labels.includes(READY_LABEL));
-  const { skipped, ...next } = nextTickets(labelled, { repo: repo ?? undefined });
+  const { skipped, ...next } = nextTickets(labelled, repo ? { repo } : {});
   const ready = next.ready.slice(0, max);
   const dispatched = dispatch
     ? ready.map((t) => {
@@ -445,7 +448,7 @@ async function ticketsHandback(a: Args) {
   return 0;
 }
 
-type Item = { id: string; title: string; url: string; repo?: string; why: string; pr?: string; session?: string };
+type Item = { id: string; title: string; url: string; repo?: string; why: string; pr?: string; session?: string | undefined };
 type Sorted = { human: Item[]; agent: Item[] };
 
 const isQuiet = (at: string) => Date.now() - Date.parse(at) > QUIET_MS;

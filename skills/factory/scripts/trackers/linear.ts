@@ -175,11 +175,11 @@ const GITHUB_URL = /github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?(?:\/|$)/;
 export function repoOf(issue: Pick<LinearIssue, "description" | "attachments" | "briefs">): string | null {
   for (const text of [latestBrief(issue.briefs.nodes)?.body ?? "", issue.description ?? ""]) {
     const line = REPO_LINE.exec(text);
-    if (line) return line[1].toLowerCase();
+    if (line) return line[1]!.toLowerCase();
   }
   for (const a of issue.attachments.nodes) {
     const m = GITHUB_URL.exec(a.url);
-    if (m) return m[1].toLowerCase();
+    if (m) return m[1]!.toLowerCase();
   }
   return null;
 }
