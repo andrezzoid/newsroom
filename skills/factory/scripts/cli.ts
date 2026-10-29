@@ -36,6 +36,7 @@ import {
   enabledTrackers,
   githubRepos,
   normalizeId,
+  notATicket,
   repoTracker,
   trackerFor,
   trackerLine,
@@ -321,6 +322,11 @@ async function prMerge(a: Args) {
   for (const id of ticketsOfPr(s, ref.repo)) {
     const tracker = trackerFor(id);
     try {
+      const none = await notATicket(id);
+      if (none) {
+        console.log(`${id} names no ticket, so it was not checked: ${none}`);
+        continue;
+      }
       const { ticket } = await tracker.get(id);
       named.push({ id, tracker });
       if (ticket.labels.includes(HUMAN_LABEL))

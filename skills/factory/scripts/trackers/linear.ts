@@ -127,6 +127,17 @@ ${ISSUE_FIELDS}`;
 
 export const VIEWER_QUERY = `query FactoryViewer { viewer { id name } }`;
 
+export const TEAMS_QUERY = `query FactoryTeams { teams(first: 250) { nodes { key } } }`;
+
+// The workspace's team keys, uppercased, asked for once per process.
+let teamKeys: Promise<Set<string>> | undefined;
+export function linearTeams(): Promise<Set<string>> {
+  teamKeys ??= linear<{ teams: { nodes: { key: string }[] } }>(TEAMS_QUERY).then(
+    (d) => new Set(d.teams.nodes.map((t) => t.key.toUpperCase())),
+  );
+  return teamKeys;
+}
+
 export const TEAM_STATES_QUERY = `
 query FactoryTeamStates($id: String!) {
   team(id: $id) { states { nodes { id name type position } } }

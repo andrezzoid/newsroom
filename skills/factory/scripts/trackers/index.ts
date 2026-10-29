@@ -8,7 +8,7 @@
 
 import { parseRepo, readRepoFile } from "../forge.ts";
 import { GithubTracker } from "./github.ts";
-import { LinearTracker, linearToken } from "./linear.ts";
+import { LinearTracker, linearTeams, linearToken } from "./linear.ts";
 import {
   GITHUB_ISSUE,
   GITHUB_SHORT_ISSUE,
@@ -36,6 +36,16 @@ export function normalizeId(id: string, repo: string | null): string {
     return githubId(id, repo);
   }
   return trackerOf(id) === "linear" ? id.toUpperCase() : id;
+}
+
+// Why an id a pull request's text seems to name is no ticket, or null when it
+// may be one. A Linear key counts only while Linear is connected and has its
+// team, since branch names such as fix-utf-8 look like keys too.
+export async function notATicket(id: string): Promise<string | null> {
+  if (trackerOf(id) !== "linear") return null;
+  if (!linearToken()) return "Linear is not connected";
+  const team = id.slice(0, id.lastIndexOf("-"));
+  return (await linearTeams()).has(team) ? null : `Linear has no team ${team}`;
 }
 
 export function githubRepos(extra: string[] = []): string[] {

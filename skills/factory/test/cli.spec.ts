@@ -14,7 +14,7 @@ import {
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { after, before, beforeEach, describe, test } from "node:test";
 import { expectedSkills, parseArgs } from "../scripts/cli.ts";
 import { claimLog } from "../scripts/tickets.ts";
@@ -39,6 +39,10 @@ let missingLabels: string[] = [];
 let pageSize = 100;
 // The error Linear answers every request with, as for a disabled account.
 let linearDown: string | null = null;
+// The workspace's team keys.
+let linearTeams = ["ENG"];
+// Linear answers an unknown issue with an error instead of null.
+let notFoundAsError = false;
 
 function page(nodes: any[], after: string | null | undefined) {
   const start = after ? Number(after) : 0;
@@ -58,12 +62,21 @@ function answer(op: string, variables: any): { status: number; body: unknown } {
       return data({ issues: page(doneIssues, variables.after) });
     case "FactoryIssue": {
       const found = [...linearIssues, ...doneIssues].find((i) => i.identifier === variables.id);
+      if (!found && notFoundAsError)
+        return {
+          status: 200,
+          body: {
+            errors: [{ message: "Entity not found: Issue - Could not find referenced Issue." }],
+          },
+        };
       return data({
         issue: found
           ? { ...found, comments: { nodes: commentsFor[variables.id] ?? issueComments } }
           : null,
       });
     }
+    case "FactoryTeams":
+      return data({ teams: { nodes: linearTeams.map((key) => ({ key })) } });
     case "FactoryViewer":
       return data({ viewer: { id: "me", name: "André" } });
     case "FactoryTeamStates":
@@ -236,6 +249,8 @@ beforeEach(() => {
   doneIssues = [];
   pageSize = 100;
   linearDown = null;
+  linearTeams = ["ENG"];
+  notFoundAsError = false;
   linearIssues = [linearIssue({ identifier: "ENG-1" })];
   routes();
 });
@@ -416,18 +431,50 @@ describe("pr merge", () => {
 
   test("an id its tracker does not know is noted, not checked, and the merge goes on", async () => {
     routes({
-      "GET repos/o/r/pulls/7": pull(7, { body: "Fixes #99", head: { sha: SHA, ref: "fix-utf-8" } }),
+      "GET repos/o/r/pulls/7": pull(7, {
+        body: "Fixes #99",
+        head: { sha: SHA, ref: "fix-eng-404" },
+      }),
     });
     const r = await run(["pr", "merge", "7", "--repo", "o/r"]);
     expect(r.code).toBe(0);
-    expect(r.out).toContain("UTF-8 names no ticket");
+    expect(r.out).toContain("ENG-404 names no ticket");
     expect(r.out).toContain("o/r#99 names no ticket");
     // Linear can also answer an unknown identifier with an error instead of null.
-    linearDown = "Entity not found: Issue - Could not find referenced Issue.";
+    notFoundAsError = true;
     const again = await run(["pr", "merge", "7", "--repo", "o/r"]);
     expect(again.code).toBe(0);
-    expect(again.out).toContain("UTF-8 names no ticket");
+    expect(again.out).toContain("ENG-404 names no ticket");
     expect(sent("PUT", "repos/o/r/pulls/7/merge")).toHaveLength(2);
+  });
+
+  // Branch names such as fix-utf-8 or release-2024-10 look like Linear keys.
+  test("a Linear-looking id names a ticket only when its team is in the connected workspace", async () => {
+    routes({
+      "GET repos/o/r/pulls/7": pull(7, { body: null, head: { sha: SHA, ref: "fix-utf-8" } }),
+    });
+    const r = await run(["pr", "merge", "7", "--repo", "o/r"]);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("UTF-8 names no ticket, so it was not checked: Linear has no team UTF");
+    expect(ops("FactoryIssue")).toEqual([]);
+  });
+
+  test("without Linear connected, a Linear-looking id names no ticket and the merge goes on", async () => {
+    routes({
+      "GET repos/o/r/pulls/7": pull(7, {
+        body: null,
+        head: { sha: SHA, ref: "andre/eng-1-thing" },
+      }),
+    });
+    const r = await run(["pr", "merge", "7", "--repo", "o/r"], {
+      LINEAR_API_KEY: "",
+      PATH: `${dirname(process.execPath)}:/usr/bin:/bin`,
+    });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain(
+      "ENG-1 names no ticket, so it was not checked: Linear is not connected",
+    );
+    expect(linearCalls).toEqual([]);
   });
 
   test("refuses when Linear fails with an error that only mentions not found", async () => {
