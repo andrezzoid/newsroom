@@ -485,6 +485,9 @@ describe("GitHub adapter", () => {
         "o/r",
       ),
     ).toEqual(["o/r#12", "o/api#3"]);
+    expect(
+      blockedByRefs("Blocked by https://github.com/o/r/issues/12abc and o/r#7x", "o/r"),
+    ).toEqual([]);
   });
 
   test("the Blocked by section of the plan protocol's ticket template names blockers", () => {

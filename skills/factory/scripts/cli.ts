@@ -550,7 +550,7 @@ const inboxItem = (t: Ticket, why: string, more: Partial<Item> = {}): Item => ({
 });
 
 // The blockers a pull request's own session would fix, had it not gone, as
-// the inbox words them.
+// the inbox words them and in the order it lists them.
 const AGENT_FIXES: Partial<Record<BlockerCode, (s: Status) => string>> = {
   conflicts: () => "conflicts",
   behind: (s) => `is behind ${s.baseRef}`,
@@ -576,7 +576,10 @@ async function sortPr(t: Ticket, url: string, session: string | undefined): Prom
   if (!blockers.length) return { human: item("ready to merge"), agent: [] };
   // Babysit leaves open the threads that wait on someone else, so a thread
   // counts only when someone other than an agent spoke last.
-  const broken = blockers.flatMap((b) => AGENT_FIXES[b.code]?.(s) ?? []);
+  const codes = new Set(blockers.map((b) => b.code));
+  const broken = Object.entries(AGENT_FIXES).flatMap(([code, word]) =>
+    codes.has(code as BlockerCode) ? word(s) : [],
+  );
   const stalled = isQuiet(s.updatedAt);
   if (stalled && (s.unresolvedThreads ?? 0) > 0 && !byAgent(forge.lastWord(ref) ?? ""))
     broken.push(`has ${s.unresolvedThreads} open thread(s) waiting on an answer`);

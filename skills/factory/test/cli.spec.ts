@@ -294,6 +294,8 @@ describe("pr status", () => {
       blockers: [],
     });
     expect("next" in s || "verdict" in s).toBe(false);
+    expect(s.mergeableState).toBe("clean");
+    for (const gone of ["body", "pr", "mergeState"]) expect(gone in s).toBe(false);
   });
 
   test("cloud sessions read review threads from the ccr route", async () => {
@@ -1346,6 +1348,11 @@ describe("GitHub Issues tickets", () => {
     );
     expect(r.err).toBe("");
     expect(JSON.parse(r.out).id).toBe("o/r#12");
+    const pr = await run(
+      ["tickets", "show", "#12", "--repo", "https://github.com/o/r/pull/5", "--json"],
+      gh,
+    );
+    expect(JSON.parse(pr.out).id).toBe("o/r#12");
   });
 
   test("show is in babysit while a pull request from its branch is open", async () => {
@@ -1708,6 +1715,22 @@ describe("inbox", () => {
     ]);
     expect(d.human.map((i: any) => [i.id, i.why])).toEqual([
       ["ENG-10", "its pull request waits on a required review"],
+    ]);
+  });
+
+  test("a pull request broken several ways names them conflicts, behind, failing, then changes", async () => {
+    linearIssues = [claimed("ENG-7", 7, pr(7))];
+    commentsFor = { "ENG-7": [] };
+    routes({
+      "GET repos/o/r/pulls/7": pull(7, { updated_at: hoursAgo(5), mergeable_state: "behind" }),
+      "GET repos/o/r/pulls/7/reviews": [],
+      [`GET repos/o/r/commits/${SHA}/check-runs`]: {
+        check_runs: [{ id: 1, name: "test", status: "completed", conclusion: "failure" }],
+      },
+    });
+    const d = JSON.parse((await run(["inbox", "--json"])).out);
+    expect(d.agent.map((i: any) => i.why)).toEqual([
+      "its pull request is behind main, fails test, quiet for over 3h",
     ]);
   });
 

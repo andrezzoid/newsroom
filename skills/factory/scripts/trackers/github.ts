@@ -30,7 +30,7 @@ export function parseId(id: string): { repo: string; number: number } {
 
 const BLOCKED_BY_LINE = /^[ \t>*_-]*blocked[ -]by\b[*_]*\s*:?(.*)$/i;
 const ISSUE_REF = new RegExp(
-  `${GITHUB_ISSUE_URL}|(?<![\\w/])(?:${GITHUB_ISSUE}|${GITHUB_SHORT_ISSUE})\\b`,
+  `(?:${GITHUB_ISSUE_URL}|(?<![\\w/])(?:${GITHUB_ISSUE}|${GITHUB_SHORT_ISSUE}))\\b`,
   "g",
 );
 

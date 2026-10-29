@@ -47,9 +47,13 @@ export function paginate<T>(path: string, pick: (page: any) => T[] = (p) => p, m
 
 export type Ref = { repo: string; number: number };
 
-// owner/name from a remote URL or an owner/name spec.
+// owner/name from an owner/name spec, a remote, or any GitHub URL under the
+// repository, as a pull request's.
 export function parseRepo(spec: string): string | null {
-  const [, repo] = /([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(spec.trim()) ?? [];
+  const [, repo] =
+    /github\.com[/:]([\w.-]+\/[\w.-]+?)(?:\.git)?(?:[/?#]|$)/.exec(spec) ??
+    /([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(spec.trim()) ??
+    [];
   return repo ? repo.toLowerCase() : null;
 }
 
