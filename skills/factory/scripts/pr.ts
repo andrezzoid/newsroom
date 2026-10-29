@@ -145,7 +145,9 @@ export function mergeBlockers(s: Status): Blocker[] {
   const add = (code: BlockerCode, text: string) => out.push({ code, text });
   if (s.state !== "open") add("not-open", `it is ${s.state}`);
   if (s.draft) add("draft", "it is a draft");
-  if (s.conflicts === null) add("computing", "GitHub is still computing whether it conflicts");
+  // GitHub stops computing mergeability once a pull request closes.
+  if (s.state === "open" && s.conflicts === null)
+    add("computing", "GitHub is still computing whether it conflicts");
   else if (s.conflicts) add("conflicts", `it conflicts with ${s.baseRef}`);
   if (s.checks.failing.length) add("failing", `failing: ${s.checks.failing.join(", ")}`);
   if (s.checks.pending.length) add("pending", `pending: ${s.checks.pending.join(", ")}`);

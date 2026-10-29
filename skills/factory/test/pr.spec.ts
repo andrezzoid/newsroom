@@ -67,6 +67,9 @@ describe("mergeBlockers", () => {
 
   test("each fact that stops a merge names itself", () => {
     expect(blockers({ merged: true, state: "closed" })).toEqual(["it is merged"]);
+    // GitHub stops computing mergeability once a pull request closes.
+    expect(blockers({ merged: true, state: "closed", mergeable: null })).toEqual(["it is merged"]);
+    expect(blockers({ state: "closed", mergeable: null })).toEqual(["it is closed"]);
     expect(blockers({ draft: true, mergeableState: "draft" })).toEqual(["it is a draft"]);
     expect(blockers({ mergeable: false, mergeableState: "dirty" })).toEqual([
       "it conflicts with main",
