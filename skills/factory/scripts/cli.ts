@@ -9,13 +9,7 @@ import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import * as forge from "./forge.ts";
-import {
-  byAgent,
-  fingerprint,
-  mergeBlockers,
-  status as statusFromFacts,
-  type Status,
-} from "./pr.ts";
+import { byAgent, fingerprint, mergeBlockers, type Status } from "./pr.ts";
 import { inCloud, run } from "./proc.ts";
 import {
   CLAIMED_LABEL,
@@ -126,9 +120,7 @@ function print(a: Args, data: unknown, human: () => string) {
 // The repository a command is about: --repo, or the clone it runs in.
 function repoArg(a: Args): string | null {
   const flag = str(a.flags.repo);
-  if (flag) return flag.toLowerCase();
-  const here = forge.currentRepo();
-  return here ? `${here.owner}/${here.repo}`.toLowerCase() : null;
+  return flag ? flag.toLowerCase() : forge.currentRepo();
 }
 
 // A repository whose instructions name GitHub Issues joins the GitHub tracker.
@@ -187,19 +179,6 @@ function reportArg(a: Args, kind: ReportKind, usage: string): string {
   return body;
 }
 
-// GitHub computes mergeability after each push: ask once more, 3 seconds
-// later, before reporting it unknown.
-async function statusOf(
-  ref: forge.Repo & { number: number },
-): Promise<{ status: Status; body: string | null }> {
-  let facts = forge.prFacts(ref, ref.number);
-  if (facts.state === "open" && facts.mergeable === null) {
-    await sleep(3000);
-    facts = forge.prFacts(ref, ref.number);
-  }
-  return { status: statusFromFacts(facts), body: facts.body };
-}
-
 function statusLines(s: Status): string {
   const checks = [`${s.checks.passing} passing`];
   if (s.checks.failing.length) checks.push(`failing: ${s.checks.failing.join(", ")}`);
@@ -220,7 +199,7 @@ function statusLines(s: Status): string {
 
 // The facts, plus what in them would stop `pr merge`.
 async function prStatus(a: Args) {
-  const { status } = await statusOf(forge.resolvePr(a._[2], str(a.flags.repo)));
+  const { status } = await forge.pullStatus(forge.resolvePr(a._[2], str(a.flags.repo)));
   const blockers = mergeBlockers(status);
   print(
     a,
@@ -244,7 +223,7 @@ async function prWatch(a: Args) {
   let failures = 0;
   for (;;) {
     try {
-      const { status } = await statusOf(ref);
+      const { status } = await forge.pullStatus(ref);
       failures = 0;
       const fp = fingerprint(status);
       if (fp !== last) {
@@ -275,9 +254,9 @@ async function prReply(a: Args) {
   const comment = commentArg(a, REPLY_USAGE);
   const body = bodyArg(a, REPLY_USAGE);
   const ref = forge.resolvePr(a._[2], str(a.flags.repo));
-  forge.replyTo(ref, ref.number, comment, body);
+  forge.replyTo(ref, comment, body);
   const resolve = a.flags.resolve === true;
-  if (resolve) forge.resolveThread(ref, ref.number, comment);
+  if (resolve) forge.resolveThread(ref, comment);
   console.log(
     `replied to comment ${comment} on #${ref.number}${resolve ? " and resolved its thread" : ""}`,
   );
@@ -287,7 +266,7 @@ async function prReply(a: Args) {
 async function prResolve(a: Args) {
   const comment = commentArg(a, "usage: factory pr resolve [PR] --comment <id>");
   const ref = forge.resolvePr(a._[2], str(a.flags.repo));
-  forge.resolveThread(ref, ref.number, comment);
+  forge.resolveThread(ref, comment);
   console.log(`resolved the thread of comment ${comment} on #${ref.number}`);
   return 0;
 }
@@ -304,9 +283,9 @@ async function prReport(a: Args) {
   if (!r)
     throw new Exit(64, `the report must start with its title line, such as "Done · <subject>"`);
   const ref = forge.resolvePr(a._[2], str(a.flags.repo));
-  forge.comment(ref, ref.number, body);
+  forge.comment(ref, body);
   const draft = r.kind === "Handed back";
-  if (draft) forge.convertToDraft(ref, ref.number);
+  if (draft) forge.convertToDraft(ref);
   console.log(
     `posted the report on #${ref.number}${draft ? ", and turned it into a draft: it needs the user" : ""}`,
   );
@@ -326,21 +305,20 @@ async function prOpen(a: Args) {
   let body = bodyArg(a, OPEN_USAGE);
   const repo = forge.currentRepo();
   if (!repo) throw new Exit(64, "cannot tell which repository: run inside a clone");
-  const slug = `${repo.owner}/${repo.repo}`.toLowerCase();
   if (a.flags.ticket !== undefined) {
     const ticketFlag = str(a.flags.ticket);
     if (!ticketFlag) throw new Exit(64, OPEN_USAGE);
-    const id = normalizeId(ticketFlag, slug);
+    const id = normalizeId(ticketFlag, repo);
     const { ticket } = await trackerFor(id).get(id);
     // A closes line names the ticket only within its own repository: a bare
     // #5 would close issue 5 of this one.
-    if (ticket.repo && ticket.repo !== slug)
+    if (ticket.repo && ticket.repo !== repo)
       throw new Exit(
         3,
-        `${ticket.id} ships in ${ticket.repo}, not in ${slug}, where the pull request would open`,
+        `${ticket.id} ships in ${ticket.repo}, not in ${repo}, where the pull request would open`,
       );
     // Only the body counts: a branch named after an issue does not close it.
-    if (!closedBy(body, slug).includes(ticket.id)) body = `${body}\n\n${ticket.closes}`;
+    if (!closedBy(body, repo).includes(ticket.id)) body = `${body}\n\n${ticket.closes}`;
   }
   const pr = forge.openPr(repo, title, body);
   console.log(`opened #${pr.number} ${pr.url}`);
@@ -351,10 +329,10 @@ async function prOpen(a: Args) {
 // then takes the factory's labels off the tickets it names.
 async function prMerge(a: Args) {
   const ref = forge.resolvePr(a._[2], str(a.flags.repo));
-  const { status: s, body } = await statusOf(ref);
+  const { status: s, body } = await forge.pullStatus(ref);
   const blockers = mergeBlockers(s);
   const named: { id: string; tracker: Tracker }[] = [];
-  for (const id of ticketsOfPr({ body, headRef: s.headRef }, `${ref.owner}/${ref.repo}`)) {
+  for (const id of ticketsOfPr({ body, headRef: s.headRef }, ref.repo)) {
     const tracker = trackerFor(id);
     try {
       const { ticket } = await tracker.get(id);
@@ -373,11 +351,7 @@ async function prMerge(a: Args) {
     console.log(`refusing to merge #${s.pr}:\n${blockers.map((b) => `  - ${b}`).join("\n")}`);
     return 3;
   }
-  const method = forge.mergeMethod(ref);
-  forge.api(`repos/${ref.owner}/${ref.repo}/pulls/${ref.number}/merge`, {
-    method: "PUT",
-    body: { merge_method: method, sha: s.headSha },
-  });
+  const method = forge.merge(ref, s.headSha);
   console.log(`merged #${s.pr} (${method}) at ${s.headSha.slice(0, 7)}`);
   for (const t of named) {
     await t.tracker.release(t.id);
@@ -413,14 +387,7 @@ async function ticketsNext(a: Args) {
       64,
       "--dispatch starts background sessions on this machine; from a cloud session, start one per ticket with the create_session tool",
     );
-  const here = forge.currentRepo();
-  const repo = dispatch
-    ? here
-      ? `${here.owner}/${here.repo}`.toLowerCase()
-      : null
-    : a.flags.here || a.flags.repo
-      ? repoArg(a)
-      : null;
+  const repo = dispatch ? forge.currentRepo() : a.flags.here || a.flags.repo ? repoArg(a) : null;
   if ((dispatch || a.flags.here || a.flags.repo) && !repo)
     throw new Exit(
       64,
@@ -608,9 +575,9 @@ const inboxItem = (t: Ticket, why: string, more: Partial<Item> = {}): Item => ({
 async function sortPr(t: Ticket, url: string, session: string | undefined): Promise<Sorted> {
   const item = (why: string) => [inboxItem(t, why, { pr: url, session })];
   const ref = forge.resolvePr(url, undefined);
-  const { status: s } = await statusOf(ref);
+  const { status: s } = await forge.pullStatus(ref);
   if (s.draft) {
-    const last = latestReport(forge.comments(`${ref.owner}/${ref.repo}`, ref.number));
+    const last = latestReport(forge.comments(ref));
     return {
       human: item(last ? `a draft pull request: ${last.title}` : "a draft pull request"),
       agent: [],
@@ -627,7 +594,7 @@ async function sortPr(t: Ticket, url: string, session: string | undefined): Prom
     s.reviews.changesRequested.length ? "has changes requested" : "",
   ].filter(Boolean);
   const stalled = isQuiet(s.updatedAt);
-  if (stalled && (s.unresolvedThreads ?? 0) > 0 && !byAgent(forge.lastWord(ref, ref.number) ?? ""))
+  if (stalled && (s.unresolvedThreads ?? 0) > 0 && !byAgent(forge.lastWord(ref) ?? ""))
     broken.push(`has ${s.unresolvedThreads} open thread(s) waiting on an answer`);
   if (broken.length && stalled)
     return {
@@ -747,7 +714,7 @@ async function stats(a: Args) {
     }
   }
   for (const p of merged) {
-    for (const c of forge.comments(p.repo, p.number)) {
+    for (const c of forge.comments(p)) {
       const r = report(c.body, c.createdAt);
       if (r && recent(r.at)) reports.push({ where: `${p.repo}#${p.number}`, url: p.url, ...r });
     }
@@ -770,7 +737,7 @@ async function stats(a: Args) {
       needsYou: reports.filter((r) => r.needsYou),
       reverts: merged.filter((p) => /^revert\b/i.test(p.title)),
       reviewComments: merged.flatMap((p) =>
-        forge.reviewComments(p.repo, p.number).map((c) => ({ pr: `${p.repo}#${p.number}`, ...c })),
+        forge.reviewComments(p).map((c) => ({ pr: `${p.repo}#${p.number}`, ...c })),
       ),
     },
     // Only the user's tickets and unassigned ones count, since a colleague accounts for their own.
@@ -841,8 +808,7 @@ async function doctor(a: Args) {
       : "gh cannot reach GitHub: run `gh auth login` locally; in the cloud, connect GitHub to the session",
   );
 
-  const here = forge.currentRepo();
-  const repo = here ? `${here.owner}/${here.repo}` : null;
+  const repo = forge.currentRepo();
   const trackers = trackersIn(repo);
   if (!trackers.length)
     add(

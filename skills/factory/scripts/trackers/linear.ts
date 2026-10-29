@@ -5,6 +5,7 @@
 // placeholder the cloud uses for GitHub too) says so, and the CLI sends no key.
 // The query documents are validated against Linear's published schema.
 
+import { parsePrUrl } from "../forge.ts";
 import { run } from "../proc.ts";
 import {
   BRIEF_HEADING,
@@ -248,7 +249,7 @@ export function toTicket(i: LinearIssue): Ticket {
         done: DONE.includes(r.issue.state.type),
       })),
     openChildren: i.children.nodes.filter((c) => !DONE.includes(c.state.type)).length,
-    prs: i.attachments.nodes.map((a) => a.url).filter((u) => /github\.com\/.+\/pull\/\d+/.test(u)),
+    prs: i.attachments.nodes.map((a) => a.url).filter((u) => parsePrUrl(u) !== null),
     closes: `Closes ${i.identifier}`,
     assignees: i.assignee ? [{ name: i.assignee.name, me: i.assignee.isMe === true }] : [],
   };

@@ -181,12 +181,11 @@ export class GithubTracker implements Tracker {
     if (issue.pull_request) throw new NotFound(`${id} is a pull request, not an issue`);
     const ticket = this.full(repo, issue);
     ticket.prs = closing(paginate<any>(`repos/${repo}/pulls?state=open`), ticket.id);
-    return { ticket, comments: comments(repo, number) };
+    return { ticket, comments: comments({ repo, number }) };
   }
 
   async comments(id: string): Promise<TicketComment[]> {
-    const { repo, number } = parseId(id);
-    return comments(repo, number);
+    return comments(parseId(id));
   }
 
   async start(t: Ticket): Promise<void> {
