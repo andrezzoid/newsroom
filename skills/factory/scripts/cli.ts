@@ -110,7 +110,10 @@ function print(a: Args, data: unknown, human: () => string) {
 // The repository a command is about: --repo, or the clone it runs in.
 function repoArg(a: Args): string | null {
   const flag = str(a.flags.repo);
-  return flag ? flag.toLowerCase() : forge.currentRepo();
+  if (!flag) return forge.currentRepo();
+  const repo = forge.parseRepo(flag);
+  if (!repo) throw new Usage(`--repo takes owner/name or a GitHub URL, not ${flag}`);
+  return repo;
 }
 
 // A repository whose instructions name GitHub Issues joins the GitHub tracker.
@@ -189,7 +192,7 @@ function statusLines(s: Status): string {
 
 // The facts, plus what in them would stop `pr merge`.
 async function prStatus(a: Args) {
-  const { status } = await forge.pullStatus(forge.resolvePr(a._[2], str(a.flags.repo)));
+  const { status } = await forge.pullStatus(forge.resolvePr(a._[2], repoArg(a)));
   const blockers = mergeBlockers(status).map((b) => b.text);
   print(
     a,
@@ -207,7 +210,7 @@ async function prWatch(a: Args) {
   const seconds = Number(str(a.flags.interval) ?? 60);
   if (!Number.isFinite(seconds) || seconds <= 0)
     throw new Usage("--interval takes a number of seconds above zero");
-  const ref = forge.resolvePr(a._[2], str(a.flags.repo));
+  const ref = forge.resolvePr(a._[2], repoArg(a));
   const interval = seconds * 1000;
   let last = "";
   let failures = 0;
@@ -240,7 +243,7 @@ function commentArg(a: Args): number {
 async function prReply(a: Args) {
   const comment = commentArg(a);
   const body = bodyArg(a);
-  const ref = forge.resolvePr(a._[2], str(a.flags.repo));
+  const ref = forge.resolvePr(a._[2], repoArg(a));
   forge.replyTo(ref, comment, body);
   const resolve = a.flags.resolve === true;
   if (resolve) forge.resolveThread(ref, comment);
@@ -252,7 +255,7 @@ async function prReply(a: Args) {
 
 async function prResolve(a: Args) {
   const comment = commentArg(a);
-  const ref = forge.resolvePr(a._[2], str(a.flags.repo));
+  const ref = forge.resolvePr(a._[2], repoArg(a));
   forge.resolveThread(ref, comment);
   console.log(`resolved the thread of comment ${comment} on #${ref.number}`);
   return 0;
@@ -267,7 +270,7 @@ async function prReport(a: Args) {
     throw new Exit(64, "a Revised report goes on the ticket: factory tickets revise");
   if (!r)
     throw new Exit(64, `the report must start with its title line, such as "Done · <subject>"`);
-  const ref = forge.resolvePr(a._[2], str(a.flags.repo));
+  const ref = forge.resolvePr(a._[2], repoArg(a));
   forge.comment(ref, body);
   const draft = r.kind === "Handed back";
   if (draft) forge.convertToDraft(ref);
@@ -310,7 +313,7 @@ async function prOpen(a: Args) {
 // Merges only a pull request whose facts allow it, at the head it checked,
 // then takes the factory's labels off the tickets it names.
 async function prMerge(a: Args) {
-  const ref = forge.resolvePr(a._[2], str(a.flags.repo));
+  const ref = forge.resolvePr(a._[2], repoArg(a));
   const { status: s, body } = await forge.pullStatus(ref);
   const blockers = mergeBlockers(s).map((b) => b.text);
   const named: { id: string; tracker: Tracker }[] = [];
@@ -558,7 +561,8 @@ const AGENT_FIXES: Partial<Record<BlockerCode, (s: Status) => string>> = {
 // and the last word depend on the status, so they come after it.
 async function sortPr(t: Ticket, url: string, session: string | undefined): Promise<Sorted> {
   const item = (why: string) => [inboxItem(t, why, { pr: url, session })];
-  const ref = forge.resolvePr(url, undefined);
+  const ref = forge.parsePrUrl(url);
+  if (!ref) return { human: [], agent: [] };
   const { status: s } = await forge.pullStatus(ref);
   if (s.draft) {
     const last = latestReport(forge.comments(ref));

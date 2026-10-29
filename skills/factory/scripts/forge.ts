@@ -74,11 +74,11 @@ export function repoRoot(): string | null {
   return git(["rev-parse", "--show-toplevel"]);
 }
 
-// Accepts a number, a PR URL, or nothing (the PR for the current branch).
-export function resolvePr(arg: string | undefined, repoFlag: string | undefined): Ref {
+// Accepts a number, a PR URL, or nothing (the PR for the current branch). A
+// number or nothing needs the repository it is in.
+export function resolvePr(arg: string | undefined, repo: string | null): Ref {
   const url = arg ? parsePrUrl(arg) : null;
   if (url) return url;
-  const repo = (repoFlag ? parseRepo(repoFlag) : null) ?? currentRepo();
   if (!repo)
     throw new GhError("cannot tell which repository: pass --repo owner/name or run inside a clone");
   if (arg && /^\d+$/.test(arg)) return { repo, number: Number(arg) };

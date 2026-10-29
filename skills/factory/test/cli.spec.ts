@@ -1329,6 +1329,15 @@ describe("GitHub Issues tickets", () => {
     expect(ghCalls().some((c) => c.args.includes("POST"))).toBe(false);
   });
 
+  test("--repo takes a remote URL or any case, for tickets as for pull requests", async () => {
+    const r = await run(
+      ["tickets", "show", "#12", "--repo", "https://github.com/O/R.git", "--json"],
+      gh,
+    );
+    expect(r.err).toBe("");
+    expect(JSON.parse(r.out).id).toBe("o/r#12");
+  });
+
   test("show is in babysit while a pull request from its branch is open", async () => {
     routes({
       ...current(),
