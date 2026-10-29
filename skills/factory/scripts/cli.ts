@@ -54,19 +54,6 @@ const RUN_SKILLS = ".claude/skills";
 
 type Args = { _: string[]; flags: Record<string, string | true> };
 
-// Switches never take a value, so `claim --take-over ENG-1` keeps ENG-1 as
-// the ticket instead of swallowing it.
-const SWITCHES = new Set([
-  "json",
-  "here",
-  "help",
-  "resolve",
-  "take-over",
-  "dispatch",
-  "human",
-  "agent",
-]);
-
 export function parseArgs(argv: string[]): Args {
   const out: Args = { _: [], flags: {} };
   const rest = [...argv];
@@ -111,6 +98,10 @@ class Exit extends Error {
     this.code = code;
   }
 }
+
+// Wrong arguments: main prints the command's usage line under the message,
+// and exits 64.
+class Usage extends Error {}
 
 function print(a: Args, data: unknown, human: () => string) {
   console.log(a.flags.json ? JSON.stringify(data, null, 2) : human());
@@ -162,17 +153,17 @@ async function fromEach<T>(trackers: Tracker[], ask: (t: Tracker) => Promise<T[]
 const openTickets = (repo: string | null) => fromEach(trackersFor(repo), (t) => t.open());
 
 // The text of a report or reply, from --body-file or --body.
-function bodyArg(a: Args, usage: string): string {
+function bodyArg(a: Args): string {
   const file = str(a.flags["body-file"]);
   const body = (file ? readFileSync(file, "utf8") : (str(a.flags.body) ?? "")).trim();
-  if (!body) throw new Exit(64, usage);
+  if (!body) throw new Usage();
   return body;
 }
 
 // A report whose title line names the kind the command posts, so the
 // plan and the inbox can find it again.
-function reportArg(a: Args, kind: ReportKind, usage: string): string {
-  const body = bodyArg(a, usage);
+function reportArg(a: Args, kind: ReportKind): string {
+  const body = bodyArg(a);
   if (report(body)?.kind !== kind)
     throw new Exit(64, `the report must start with its title line, "${kind} · <subject>"`);
   return body;
@@ -215,7 +206,7 @@ async function prStatus(a: Args) {
 async function prWatch(a: Args) {
   const seconds = Number(str(a.flags.interval) ?? 60);
   if (!Number.isFinite(seconds) || seconds <= 0)
-    throw new Exit(64, "usage: factory pr watch [PR] [--interval <seconds above zero>]");
+    throw new Usage("--interval takes a number of seconds above zero");
   const ref = forge.resolvePr(a._[2], str(a.flags.repo));
   const interval = seconds * 1000;
   let last = "";
@@ -240,18 +231,15 @@ async function prWatch(a: Args) {
   }
 }
 
-function commentArg(a: Args, usage: string): number {
+function commentArg(a: Args): number {
   const id = Number(str(a.flags.comment));
-  if (!Number.isInteger(id) || id <= 0) throw new Exit(64, usage);
+  if (!Number.isInteger(id) || id <= 0) throw new Usage();
   return id;
 }
 
-const REPLY_USAGE =
-  "usage: factory pr reply [PR] --comment <id> (--body <text> | --body-file <path>) [--resolve]";
-
 async function prReply(a: Args) {
-  const comment = commentArg(a, REPLY_USAGE);
-  const body = bodyArg(a, REPLY_USAGE);
+  const comment = commentArg(a);
+  const body = bodyArg(a);
   const ref = forge.resolvePr(a._[2], str(a.flags.repo));
   forge.replyTo(ref, comment, body);
   const resolve = a.flags.resolve === true;
@@ -263,19 +251,17 @@ async function prReply(a: Args) {
 }
 
 async function prResolve(a: Args) {
-  const comment = commentArg(a, "usage: factory pr resolve [PR] --comment <id>");
+  const comment = commentArg(a);
   const ref = forge.resolvePr(a._[2], str(a.flags.repo));
   forge.resolveThread(ref, comment);
   console.log(`resolved the thread of comment ${comment} on #${ref.number}`);
   return 0;
 }
 
-const PR_REPORT_USAGE = "usage: factory pr report [PR] --body-file <report>";
-
 // Reports on the work go on its pull request. A hand-back also turns the pull
 // request back into a draft: the inbox lists drafts as the user's.
 async function prReport(a: Args) {
-  const body = bodyArg(a, PR_REPORT_USAGE);
+  const body = bodyArg(a);
   const r = report(body);
   if (r?.kind === "Revised")
     throw new Exit(64, "a Revised report goes on the ticket: factory tickets revise");
@@ -291,22 +277,19 @@ async function prReport(a: Args) {
   return 0;
 }
 
-const OPEN_USAGE =
-  "usage: factory pr open [--ticket <ticket or issue ID>] --title <title> (--body <text> | --body-file <file>)";
-
 // Opens a pull request from the current branch, in the clone's own
 // repository, since the branch goes to origin. With --ticket, the body ends
 // with the ticket's closes line, which the merge check reads to find the
 // ticket and the tracker reads to close it on merge.
 async function prOpen(a: Args) {
   const title = str(a.flags.title);
-  if (!title) throw new Exit(64, OPEN_USAGE);
-  let body = bodyArg(a, OPEN_USAGE);
+  if (!title) throw new Usage();
+  let body = bodyArg(a);
   const repo = forge.currentRepo();
   if (!repo) throw new Exit(64, "cannot tell which repository: run inside a clone");
   if (a.flags.ticket !== undefined) {
     const ticketFlag = str(a.flags.ticket);
-    if (!ticketFlag) throw new Exit(64, OPEN_USAGE);
+    if (!ticketFlag) throw new Usage();
     const id = normalizeId(ticketFlag, repo);
     const { ticket } = await trackerFor(id).get(id);
     // A closes line names the ticket only within its own repository: a bare
@@ -393,7 +376,7 @@ async function ticketsNext(a: Args) {
       "cannot tell which repository: pass --repo owner/name or run inside a clone",
     );
   const max = Number(str(a.flags.max) ?? Number.POSITIVE_INFINITY);
-  if (!(max > 0)) throw new Exit(64, "--max takes a number of tickets above zero");
+  if (!(max > 0)) throw new Usage("--max takes a number of tickets above zero");
   const labelled = (await openTickets(repo)).filter((t) => t.labels.includes(READY_LABEL));
   const { skipped, ...next } = nextTickets(labelled, repo ? { repo } : {});
   const ready = next.ready.slice(0, max);
@@ -429,13 +412,13 @@ async function ticketsNext(a: Args) {
   return dispatched.every((d) => d.ok) ? 0 : 1;
 }
 
-function idArg(a: Args, usage: string): string {
-  if (!a._[2]) throw new Exit(64, usage);
+function idArg(a: Args): string {
+  if (!a._[2]) throw new Usage();
   return normalizeId(a._[2], repoArg(a));
 }
 
 async function ticketsShow(a: Args) {
-  const id = idArg(a, "usage: factory tickets show <ID>");
+  const id = idArg(a);
   const { ticket, comments } = await trackerFor(id).get(id);
   const open = ticket.repo ? forge.openPrs(ticket.repo, ticket.branchName, ticket.prs) : [];
   const phase = phaseOf(ticket, open);
@@ -472,7 +455,7 @@ async function ticketsShow(a: Args) {
 
 // The claim is the in-progress label plus a comment naming this session.
 async function ticketsClaim(a: Args) {
-  const id = idArg(a, "usage: factory tickets claim <ID> [--take-over]");
+  const id = idArg(a);
   const tracker = trackerFor(id);
   const { ticket, comments } = await tracker.get(id);
   const ok = claimable(ticket);
@@ -505,26 +488,21 @@ async function ticketsClaim(a: Args) {
   return 0;
 }
 
-const REVISE_USAGE = "usage: factory tickets revise <ID> --body-file <report>";
-
 // A plan change the user agreed in a session, posted where the plan lives.
 async function ticketsRevise(a: Args) {
-  const id = idArg(a, REVISE_USAGE);
-  await trackerFor(id).comment(id, reportArg(a, "Revised", REVISE_USAGE));
+  const id = idArg(a);
+  await trackerFor(id).comment(id, reportArg(a, "Revised"));
   console.log(`posted the revision on ${id}: tickets show now reads it as part of the plan`);
   return 0;
 }
-
-const NEW_USAGE =
-  "usage: factory tickets new --from <ID> --title <title> (--body <text> | --body-file <path>)";
 
 // A follow-up found while working a ticket: a new ticket beside it, with no
 // labels, so the next triage picks it up.
 async function ticketsNew(a: Args) {
   const from = str(a.flags.from);
   const title = str(a.flags.title);
-  if (!from || !title) throw new Exit(64, NEW_USAGE);
-  const body = bodyArg(a, NEW_USAGE);
+  if (!from || !title) throw new Usage();
+  const body = bodyArg(a);
   const id = normalizeId(from, repoArg(a));
   const tracker = trackerFor(id);
   const { ticket } = await tracker.get(id);
@@ -534,11 +512,9 @@ async function ticketsNew(a: Args) {
   return 0;
 }
 
-const HANDBACK_USAGE = "usage: factory tickets handback <ID> --body-file <report>";
-
 async function ticketsHandback(a: Args) {
-  const id = idArg(a, HANDBACK_USAGE);
-  const body = reportArg(a, "Handed back", HANDBACK_USAGE);
+  const id = idArg(a);
+  const body = reportArg(a, "Handed back");
   const tracker = trackerFor(id);
   await tracker.comment(id, body);
   const { labelled } = await tracker.handBack(id);
@@ -685,7 +661,7 @@ function sinceArg(a: Args): string {
   if (m)
     return new Date(Date.now() - Number(m[1]) * (m[2] === "d" ? 864e5 : 3600_000)).toISOString();
   if (!Number.isNaN(Date.parse(v))) return new Date(v).toISOString();
-  throw new Exit(64, "usage: factory stats [--since 7d | 48h | 2026-10-01]");
+  throw new Usage("--since takes 7d, 48h or a date such as 2026-10-01");
 }
 
 // The week's facts for the Upkeep review: what got done, what went wrong, and
@@ -881,36 +857,128 @@ async function doctor(a: Args) {
   return checks.some((c) => c.level === "fail") ? 1 : 0;
 }
 
+type Command = { usage: string; about: string; run: (a: Args) => Promise<number> };
+
+// Every command, its usage line and what it does. The help, the usage a
+// wrong call prints and the flags that take no value all come from here.
+const COMMANDS: Record<string, Command> = {
+  doctor: {
+    usage: "doctor [--json]",
+    about: "check gh, trackers, skills, the repo's tracker and run skill",
+    run: doctor,
+  },
+  inbox: {
+    usage: "inbox [--human | --agent] [--json]",
+    about: "what waits on you, and what an agent can pick up now",
+    run: inbox,
+  },
+  stats: {
+    usage: "stats [--since 7d] [--json]",
+    about: "what got done, what went wrong, what is still open",
+    run: stats,
+  },
+  "tickets next": {
+    usage: "tickets next [--repo o/r | --here] [--dispatch] [--max N] [--json]",
+    about: `tickets labelled ${READY_LABEL} whose blockers are done, best first; --dispatch starts a background session for each, in this clone`,
+    run: ticketsNext,
+  },
+  "tickets show": {
+    usage: "tickets show <ID> [--json]",
+    about: "the ticket, its phase, its claim and its plan",
+    run: ticketsShow,
+  },
+  "tickets claim": {
+    usage: "tickets claim <ID> [--take-over]",
+    about: `label it ${CLAIMED_LABEL} for this session; exit 3 if another session holds it, or it is blocked or not ${READY_LABEL}`,
+    run: ticketsClaim,
+  },
+  "tickets new": {
+    usage: "tickets new --from <ID> --title T (--body TEXT | --body-file F)",
+    about: "file a follow-up beside the ticket, unlabelled, for triage",
+    run: ticketsNew,
+  },
+  "tickets revise": {
+    usage: "tickets revise <ID> (--body TEXT | --body-file F)",
+    about: 'post a "Revised ·" report, which joins the plan',
+    run: ticketsRevise,
+  },
+  "tickets handback": {
+    usage: "tickets handback <ID> (--body TEXT | --body-file F)",
+    about: `post a "Handed back ·" report and relabel it ${HUMAN_LABEL}`,
+    run: ticketsHandback,
+  },
+  "pr status": {
+    usage: "pr status [PR] [--repo o/r] [--json]",
+    about: "conflicts, checks, reviews and open threads",
+    run: prStatus,
+  },
+  "pr watch": {
+    usage: "pr watch [PR] [--interval 60]",
+    about: "one line per change until merged or closed",
+    run: prWatch,
+  },
+  "pr reply": {
+    usage: "pr reply [PR] --comment ID (--body TEXT | --body-file F) [--resolve]",
+    about:
+      "reply in a review comment's thread, with the Claude Code footer; --resolve also resolves the thread",
+    run: prReply,
+  },
+  "pr resolve": {
+    usage: "pr resolve [PR] --comment ID",
+    about: "resolve the review thread holding the comment",
+    run: prResolve,
+  },
+  "pr open": {
+    usage: "pr open [--ticket <ticket or issue ID>] --title T (--body TEXT | --body-file F)",
+    about:
+      "push the branch and open a pull request to the default branch; --ticket ends the body with the ticket's closes line",
+    run: prOpen,
+  },
+  "pr report": {
+    usage: "pr report [PR] (--body TEXT | --body-file F)",
+    about: "post a report on the pull request; a hand-back turns it into a draft",
+    run: prReport,
+  },
+  "pr merge": {
+    usage: "pr merge [PR]",
+    about: "merge if nothing blocks it, else exit 3 with what does",
+    run: prMerge,
+  },
+};
+
+// A flag a usage line gives no value, as --json in "[--json]", is a switch,
+// so `claim --take-over ENG-1` keeps ENG-1 as the ticket instead of
+// swallowing it.
+const SWITCHES = new Set([
+  "help",
+  ...Object.values(COMMANDS).flatMap((c) =>
+    [...c.usage.matchAll(/--([a-z-]+)(?=$|[\])]| [[(|]| --)/g)].map((m) => m[1] ?? ""),
+  ),
+]);
+
+const ABOUT_AT = 48;
+const ABOUT_WIDTH = 62;
+
+function helpEntry(c: Command): string {
+  const lines: string[] = [];
+  for (const word of c.about.split(" ")) {
+    const last = lines.at(-1);
+    if (last !== undefined && last.length + word.length < ABOUT_WIDTH)
+      lines[lines.length - 1] = `${last} ${word}`;
+    else lines.push(word);
+  }
+  const usage = `  factory ${c.usage}`;
+  const indent = " ".repeat(ABOUT_AT);
+  const [first = "", ...rest] = lines;
+  const head = usage.length < ABOUT_AT ? [usage.padEnd(ABOUT_AT) + first] : [usage, indent + first];
+  return [...head, ...rest.map((l) => indent + l)].join("\n");
+}
+
 const HELP = `factory: the facts and gates of the ticket → pull request → merge factory
 
 Tickets are ENG-123 (Linear), owner/repo#123 (GitHub Issues), or #123 inside a clone.
 
-  factory doctor [--json]                       check gh, trackers, skills, the repo's tracker and run skill
-  factory inbox [--human | --agent] [--json]    what waits on you, and what an agent can pick up now
-  factory stats [--since 7d] [--json]           what got done, what went wrong, what is still open
-  factory tickets next [--repo o/r | --here] [--dispatch] [--max N] [--json]
-                                                tickets labelled ${READY_LABEL} whose blockers are done, best
-                                                first; --dispatch starts a background session for each, in
-                                                this clone
-  factory tickets show <ID> [--json]            the ticket, its phase, its claim and its plan
-  factory tickets claim <ID> [--take-over]      label it ${CLAIMED_LABEL} for this session; exit 3 if another session
-                                                holds it, or it is blocked or not ready-for-agent
-  factory tickets new --from <ID> --title T --body-file F
-                                                file a follow-up beside the ticket, unlabelled, for triage
-  factory tickets revise <ID> --body-file F     post a "Revised ·" report, which joins the plan
-  factory tickets handback <ID> --body-file F   post a "Handed back ·" report and relabel it ${HUMAN_LABEL}
-  factory pr status [PR] [--repo o/r] [--json]  conflicts, checks, reviews and open threads
-  factory pr watch [PR] [--interval 60]         one line per change until merged or closed
-  factory pr reply [PR] --comment ID (--body TEXT | --body-file F) [--resolve]
-                                                reply in a review comment's thread, with the Claude Code
-                                                footer; --resolve also resolves the thread
-  factory pr resolve [PR] --comment ID          resolve the review thread holding the comment
-  factory pr open [--ticket <ticket or issue ID>] --title T (--body TEXT | --body-file F)
-                                                push the branch and open a pull request to the default
-                                                branch; --ticket ends the body with the ticket's closes line
-  factory pr report [PR] --body-file F          post a report on the pull request; a hand-back turns
-                                                it into a draft
-  factory pr merge [PR]                         merge if nothing blocks it, else exit 3 with what does
+${Object.values(COMMANDS).map(helpEntry).join("\n")}
 
 Trackers: Linear when LINEAR_API_KEY is set (or \`linear auth login\` locally); GitHub Issues for
 the repos in FACTORY_GITHUB_REPOS, and for a repo whose CLAUDE.md or AGENTS.md says
@@ -919,32 +987,18 @@ the repos in FACTORY_GITHUB_REPOS, and for a repo whose CLAUDE.md or AGENTS.md s
 export async function main(argv: string[]): Promise<number> {
   const a = parseArgs(argv);
   const [group, sub] = a._;
-  const routes: Record<string, (a: Args) => Promise<number>> = {
-    doctor,
-    inbox,
-    stats,
-    "tickets next": ticketsNext,
-    "tickets show": ticketsShow,
-    "tickets claim": ticketsClaim,
-    "tickets new": ticketsNew,
-    "tickets revise": ticketsRevise,
-    "tickets handback": ticketsHandback,
-    "pr status": prStatus,
-    "pr watch": prWatch,
-    "pr reply": prReply,
-    "pr resolve": prResolve,
-    "pr open": prOpen,
-    "pr report": prReport,
-    "pr merge": prMerge,
-  };
-  const route = routes[`${group} ${sub}`] ?? routes[group ?? ""];
-  if (!route || a.flags.help) {
+  const command = COMMANDS[`${group} ${sub}`] ?? COMMANDS[group ?? ""];
+  if (!command || a.flags.help) {
     console.log(HELP);
     return group && !a.flags.help ? 64 : 0;
   }
   try {
-    return await route(a);
+    return await command.run(a);
   } catch (e) {
+    if (e instanceof Usage) {
+      console.error(`${e.message ? `${e.message}\n` : ""}usage: factory ${command.usage}`);
+      return 64;
+    }
     if (e instanceof Exit) {
       console.error(e.message);
       return e.code;

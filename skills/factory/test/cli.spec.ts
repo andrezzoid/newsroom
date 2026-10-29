@@ -1847,6 +1847,41 @@ test("a flag's value keeps every = after the first", () => {
   );
 });
 
+// The usage lines in the help are the one list of flags: a flag they give no
+// value is a switch, and leaves the next word alone.
+test("a flag the help gives no value takes none, and one it gives a value takes the next word", () => {
+  for (const [argv, positional] of [
+    [
+      ["tickets", "claim", "--take-over", "ENG-1"],
+      ["tickets", "claim", "ENG-1"],
+    ],
+    [
+      ["pr", "reply", "--resolve", "7"],
+      ["pr", "reply", "7"],
+    ],
+    [
+      ["inbox", "--human", "x"],
+      ["inbox", "x"],
+    ],
+    [
+      ["tickets", "next", "--here", "x"],
+      ["tickets", "next", "x"],
+    ],
+  ] as const)
+    expect(parseArgs([...argv])._).toEqual([...positional]);
+  expect(parseArgs(["tickets", "next", "--repo", "o/r"]).flags.repo).toBe("o/r");
+  expect(parseArgs(["stats", "--since", "7d"]).flags.since).toBe("7d");
+});
+
+test("a wrong call prints its own command's usage line from the help", async () => {
+  const r = await run(["tickets", "revise", "ENG-1"]);
+  expect(r.code).toBe(64);
+  expect(r.err).toBe("usage: factory tickets revise <ID> (--body TEXT | --body-file F)\n");
+  expect((await run(["--help"])).out).toContain(
+    "factory tickets revise <ID> (--body TEXT | --body-file F)",
+  );
+});
+
 test("unknown commands print help and exit 64", async () => {
   const r = await run(["frobnicate"]);
   expect(r.code).toBe(64);
