@@ -37,11 +37,11 @@ function facts(over: Partial<PrFacts> = {}): PrFacts {
 describe("status", () => {
   test("reports facts: state, conflicts, checks, reviews and threads", () => {
     expect(status(facts())).toMatchObject({
-      pr: 7,
+      number: 7,
       state: "open",
       draft: false,
       conflicts: false,
-      mergeState: "clean",
+      mergeableState: "clean",
       checks: { failing: [], pending: [], passing: 1 },
       unresolvedThreads: 0,
     });

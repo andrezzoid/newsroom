@@ -21,6 +21,8 @@ export type PrFacts = {
   merged: boolean;
   draft: boolean;
   mergeable: boolean | null;
+  // GitHub's mergeable_state: clean, unstable, blocked (branch protection
+  // wants a review or check), behind, dirty, draft or unknown.
   mergeableState: string;
   headSha: string;
   headRef: string;
@@ -92,47 +94,33 @@ export const attributed = (body: string): string => (ATTRIBUTION.test(body) ? bo
 // Whether an agent wrote a comment, by that footer.
 export const byAgent = (body: string): boolean => ATTRIBUTION.test(body);
 
-export type Status = {
-  pr: number;
-  url: string;
-  title: string;
+// The facts as agents act on them: GitHub's merged flag folds into the state,
+// mergeability into conflicts (null while GitHub is still computing it), and
+// the raw checks and reviews into their verdicts. The body stays out, since
+// `pr status --json` prints this.
+export type Status = Omit<
+  PrFacts,
+  "body" | "state" | "merged" | "mergeable" | "checkRuns" | "statuses" | "reviews"
+> & {
   state: "open" | "merged" | "closed";
-  draft: boolean;
-  // null while GitHub is still computing it.
   conflicts: boolean | null;
-  // GitHub's mergeable_state: clean, unstable, blocked (branch protection
-  // wants a review or check), behind, dirty, draft or unknown.
-  mergeState: string;
   checks: Checks;
   reviews: ReviewState;
-  unresolvedThreads: number | null;
-  headSha: string;
-  headRef: string;
-  baseRef: string;
-  updatedAt: string;
 };
 
 export function status(f: PrFacts): Status {
+  const { body: _body, state, merged, mergeable, checkRuns, statuses, reviews, ...rest } = f;
   return {
-    pr: f.number,
-    url: f.url,
-    title: f.title,
-    state: f.merged ? "merged" : f.state,
-    draft: f.draft,
+    ...rest,
+    state: merged ? "merged" : state,
     conflicts:
-      f.mergeable === false || f.mergeableState === "dirty"
+      mergeable === false || f.mergeableState === "dirty"
         ? true
-        : f.mergeable === null
+        : mergeable === null
           ? null
           : false,
-    mergeState: f.mergeableState,
-    checks: classifyChecks(f.checkRuns, f.statuses),
-    reviews: classifyReviews(f.reviews),
-    unresolvedThreads: f.unresolvedThreads,
-    headSha: f.headSha,
-    headRef: f.headRef,
-    baseRef: f.baseRef,
-    updatedAt: f.updatedAt,
+    checks: classifyChecks(checkRuns, statuses),
+    reviews: classifyReviews(reviews),
   };
 }
 
@@ -150,8 +138,8 @@ export function mergeBlockers(s: Status): string[] {
     out.push(`changes requested by ${s.reviews.changesRequested.join(", ")}`);
   if (s.unresolvedThreads === null) out.push("review threads could not be read");
   else if (s.unresolvedThreads > 0) out.push(`${s.unresolvedThreads} open review thread(s)`);
-  if (s.mergeState === "behind") out.push(`behind ${s.baseRef}: update the branch`);
-  if (s.mergeState === "blocked")
+  if (s.mergeableState === "behind") out.push(`behind ${s.baseRef}: update the branch`);
+  if (s.mergeableState === "blocked")
     out.push("branch protection blocks it: a required review or check");
   return out;
 }

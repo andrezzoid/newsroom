@@ -275,7 +275,7 @@ describe("pr status", () => {
     expect(r.code).toBe(0);
     const s = JSON.parse(r.out);
     expect(s).toMatchObject({
-      pr: 7,
+      number: 7,
       state: "open",
       draft: false,
       conflicts: false,

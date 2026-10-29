@@ -188,9 +188,9 @@ function statusLines(s: Status): string {
       ? "approved"
       : "no approval yet";
   return [
-    `#${s.pr} ${s.state}${s.draft ? ", a draft" : ""}  ${s.title}`,
+    `#${s.number} ${s.state}${s.draft ? ", a draft" : ""}  ${s.title}`,
     `  ${s.url}  head ${s.headSha.slice(0, 7)}  ${s.headRef} → ${s.baseRef}`,
-    `  conflicts ${s.conflicts === null ? "unknown" : s.conflicts ? "yes" : "no"} · GitHub says ${s.mergeState}`,
+    `  conflicts ${s.conflicts === null ? "unknown" : s.conflicts ? "yes" : "no"} · GitHub says ${s.mergeableState}`,
     `  checks ${checks.join(", ")}`,
     `  open review threads ${s.unresolvedThreads ?? "unknown"} · ${reviews}`,
   ].join("\n");
@@ -226,7 +226,7 @@ async function prWatch(a: Args) {
       failures = 0;
       const fp = fingerprint(status);
       if (fp !== last) {
-        console.log(`${new Date().toISOString().slice(11, 19)} #${status.pr} ${fp}`);
+        console.log(`${new Date().toISOString().slice(11, 19)} #${status.number} ${fp}`);
         last = fp;
       }
       if (status.state !== "open") return 0;
@@ -347,11 +347,11 @@ async function prMerge(a: Args) {
     }
   }
   if (blockers.length) {
-    console.log(`refusing to merge #${s.pr}:\n${blockers.map((b) => `  - ${b}`).join("\n")}`);
+    console.log(`refusing to merge #${s.number}:\n${blockers.map((b) => `  - ${b}`).join("\n")}`);
     return 3;
   }
   const method = forge.merge(ref, s.headSha);
-  console.log(`merged #${s.pr} (${method}) at ${s.headSha.slice(0, 7)}`);
+  console.log(`merged #${s.number} (${method}) at ${s.headSha.slice(0, 7)}`);
   for (const t of named) {
     await t.tracker.release(t.id);
     console.log(`${t.id}: took off ${READY_LABEL} and ${CLAIMED_LABEL}`);
@@ -588,7 +588,7 @@ async function sortPr(t: Ticket, url: string, session: string | undefined): Prom
   // someone other than an agent spoke last.
   const broken = [
     s.conflicts ? "conflicts" : "",
-    s.mergeState === "behind" ? `is behind ${s.baseRef}` : "",
+    s.mergeableState === "behind" ? `is behind ${s.baseRef}` : "",
     s.checks.failing.length ? `fails ${s.checks.failing.join(", ")}` : "",
     s.reviews.changesRequested.length ? "has changes requested" : "",
   ].filter(Boolean);
@@ -600,7 +600,7 @@ async function sortPr(t: Ticket, url: string, session: string | undefined): Prom
       human: [],
       agent: item(`its pull request ${broken.join(", ")}, quiet for over ${QUIET}`),
     };
-  if (!broken.length && s.mergeState === "blocked")
+  if (!broken.length && s.mergeableState === "blocked")
     return { human: item("its pull request waits on a required review"), agent: [] };
   return { human: [], agent: [] };
 }
