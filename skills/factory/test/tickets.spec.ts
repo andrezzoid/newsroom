@@ -301,16 +301,11 @@ describe("ticket ids", () => {
   });
 
   test("every reader of an id accepts the same Linear keys", () => {
-    for (const key of ["AB-1", "ENG-12", "ABCDEFGHIJ-3"]) {
+    // Any team key length: pr merge asks Linear whether the team exists.
+    for (const key of ["V-2", "ENG-12", "ABCDEFGHIJK-3"]) {
       expect(trackerOf(key)).toBe("linear");
       expect(ticketFromBranch(`andre/${key.toLowerCase()}-thing`, null)).toBe(key);
       expect(closedBy(`Closes ${key}`, "o/r")).toEqual([key]);
-    }
-    // One letter names no ticket, so fix/v-2-api cannot block a merge on Linear.
-    for (const key of ["V-2", "ABCDEFGHIJK-3"]) {
-      expect(trackerOf(key)).toBe(null);
-      expect(ticketFromBranch(`fix/${key.toLowerCase()}-api`, null)).toBe(null);
-      expect(closedBy(`Fixes ${key}`, "o/r")).toEqual([]);
     }
   });
 

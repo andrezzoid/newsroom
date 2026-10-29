@@ -5,12 +5,11 @@
 export type TrackerName = "linear" | "github";
 
 // Ticket ids as each tracker spells them, for every regex that reads one. A
-// Linear key is a team key and a number, as ENG-123; Linear documents no
-// bounds on the team key, so 2 to 10 characters is this CLI's guess, and one
-// letter stays out so a branch like fix/v-2-api names no ticket. A GitHub
-// issue is owner/name#123, #123 within its repository, or its URL.
+// Linear key is a team key and a number, as ENG-123; text such as fix-utf-8
+// looks like one too, so pr merge asks Linear whether the team exists. A
+// GitHub issue is owner/name#123, #123 within its repository, or its URL.
 const REPO = "[\\w.-]+\\/[\\w.-]+";
-export const LINEAR_KEY = "[a-zA-Z][a-zA-Z0-9]{1,9}-\\d+";
+export const LINEAR_KEY = "[a-zA-Z][a-zA-Z0-9]*-\\d+";
 export const GITHUB_ISSUE = `${REPO}#\\d+`;
 export const GITHUB_SHORT_ISSUE = "#\\d+";
 export const GITHUB_ISSUE_URL = `https:\\/\\/github\\.com\\/${REPO}\\/issues\\/\\d+`;
