@@ -1330,6 +1330,26 @@ describe("GitHub Issues tickets", () => {
     expect(d.openPrs).toEqual(["https://github.com/o/r/pull/8"]);
   });
 
+  test("show finds a pull request that closes the issue on any closing line, in any form closedBy reads", async () => {
+    routes({
+      ...current(),
+      "GET repos/o/r/pulls?state=open": [
+        pull(8, { body: "Closes #3\nFixes: #12", head: { sha: SHA, ref: "a" } }),
+        pull(9, { body: "Resolves O/R#12", head: { sha: SHA, ref: "b" } }),
+        pull(10, { body: "Closes https://github.com/o/r/issues/12", head: { sha: SHA, ref: "c" } }),
+      ],
+      "GET repos/o/r/pulls/8": pull(8),
+      "GET repos/o/r/pulls/9": pull(9),
+      "GET repos/o/r/pulls/10": pull(10),
+    });
+    const d = JSON.parse((await run(["tickets", "show", "o/r#12", "--json"], gh)).out);
+    expect(d.openPrs).toEqual([
+      "https://github.com/o/r/pull/8",
+      "https://github.com/o/r/pull/9",
+      "https://github.com/o/r/pull/10",
+    ]);
+  });
+
   test("inbox reads a handed-back issue's comments without fetching the issue again", async () => {
     routes({
       ...current(),

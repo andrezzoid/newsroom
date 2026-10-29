@@ -16,11 +16,7 @@ import {
   ticketFromBranch,
   ticketsOfPr,
 } from "../scripts/tickets.ts";
-import {
-  blockedByRefs,
-  closedIssue,
-  toTicket as githubTicket,
-} from "../scripts/trackers/github.ts";
+import { blockedByRefs, toTicket as githubTicket } from "../scripts/trackers/github.ts";
 import { normalizeId, trackerLine, trackerOf } from "../scripts/trackers/index.ts";
 import { repoOf, toTicket as linearTicket } from "../scripts/trackers/linear.ts";
 import { expect } from "./expect.ts";
@@ -498,11 +494,5 @@ describe("GitHub adapter", () => {
       .replace(/(## Acceptance criteria\n\n)[^\n]*/, "$1- [ ] see #99")
       .replace(/(## Out of scope\n\n)[^\n]*/, "$1- Changing #7");
     expect(blockedByRefs(body, "o/r")).toEqual(["o/r#12", "o/api#3"]);
-  });
-
-  test("a PR closes an issue by keyword or by branch name", () => {
-    expect(closedIssue({ body: "Small fix.\n\nCloses #12", head: { ref: "x" } })).toBe(12);
-    expect(closedIssue({ body: "", head: { ref: "issue-7-thing" } })).toBe(7);
-    expect(closedIssue({ body: "See #12", head: { ref: "main" } })).toBe(null);
   });
 });

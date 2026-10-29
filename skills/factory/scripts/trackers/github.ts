@@ -4,7 +4,7 @@
 // started, any other open issue is queued.
 
 import { api, comments, paginate, viewer as forgeViewer } from "../forge.ts";
-import { CLAIMED_LABEL, HUMAN_LABEL, READY_LABEL, slug } from "../tickets.ts";
+import { CLAIMED_LABEL, HUMAN_LABEL, READY_LABEL, slug, ticketsOfPr } from "../tickets.ts";
 import {
   NotFound,
   type Ticket,
@@ -90,18 +90,13 @@ export function blockedByRefs(body: string, repo: string): string[] {
   return [...out];
 }
 
-// Which open issue a pull request closes: a closing keyword in its body, or an
-// issue-<n>- branch.
-export function closedIssue(pr: any): number | null {
-  const kw = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/i.exec(pr.body ?? "");
-  if (kw) return Number(kw[1]);
-  const br = /(?:^|\/)issue-(\d+)(?:-|$)/.exec(pr.head?.ref ?? "");
-  return br ? Number(br[1]) : null;
-}
-
-// The pull requests, of those given, that close the issue.
-function closing(prs: any[], number: number): string[] {
-  return prs.filter((p) => closedIssue(p) === number).map((p) => p.html_url);
+// The pull requests, of those given, that close the issue: a closing line in
+// the body, or an issue-<n>- branch.
+function closing(prs: any[], id: string): string[] {
+  const { repo } = parseId(id);
+  return prs
+    .filter((p) => ticketsOfPr({ body: p.body, headRef: p.head?.ref ?? "" }, repo).includes(id))
+    .map((p) => p.html_url);
 }
 
 export class GithubTracker implements Tracker {
@@ -168,7 +163,7 @@ export class GithubTracker implements Tracker {
       for (const i of this.issues(repo, "state=open")) {
         let t = toTicket(i, repo, [], me);
         if (t.state === "queued" && t.labels.includes(READY_LABEL)) t = this.full(repo, i);
-        t.prs = closing(prs, i.number);
+        t.prs = closing(prs, t.id);
         out.push(t);
       }
     }
@@ -185,7 +180,7 @@ export class GithubTracker implements Tracker {
     }
     if (issue.pull_request) throw new NotFound(`${id} is a pull request, not an issue`);
     const ticket = this.full(repo, issue);
-    ticket.prs = closing(paginate<any>(`repos/${repo}/pulls?state=open`), number);
+    ticket.prs = closing(paginate<any>(`repos/${repo}/pulls?state=open`), ticket.id);
     return { ticket, comments: comments(repo, number) };
   }
 
