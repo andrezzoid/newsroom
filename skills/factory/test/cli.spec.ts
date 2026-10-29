@@ -266,6 +266,16 @@ test("bin/factory runs on Node 22.18 or later, and names the minimum below it", 
   });
   expect(old.status).toBe(127);
   expect(old.stderr).toContain("factory needs Node 22.18 or later, and found v22.17.0");
+  // A version manager's shim can answer with an error instead of a version.
+  writeFileSync(node, "#!/bin/sh\necho mise ERROR no version set\n");
+  const junk = spawnSync(shim, ["--help"], {
+    encoding: "utf8",
+    env: { ...process.env, PATH: `${bin}:/usr/bin:/bin` },
+  });
+  expect(junk.status).toBe(127);
+  expect(junk.stderr).toBe(
+    "factory needs Node 22.18 or later, and found mise ERROR no version set (mise install node)\n",
+  );
 });
 
 describe("pr status", () => {
@@ -1859,27 +1869,21 @@ test("a flag's value keeps every = after the first", () => {
 // The usage lines in the help are the one list of flags: a flag they give no
 // value is a switch, and leaves the next word alone.
 test("a flag the help gives no value takes none, and one it gives a value takes the next word", () => {
-  for (const [argv, positional] of [
-    [
-      ["tickets", "claim", "--take-over", "ENG-1"],
-      ["tickets", "claim", "ENG-1"],
-    ],
-    [
-      ["pr", "reply", "--resolve", "7"],
-      ["pr", "reply", "7"],
-    ],
-    [
-      ["inbox", "--human", "x"],
-      ["inbox", "x"],
-    ],
-    [
-      ["tickets", "next", "--here", "x"],
-      ["tickets", "next", "x"],
-    ],
-  ] as const)
-    expect(parseArgs([...argv])._).toEqual([...positional]);
-  expect(parseArgs(["tickets", "next", "--repo", "o/r"]).flags.repo).toBe("o/r");
-  expect(parseArgs(["stats", "--since", "7d"]).flags.since).toBe("7d");
+  for (const flag of ["json", "help", "human", "agent", "here", "dispatch", "take-over", "resolve"])
+    expect(parseArgs([`--${flag}`, "x"])).toEqual({ _: ["x"], flags: { [flag]: true } });
+  for (const flag of [
+    "repo",
+    "since",
+    "max",
+    "from",
+    "title",
+    "body",
+    "body-file",
+    "comment",
+    "interval",
+    "ticket",
+  ])
+    expect(parseArgs([`--${flag}`, "x"])).toEqual({ _: [], flags: { [flag]: "x" } });
 });
 
 test("a wrong call prints its own command's usage line from the help", async () => {

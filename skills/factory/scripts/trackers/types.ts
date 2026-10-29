@@ -6,10 +6,29 @@ export type TrackerName = "linear" | "github";
 
 // Ticket ids as each tracker spells them, for every regex that reads one. A
 // Linear key is a team key and a number, as ENG-123; Linear documents no
-// bounds on the team key, so 1 to 10 characters is this CLI's guess. A GitHub
-// issue is owner/name#123.
-export const LINEAR_KEY = "[a-zA-Z][a-zA-Z0-9]{0,9}-\\d+";
-export const GITHUB_ISSUE = "[\\w.-]+\\/[\\w.-]+#\\d+";
+// bounds on the team key, so 2 to 10 characters is this CLI's guess, and one
+// letter stays out so a branch like fix/v-2-api names no ticket. A GitHub
+// issue is owner/name#123, #123 within its repository, or its URL.
+const REPO = "[\\w.-]+\\/[\\w.-]+";
+export const LINEAR_KEY = "[a-zA-Z][a-zA-Z0-9]{1,9}-\\d+";
+export const GITHUB_ISSUE = `${REPO}#\\d+`;
+export const GITHUB_SHORT_ISSUE = "#\\d+";
+export const GITHUB_ISSUE_URL = `https:\\/\\/github\\.com\\/${REPO}\\/issues\\/\\d+`;
+
+// The full id of a GitHub issue in any of those forms.
+export function githubId(ref: string, repo: string): string {
+  if (ref.startsWith("#")) return `${repo}${ref}`.toLowerCase();
+  if (ref.startsWith("https://")) {
+    const [, , , owner, name, , number] = ref.split("/");
+    return `${owner}/${name}#${number}`.toLowerCase();
+  }
+  return ref.toLowerCase();
+}
+
+// A GitHub issue's branch is issue-<n>-<slug>, which links a pull request
+// from it to the issue.
+export const issueBranch = (number: number, slug: string) => `issue-${number}-${slug}`;
+export const ISSUE_BRANCH = /(?:^|\/)issue-(\d+)(?:-|$)/;
 
 export type TicketState = "queued" | "started" | "done" | "canceled";
 

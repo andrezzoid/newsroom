@@ -9,9 +9,17 @@
 import { parseRepo, readRepoFile } from "../forge.ts";
 import { GithubTracker } from "./github.ts";
 import { LinearTracker, linearToken } from "./linear.ts";
-import { GITHUB_ISSUE, LINEAR_KEY, type Tracker, type TrackerName } from "./types.ts";
+import {
+  GITHUB_ISSUE,
+  GITHUB_SHORT_ISSUE,
+  githubId,
+  LINEAR_KEY,
+  type Tracker,
+  type TrackerName,
+} from "./types.ts";
 
-const IS_GITHUB = new RegExp(`^(?:${GITHUB_ISSUE}|#\\d+)$`);
+const IS_SHORT = new RegExp(`^${GITHUB_SHORT_ISSUE}$`);
+const IS_GITHUB = new RegExp(`^(?:${GITHUB_ISSUE}|${GITHUB_SHORT_ISSUE})$`);
 const IS_LINEAR = new RegExp(`^${LINEAR_KEY}$`);
 
 export function trackerOf(id: string): TrackerName | null {
@@ -22,10 +30,10 @@ export function trackerOf(id: string): TrackerName | null {
 
 // "#12" means issue 12 of the repository at hand.
 export function normalizeId(id: string, repo: string | null): string {
-  if (/^#\d+$/.test(id)) {
+  if (IS_SHORT.test(id)) {
     if (!repo)
       throw new Error(`${id} needs a repository: pass --repo owner/name or run inside a clone`);
-    return `${repo.toLowerCase()}${id}`;
+    return githubId(id, repo);
   }
   return trackerOf(id) === "linear" ? id.toUpperCase() : id;
 }

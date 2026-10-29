@@ -96,11 +96,10 @@ export const byAgent = (body: string): boolean => ATTRIBUTION.test(body);
 
 // The facts as agents act on them: GitHub's merged flag folds into the state,
 // mergeability into conflicts (null while GitHub is still computing it), and
-// the raw checks and reviews into their verdicts. The body stays out, since
-// `pr status --json` prints this.
+// the raw checks and reviews into their verdicts.
 export type Status = Omit<
   PrFacts,
-  "body" | "state" | "merged" | "mergeable" | "checkRuns" | "statuses" | "reviews"
+  "state" | "merged" | "mergeable" | "checkRuns" | "statuses" | "reviews"
 > & {
   state: "open" | "merged" | "closed";
   conflicts: boolean | null;
@@ -109,7 +108,7 @@ export type Status = Omit<
 };
 
 export function status(f: PrFacts): Status {
-  const { body: _body, state, merged, mergeable, checkRuns, statuses, reviews, ...rest } = f;
+  const { state, merged, mergeable, checkRuns, statuses, reviews, ...rest } = f;
   return {
     ...rest,
     state: merged ? "merged" : state,

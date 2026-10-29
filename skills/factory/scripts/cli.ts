@@ -192,11 +192,12 @@ function statusLines(s: Status): string {
 
 // The facts, plus what in them would stop `pr merge`.
 async function prStatus(a: Args) {
-  const { status } = await forge.pullStatus(forge.resolvePr(a._[2], repoArg(a)));
+  const status = await forge.pullStatus(forge.resolvePr(a._[2], repoArg(a)));
   const blockers = mergeBlockers(status).map((b) => b.text);
+  const { body: _body, ...shown } = status;
   print(
     a,
-    { ...status, blockers },
+    { ...shown, blockers },
     () =>
       `${statusLines(status)}\n  ${blockers.length ? `blocks a merge: ${blockers.join("; ")}` : "nothing blocks a merge"}`,
   );
@@ -216,7 +217,7 @@ async function prWatch(a: Args) {
   let failures = 0;
   for (;;) {
     try {
-      const { status } = await forge.pullStatus(ref);
+      const status = await forge.pullStatus(ref);
       failures = 0;
       const fp = fingerprint(status);
       if (fp !== last) {
@@ -314,10 +315,10 @@ async function prOpen(a: Args) {
 // then takes the factory's labels off the tickets it names.
 async function prMerge(a: Args) {
   const ref = forge.resolvePr(a._[2], repoArg(a));
-  const { status: s, body } = await forge.pullStatus(ref);
+  const s = await forge.pullStatus(ref);
   const blockers = mergeBlockers(s).map((b) => b.text);
   const named: { id: string; tracker: Tracker }[] = [];
-  for (const id of ticketsOfPr({ body, headRef: s.headRef }, ref.repo)) {
+  for (const id of ticketsOfPr(s, ref.repo)) {
     const tracker = trackerFor(id);
     try {
       const { ticket } = await tracker.get(id);
@@ -563,7 +564,7 @@ async function sortPr(t: Ticket, url: string, session: string | undefined): Prom
   const item = (why: string) => [inboxItem(t, why, { pr: url, session })];
   const ref = forge.parsePrUrl(url);
   if (!ref) return { human: [], agent: [] };
-  const { status: s } = await forge.pullStatus(ref);
+  const s = await forge.pullStatus(ref);
   if (s.draft) {
     const last = latestReport(forge.comments(ref));
     return {
@@ -689,17 +690,19 @@ async function stats(a: Args) {
       return [];
     }
   });
-  const reports: (Report & { where: string; url: string })[] = [];
+  const reports: (Report & { where: string; url: string; at: string })[] = [];
   for (const t of [...done.map((d) => d.ticket), ...open.filter((t) => recent(t.updatedAt))]) {
     for (const c of (await trackerFor(t.id).get(t.id)).comments) {
-      const r = report(c.body, c.createdAt);
-      if (r && recent(r.at)) reports.push({ where: t.id, url: t.url, ...r });
+      const r = report(c.body);
+      if (r && recent(c.createdAt))
+        reports.push({ where: t.id, url: t.url, at: c.createdAt, ...r });
     }
   }
   for (const p of merged) {
     for (const c of forge.comments(p)) {
-      const r = report(c.body, c.createdAt);
-      if (r && recent(r.at)) reports.push({ where: `${p.repo}#${p.number}`, url: p.url, ...r });
+      const r = report(c.body);
+      if (r && recent(c.createdAt))
+        reports.push({ where: `${p.repo}#${p.number}`, url: p.url, at: c.createdAt, ...r });
     }
   }
   const hours = (from: string, to: string) =>
@@ -950,13 +953,13 @@ const COMMANDS: Record<string, Command> = {
   },
 };
 
-// A flag a usage line gives no value, as --json in "[--json]", is a switch,
-// so `claim --take-over ENG-1` keeps ENG-1 as the ticket instead of
-// swallowing it.
+// A flag is a switch unless its usage line follows it with a space and a
+// value, as in "--max N", so `claim --take-over ENG-1` keeps ENG-1 as the
+// ticket instead of swallowing it.
 const SWITCHES = new Set([
   "help",
   ...Object.values(COMMANDS).flatMap((c) =>
-    [...c.usage.matchAll(/--([a-z-]+)(?=$|[\])]| [[(|]| --)/g)].map((m) => m[1] ?? ""),
+    [...c.usage.matchAll(/--([a-z-]+)(?![a-z-]| [^[(|-])/g)].map((m) => m[1] ?? ""),
   ),
 ]);
 

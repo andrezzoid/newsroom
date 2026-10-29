@@ -107,7 +107,7 @@ export function viewer(): string | null {
 
 // The ccr route's payload shape is not documented, so accept the plausible
 // field names and give up (null) rather than guess when none is present.
-export function countUnresolved(payload: unknown): number | null {
+function countUnresolved(payload: unknown): number | null {
   const p = payload as any;
   const list: any[] | null = Array.isArray(p)
     ? p
@@ -140,19 +140,22 @@ function eitherRoute<T>(what: string, viaCcr: () => T, viaGraphql: () => T): T {
   throw new GhError(`could not ${what}: ${failures.join("; ")}`);
 }
 
+// Counting needs only each thread's state; resolving needs its comments too.
+const THREAD_STATES_QUERY = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}`;
 const THREADS_QUERY = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved comments(first:100){nodes{databaseId}}}}}}}`;
 const RESOLVE_MUTATION = `mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}`;
 
-function threadsViaGraphql({ repo, number }: Ref): any[] {
+function threadsViaGraphql({ repo, number }: Ref, query: string): any[] {
+  const [owner = "", name = ""] = repo.split("/");
   const out = gh([
     "api",
     "graphql",
     "-f",
-    `query=${THREADS_QUERY}`,
+    `query=${query}`,
     "-f",
-    `owner=${ownerOf(repo)}`,
+    `owner=${owner}`,
     "-f",
-    `name=${repo.split("/")[1] ?? ""}`,
+    `name=${name}`,
     "-F",
     `number=${number}`,
   ]);
@@ -163,7 +166,7 @@ function threadsViaGraphql({ repo, number }: Ref): any[] {
 }
 
 // null when neither route answers in a shape countUnresolved can read.
-export function unresolvedThreads(pr: Ref): number | null {
+function unresolvedThreads(pr: Ref): number | null {
   const counted = (payload: unknown) => {
     const n = countUnresolved(payload);
     if (n === null) throw new GhError("no thread states in the answer");
@@ -173,7 +176,7 @@ export function unresolvedThreads(pr: Ref): number | null {
     return eitherRoute(
       "count the open review threads",
       () => counted(api(`repos/${pr.repo}/pulls/${pr.number}/ccr/review_threads`)),
-      () => counted(threadsViaGraphql(pr)),
+      () => counted(threadsViaGraphql(pr, THREAD_STATES_QUERY)),
     );
   } catch {
     return null;
@@ -189,7 +192,7 @@ export function resolveThread(pr: Ref, commentId: number): void {
         method: "POST",
       }),
     () => {
-      const thread = threadsViaGraphql(pr).find((t) =>
+      const thread = threadsViaGraphql(pr, THREADS_QUERY).find((t) =>
         t?.comments?.nodes?.some((c: any) => c?.databaseId === commentId),
       );
       if (!thread) throw new GhError("no review thread holds it");
@@ -263,13 +266,13 @@ function prFacts(pr: Ref): PrFacts {
 
 // GitHub computes mergeability after each push: ask once more, 3 seconds
 // later, before reporting it unknown.
-export async function pullStatus(pr: Ref): Promise<{ status: Status; body: string | null }> {
+export async function pullStatus(pr: Ref): Promise<Status> {
   let facts = prFacts(pr);
   if (facts.state === "open" && facts.mergeable === null) {
     await sleep(3000);
     facts = prFacts(pr);
   }
-  return { status: status(facts), body: facts.body };
+  return status(facts);
 }
 
 // Opens a pull request from the current branch to the repository's default

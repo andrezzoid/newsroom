@@ -2,7 +2,16 @@
 // pick up, what a ticket asks for, which session holds it and where it stands.
 // No tracker is named here.
 
-import { GITHUB_ISSUE, LINEAR_KEY, type Ticket, type TicketComment } from "./trackers/types.ts";
+import {
+  GITHUB_ISSUE,
+  GITHUB_ISSUE_URL,
+  GITHUB_SHORT_ISSUE,
+  githubId,
+  ISSUE_BRANCH,
+  LINEAR_KEY,
+  type Ticket,
+  type TicketComment,
+} from "./trackers/types.ts";
 
 // Triage's state labels, plus the claim.
 export const TRIAGE_LABEL = "needs-triage";
@@ -111,24 +120,23 @@ export type ReportKind = (typeof REPORT_KINDS)[number];
 const REPORT_TITLE = new RegExp(`^(${REPORT_KINDS.join("|")})\\s*·\\s*\\S`, "i");
 const NEEDS_YOU = /^\s*(?:#{1,6}\s*|\*\*|__)?Needs you\b/im;
 
-export type Report = { kind: ReportKind; title: string; needsYou: boolean; at: string };
+export type Report = { kind: ReportKind; title: string; needsYou: boolean };
 
-// `at` is when it was posted, for a report read back from a comment.
-export function report(body: string, at = ""): Report | null {
+export function report(body: string): Report | null {
   const title = (body.trimStart().split("\n", 1)[0] ?? "")
     .replace(/^#{1,6}\s*/, "")
     .replace(/^(\*\*|__)(.*)\1$/, "$2")
     .trim();
   const [, word] = REPORT_TITLE.exec(title) ?? [];
   const kind = REPORT_KINDS.find((k) => k.toLowerCase() === word?.toLowerCase());
-  return kind ? { kind, title, needsYou: NEEDS_YOU.test(body), at } : null;
+  return kind ? { kind, title, needsYou: NEEDS_YOU.test(body) } : null;
 }
 
 export function latestReport(comments: TicketComment[]): Report | null {
   return (
     [...comments]
       .sort(oldestFirst)
-      .map((c) => report(c.body, c.createdAt))
+      .map((c) => report(c.body))
       .filter((r) => r !== null)
       .at(-1) ?? null
   );
@@ -183,7 +191,7 @@ export function phaseOf(t: Pick<Ticket, "state" | "labels">, openPrs: string[]):
 // branch names carry the key, as in andre/eng-123-fix-login.
 const BRANCH_KEY = new RegExp(`(?:^|[/_-])(${LINEAR_KEY})(?:[/_-]|$)`);
 export function ticketFromBranch(branch: string, repo: string | null): string | null {
-  const gh = /(?:^|\/)issue-(\d+)(?:-|$)/.exec(branch);
+  const gh = ISSUE_BRANCH.exec(branch);
   if (gh) return repo ? `${repo.toLowerCase()}#${gh[1]}` : null;
   const [, id] = BRANCH_KEY.exec(branch) ?? [];
   return id ? id.toUpperCase() : null;
@@ -200,18 +208,14 @@ export function ticketsOfPr(pr: { body: string | null; headRef: string }, repo: 
 // The tickets a body closes, one per closing line: Closes ENG-123, Fixes #12,
 // Resolves o/r#12 or an issue URL. A bare #12 is an issue of `repo`.
 const CLOSING = new RegExp(
-  `\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\s*:?\\s+(https:\\/\\/github\\.com\\/[\\w.-]+\\/[\\w.-]+\\/issues\\/\\d+|${GITHUB_ISSUE}|#\\d+|${LINEAR_KEY})\\b`,
+  `\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\s*:?\\s+(?:(?<github>${GITHUB_ISSUE_URL}|${GITHUB_ISSUE}|${GITHUB_SHORT_ISSUE})|(?<linear>${LINEAR_KEY}))\\b`,
   "gi",
 );
 export function closedBy(body: string, repo: string): string[] {
   const out = new Set<string>();
-  for (const m of body.matchAll(CLOSING)) {
-    const ref = m[1] ?? "";
-    const url = /github\.com\/([\w.-]+\/[\w.-]+)\/issues\/(\d+)/.exec(ref);
-    if (url) out.add(`${url[1]}#${url[2]}`.toLowerCase());
-    else if (ref.startsWith("#")) out.add(`${repo.toLowerCase()}${ref}`);
-    else if (ref.includes("#")) out.add(ref.toLowerCase());
-    else out.add(ref.toUpperCase());
+  for (const { groups } of body.matchAll(CLOSING)) {
+    if (groups?.github) out.add(githubId(groups.github, repo));
+    else if (groups?.linear) out.add(groups.linear.toUpperCase());
   }
   return [...out];
 }

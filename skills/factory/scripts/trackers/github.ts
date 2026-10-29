@@ -7,6 +7,10 @@ import { api, comments, paginate, viewer as forgeViewer } from "../forge.ts";
 import { CLAIMED_LABEL, HUMAN_LABEL, READY_LABEL, ticketsOfPr } from "../tickets.ts";
 import {
   GITHUB_ISSUE,
+  GITHUB_ISSUE_URL,
+  GITHUB_SHORT_ISSUE,
+  githubId,
+  issueBranch,
   NotFound,
   type Ticket,
   type TicketComment,
@@ -25,8 +29,10 @@ export function parseId(id: string): { repo: string; number: number } {
 }
 
 const BLOCKED_BY_LINE = /^[ \t>*_-]*blocked[ -]by\b[*_]*\s*:?(.*)$/i;
-const ISSUE_REF =
-  /(?:https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/|(?<![\w/])(?:([\w.-]+\/[\w.-]+))?#)(\d+)\b/g;
+const ISSUE_REF = new RegExp(
+  `${GITHUB_ISSUE_URL}|(?<![\\w/])(?:${GITHUB_ISSUE}|${GITHUB_SHORT_ISSUE})\\b`,
+  "g",
+);
 
 function repoOfUrl(url: string | undefined, fallback: string): string {
   const m = /repos\/([\w.-]+\/[\w.-]+)$/.exec(url ?? "");
@@ -61,7 +67,7 @@ export function toTicket(
     stateName: closed ? "closed" : started ? CLAIMED_LABEL : "open",
     labels,
     repo,
-    branchName: `issue-${issue.number}-${slug(issue.title)}`,
+    branchName: issueBranch(issue.number, slug(issue.title)),
     priority: 0,
     createdAt: issue.created_at,
     updatedAt: issue.updated_at ?? issue.created_at,
@@ -87,8 +93,7 @@ export function blockedByRefs(body: string, repo: string): string[] {
       continue;
     }
     const text = section ? line : BLOCKED_BY_LINE.exec(line)?.[1];
-    for (const m of text?.matchAll(ISSUE_REF) ?? [])
-      out.add(`${(m[1] ?? m[2] ?? repo).toLowerCase()}#${m[3]}`);
+    for (const [ref] of text?.matchAll(ISSUE_REF) ?? []) out.add(githubId(ref, repo));
   }
   return [...out];
 }

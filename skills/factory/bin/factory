@@ -6,7 +6,7 @@ here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 # Older Node cannot load cli.ts at all, so only this shim can say why.
 version="$(node --version 2>/dev/null || true)"
 IFS=. read -r major minor _ <<<"${version#v}"
-if [ "${major:-0}" -lt 22 ] || { [ "$major" -eq 22 ] && [ "${minor:-0}" -lt 18 ]; }; then
+if ! [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ ]] || ((major < 22 || (major == 22 && minor < 18))); then
   echo "factory needs Node 22.18 or later, and found ${version:-no node} (mise install node)" >&2
   exit 127
 fi
