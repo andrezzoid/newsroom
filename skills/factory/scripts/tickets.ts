@@ -106,38 +106,42 @@ export function claimant(c: Pick<TicketComment, "body">): string {
 // bold. Hand-backs and revisions go on the ticket, the debrief (Done) and a
 // hand-back after the pull request opens go on the pull request. Needs you
 // marks one only the user can move.
-const REPORT_TITLE = /^(Handed back|Revised|Done)\s*·\s*\S/i;
+export const REPORT_KINDS = ["Handed back", "Revised", "Done"] as const;
+export type ReportKind = (typeof REPORT_KINDS)[number];
+const REPORT_TITLE = new RegExp(`^(${REPORT_KINDS.join("|")})\\s*·\\s*\\S`, "i");
 const NEEDS_YOU = /^\s*(?:#{1,6}\s*|\*\*|__)?Needs you\b/im;
 
-export type Report = { kind: string; title: string; needsYou: boolean; at: string };
+export type Report = { kind: ReportKind; title: string; needsYou: boolean; at: string };
 
-export function report(c: TicketComment): Report | null {
-  const title = (c.body.trimStart().split("\n", 1)[0] ?? "")
+// `at` is when it was posted, for a report read back from a comment.
+export function report(body: string, at = ""): Report | null {
+  const title = (body.trimStart().split("\n", 1)[0] ?? "")
     .replace(/^#{1,6}\s*/, "")
     .replace(/^(\*\*|__)(.*)\1$/, "$2")
     .trim();
   const [, word] = REPORT_TITLE.exec(title) ?? [];
-  if (!word) return null;
-  const kind = word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-  return { kind, title, needsYou: NEEDS_YOU.test(c.body), at: c.createdAt };
+  const kind = REPORT_KINDS.find((k) => k.toLowerCase() === word?.toLowerCase());
+  return kind ? { kind, title, needsYou: NEEDS_YOU.test(body), at } : null;
 }
 
 export function latestReport(comments: TicketComment[]): Report | null {
   return (
     [...comments]
       .sort(oldestFirst)
-      .map(report)
+      .map((c) => report(c.body, c.createdAt))
       .filter((r) => r !== null)
       .at(-1) ?? null
   );
 }
 
 // Triage posts its agent brief as a comment and leaves the reporter's text
-// alone, so the latest comment with an "## Agent Brief" heading is the brief.
+// alone, so the latest comment with this heading is the brief.
+export const BRIEF_HEADING = "## Agent Brief";
+const BRIEF_LINE = new RegExp(`^${BRIEF_HEADING}\\s*$`, "m");
 export function latestBrief(comments: TicketComment[]): TicketComment | null {
   return (
     comments
-      .filter((c) => /^## Agent Brief\s*$/m.test(c.body))
+      .filter((c) => BRIEF_LINE.test(c.body))
       .sort(oldestFirst)
       .at(-1) ?? null
   );
@@ -154,7 +158,7 @@ export function plan(t: Pick<Ticket, "body" | "createdAt">, comments: TicketComm
   const since = brief ? Date.parse(brief.createdAt) : -Infinity;
   const revisions = [...comments]
     .sort(oldestFirst)
-    .filter((c) => Date.parse(c.createdAt) > since && report(c)?.kind === "Revised")
+    .filter((c) => Date.parse(c.createdAt) > since && report(c.body)?.kind === "Revised")
     .map((c) => ({ kind: "revised" as const, at: c.createdAt, text: c.body }));
   const head: PlanPart = brief
     ? { kind: "brief", at: brief.createdAt, text: brief.body }

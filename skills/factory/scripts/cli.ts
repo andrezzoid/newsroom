@@ -33,6 +33,8 @@ import {
   phaseOf,
   READY_LABEL,
   report,
+  type Report,
+  type ReportKind,
   ticketsOfPr,
   TRIAGE_LABEL,
 } from "./tickets.ts";
@@ -52,6 +54,7 @@ const SKILLS_DIR = resolve(import.meta.dirname, "..", "..");
 // A claimed ticket or a broken pull request this quiet has most likely lost
 // its session.
 const QUIET_MS = 3 * 3600_000;
+const QUIET = `${QUIET_MS / 3600_000}h`;
 const CLAUDE = process.env.FACTORY_CLAUDE ?? "claude";
 // Where /run-skill-generator records how to run the app, for the built-in /run.
 const RUN_SKILLS = ".claude/skills";
@@ -128,9 +131,12 @@ function repoArg(a: Args): string | null {
   return here ? `${here.owner}/${here.repo}`.toLowerCase() : null;
 }
 
+// A repository whose instructions name GitHub Issues joins the GitHub tracker.
+const trackersIn = (repo: string | null) =>
+  enabledTrackers(repo && repoTracker(repo) === "github" ? [repo] : []);
+
 function trackersFor(repo: string | null): Tracker[] {
-  // A repository whose instructions name GitHub Issues joins the GitHub tracker.
-  const trackers = enabledTrackers(repo && repoTracker(repo) === "github" ? [repo] : []);
+  const trackers = trackersIn(repo);
   if (!trackers.length)
     throw new Exit(
       1,
@@ -174,9 +180,9 @@ function bodyArg(a: Args, usage: string): string {
 
 // A report whose title line names the kind the command posts, so the
 // plan and the inbox can find it again.
-function reportArg(a: Args, kind: string, usage: string): string {
+function reportArg(a: Args, kind: ReportKind, usage: string): string {
   const body = bodyArg(a, usage);
-  if (report({ id: "", body, createdAt: "" })?.kind !== kind)
+  if (report(body)?.kind !== kind)
     throw new Exit(64, `the report must start with its title line, "${kind} · <subject>"`);
   return body;
 }
@@ -292,7 +298,7 @@ const PR_REPORT_USAGE = "usage: factory pr report [PR] --body-file <report>";
 // request back into a draft: the inbox lists drafts as the user's.
 async function prReport(a: Args) {
   const body = bodyArg(a, PR_REPORT_USAGE);
-  const r = report({ id: "", body, createdAt: "" });
+  const r = report(body);
   if (r?.kind === "Revised")
     throw new Exit(64, "a Revised report goes on the ticket: factory tickets revise");
   if (!r)
@@ -624,7 +630,10 @@ async function sortPr(t: Ticket, url: string, session: string | undefined): Prom
   if (stalled && (s.unresolvedThreads ?? 0) > 0 && !byAgent(forge.lastWord(ref, ref.number) ?? ""))
     broken.push(`has ${s.unresolvedThreads} open thread(s) waiting on an answer`);
   if (broken.length && stalled)
-    return { human: [], agent: item(`its pull request ${broken.join(", ")}, quiet for over 3h`) };
+    return {
+      human: [],
+      agent: item(`its pull request ${broken.join(", ")}, quiet for over ${QUIET}`),
+    };
   if (!broken.length && s.mergeState === "blocked")
     return { human: item("its pull request waits on a required review"), agent: [] };
   return { human: [], agent: [] };
@@ -659,7 +668,7 @@ async function sortTicket(t: Ticket): Promise<Sorted> {
   const prs = t.repo ? forge.openPrs(t.repo, t.branchName, t.prs) : [];
   const quiet =
     !prs.length && isQuiet(t.updatedAt)
-      ? [inboxItem(t, "claimed, but no pull request and quiet for over 3h", { session })]
+      ? [inboxItem(t, `claimed, but no pull request and quiet for over ${QUIET}`, { session })]
       : [];
   const each = await Promise.all(prs.map((url) => sortPr(t, url, session)));
   return {
@@ -730,23 +739,16 @@ async function stats(a: Args) {
       return [];
     }
   });
-  const reports: {
-    where: string;
-    url: string;
-    kind: string;
-    title: string;
-    needsYou: boolean;
-    at: string;
-  }[] = [];
+  const reports: (Report & { where: string; url: string })[] = [];
   for (const t of [...done.map((d) => d.ticket), ...open.filter((t) => recent(t.updatedAt))]) {
     for (const c of (await trackerFor(t.id).get(t.id)).comments) {
-      const r = report(c);
+      const r = report(c.body, c.createdAt);
       if (r && recent(r.at)) reports.push({ where: t.id, url: t.url, ...r });
     }
   }
   for (const p of merged) {
     for (const c of forge.comments(p.repo, p.number)) {
-      const r = report(c);
+      const r = report(c.body, c.createdAt);
       if (r && recent(r.at)) reports.push({ where: `${p.repo}#${p.number}`, url: p.url, ...r });
     }
   }
@@ -841,7 +843,7 @@ async function doctor(a: Args) {
 
   const here = forge.currentRepo();
   const repo = here ? `${here.owner}/${here.repo}` : null;
-  const trackers = enabledTrackers(repo && repoTracker(repo) === "github" ? [repo] : []);
+  const trackers = trackersIn(repo);
   if (!trackers.length)
     add(
       "trackers",

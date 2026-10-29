@@ -193,30 +193,22 @@ describe("reports", () => {
     ["**Done · the export skips archived rows**", "Done"],
   ]) {
     test(`"${title}" is a ${kind} report`, () => {
-      expect(report({ id: "r", createdAt: at, body: `${title}\n\nExpected: x` })?.kind).toBe(kind);
+      expect(report(`${title}\n\nExpected: x`, at)?.kind).toBe(kind);
     });
   }
 
   test("other comments are not reports, and Needs you marks the ones only the user can move", () => {
-    expect(report({ id: "r", createdAt: at, body: "Revised the plan, see below" })).toBe(null);
-    expect(report({ id: "r", createdAt: at, body: "Claimed by a cloud session." })).toBe(null);
-    expect(report({ id: "r", createdAt: at, body: "Revised: no, I meant the title" })).toBe(null);
-    expect(report({ id: "r", createdAt: at, body: "Done: thanks" })).toBe(null);
-    expect(report({ id: "r", createdAt: at, body: "**Done - thanks**" })).toBe(null);
-    expect(report({ id: "r", createdAt: at, body: "## Handed back — see the thread" })).toBe(null);
-    expect(
-      report({ id: "r", createdAt: at, body: "## Handed back · x\n\n**Needs you:** pick one" })
-        ?.needsYou,
-    ).toBe(true);
-    expect(
-      report({ id: "r", createdAt: at, body: "## Handed back · x\n\n### Needs you\n\nPick one" })
-        ?.needsYou,
-    ).toBe(true);
-    expect(
-      report({ id: "r", createdAt: at, body: "## Done · x\n\nNothing needs you." })?.needsYou,
-    ).toBe(false);
-    expect(report({ id: "r", createdAt: at, body: "## Deviation · x" })).toBe(null);
-    expect(report({ id: "r", createdAt: at, body: "## Unverified · x" })).toBe(null);
+    expect(report("Revised the plan, see below", at)).toBe(null);
+    expect(report("Claimed by a cloud session.", at)).toBe(null);
+    expect(report("Revised: no, I meant the title", at)).toBe(null);
+    expect(report("Done: thanks", at)).toBe(null);
+    expect(report("**Done - thanks**", at)).toBe(null);
+    expect(report("## Handed back — see the thread", at)).toBe(null);
+    expect(report("## Handed back · x\n\n**Needs you:** pick one", at)?.needsYou).toBe(true);
+    expect(report("## Handed back · x\n\n### Needs you\n\nPick one", at)?.needsYou).toBe(true);
+    expect(report("## Done · x\n\nNothing needs you.", at)?.needsYou).toBe(false);
+    expect(report("## Deviation · x", at)).toBe(null);
+    expect(report("## Unverified · x", at)).toBe(null);
   });
 
   test("the latest report wins, whatever order the comments arrive in", () => {

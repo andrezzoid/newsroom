@@ -7,6 +7,7 @@
 
 import { run } from "../proc.ts";
 import {
+  BRIEF_HEADING,
   CLAIMED_LABEL,
   FACTORY_LABELS,
   HUMAN_LABEL,
@@ -83,7 +84,7 @@ fragment IssueFields on Issue {
   children(first: 10, filter: { state: { type: { nin: ["completed", "canceled"] } } }) { nodes { identifier title state { type name } } }
   inverseRelations(first: 20) { nodes { type issue { identifier title state { type name } } } }
   attachments(first: 10) { nodes { url title } }
-  briefs: comments(last: 3, filter: { body: { contains: "## Agent Brief" } }) { nodes { id body createdAt } }
+  briefs: comments(last: 3, filter: { body: { contains: "${BRIEF_HEADING}" } }) { nodes { id body createdAt } }
 }`;
 
 // Open tickets the factory reads: labelled with one of its labels, or new,
@@ -288,6 +289,11 @@ export class LinearTracker implements Tracker {
     return d.issue;
   }
 
+  // The issue an earlier get() fetched, else a fresh one.
+  private async node(id: string): Promise<WithComments> {
+    return this.raw.get(id) ?? (await this.issue(id));
+  }
+
   private async firstState(teamId: string, type: string): Promise<string | null> {
     const d = await linear<{
       team: { states: { nodes: { id: string; type: string; position: number }[] } };
@@ -337,7 +343,7 @@ export class LinearTracker implements Tracker {
   }
 
   async start(t: Ticket): Promise<void> {
-    const i = this.raw.get(t.id) ?? (await this.issue(t.id));
+    const i = await this.node(t.id);
     const claimed = t.labels.includes(CLAIMED_LABEL)
       ? null
       : await this.labelId(CLAIMED_LABEL, i.team.id);
@@ -357,12 +363,12 @@ export class LinearTracker implements Tracker {
   }
 
   async comment(id: string, body: string): Promise<void> {
-    const i = this.raw.get(id) ?? (await this.issue(id));
+    const i = await this.node(id);
     await linear(CREATE_COMMENT, { issueId: i.id, body });
   }
 
   async create(from: Ticket, title: string, body: string): Promise<string> {
-    const i = this.raw.get(from.id) ?? (await this.issue(from.id));
+    const i = await this.node(from.id);
     const d = await linear<{ issueCreate: { issue: { identifier: string } } }>(CREATE_ISSUE, {
       input: { teamId: i.team.id, title, description: body },
     });
@@ -370,8 +376,8 @@ export class LinearTracker implements Tracker {
   }
 
   async handBack(id: string): Promise<{ labelled: boolean }> {
-    const i = this.raw.get(id) ?? (await this.issue(id));
-    await this.unlabel(i, [READY_LABEL, CLAIMED_LABEL]);
+    await this.release(id);
+    const i = await this.node(id);
     const human = await this.labelId(HUMAN_LABEL, i.team.id);
     if (human) await linear(ADD_LABEL, { id: i.id, labelId: human });
     const todo = await this.firstState(i.team.id, "unstarted");
@@ -380,7 +386,7 @@ export class LinearTracker implements Tracker {
   }
 
   async release(id: string): Promise<void> {
-    await this.unlabel(this.raw.get(id) ?? (await this.issue(id)), [READY_LABEL, CLAIMED_LABEL]);
+    await this.unlabel(await this.node(id), [READY_LABEL, CLAIMED_LABEL]);
   }
 
   async done(since: string): Promise<{ ticket: Ticket; readyAt: string | null }[]> {
