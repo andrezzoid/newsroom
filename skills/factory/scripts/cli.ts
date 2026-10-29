@@ -878,12 +878,12 @@ const COMMANDS: Record<string, Command> = {
     run: doctor,
   },
   inbox: {
-    usage: "inbox [--human | --agent] [--json]",
+    usage: "inbox [--repo o/r] [--human | --agent] [--json]",
     about: "what waits on you, and what an agent can pick up now",
     run: inbox,
   },
   stats: {
-    usage: "stats [--since 7d] [--json]",
+    usage: "stats [--repo o/r] [--since 7d] [--json]",
     about: "what got done, what went wrong, what is still open",
     run: stats,
   },
@@ -893,27 +893,27 @@ const COMMANDS: Record<string, Command> = {
     run: ticketsNext,
   },
   "tickets show": {
-    usage: "tickets show <ID> [--json]",
+    usage: "tickets show <ID> [--repo o/r] [--json]",
     about: "the ticket, its phase, its claim and its plan",
     run: ticketsShow,
   },
   "tickets claim": {
-    usage: "tickets claim <ID> [--take-over]",
+    usage: "tickets claim <ID> [--repo o/r] [--take-over]",
     about: `label it ${CLAIMED_LABEL} for this session; exit 3 if another session holds it, or it is blocked or not ${READY_LABEL}`,
     run: ticketsClaim,
   },
   "tickets new": {
-    usage: "tickets new --from <ID> --title T (--body TEXT | --body-file F)",
+    usage: "tickets new --from <ID> [--repo o/r] --title T (--body TEXT | --body-file F)",
     about: "file a follow-up beside the ticket, unlabelled, for triage",
     run: ticketsNew,
   },
   "tickets revise": {
-    usage: "tickets revise <ID> (--body TEXT | --body-file F)",
+    usage: "tickets revise <ID> [--repo o/r] (--body TEXT | --body-file F)",
     about: 'post a "Revised ·" report, which joins the plan',
     run: ticketsRevise,
   },
   "tickets handback": {
-    usage: "tickets handback <ID> (--body TEXT | --body-file F)",
+    usage: "tickets handback <ID> [--repo o/r] (--body TEXT | --body-file F)",
     about: `post a "Handed back ·" report and relabel it ${HUMAN_LABEL}`,
     run: ticketsHandback,
   },
@@ -923,18 +923,18 @@ const COMMANDS: Record<string, Command> = {
     run: prStatus,
   },
   "pr watch": {
-    usage: "pr watch [PR] [--interval 60]",
+    usage: "pr watch [PR] [--repo o/r] [--interval 60]",
     about: "one line per change until merged or closed",
     run: prWatch,
   },
   "pr reply": {
-    usage: "pr reply [PR] --comment ID (--body TEXT | --body-file F) [--resolve]",
+    usage: "pr reply [PR] [--repo o/r] --comment ID (--body TEXT | --body-file F) [--resolve]",
     about:
       "reply in a review comment's thread, with the Claude Code footer; --resolve also resolves the thread",
     run: prReply,
   },
   "pr resolve": {
-    usage: "pr resolve [PR] --comment ID",
+    usage: "pr resolve [PR] [--repo o/r] --comment ID",
     about: "resolve the review thread holding the comment",
     run: prResolve,
   },
@@ -945,12 +945,12 @@ const COMMANDS: Record<string, Command> = {
     run: prOpen,
   },
   "pr report": {
-    usage: "pr report [PR] (--body TEXT | --body-file F)",
+    usage: "pr report [PR] [--repo o/r] (--body TEXT | --body-file F)",
     about: "post a report on the pull request; a hand-back turns it into a draft",
     run: prReport,
   },
   "pr merge": {
-    usage: "pr merge [PR]",
+    usage: "pr merge [PR] [--repo o/r]",
     about: "merge if nothing blocks it, else exit 3 with what does",
     run: prMerge,
   },
@@ -997,12 +997,16 @@ the repos in FACTORY_GITHUB_REPOS, and for a repo whose CLAUDE.md or AGENTS.md s
 export async function main(argv: string[]): Promise<number> {
   const a = parseArgs(argv);
   const [group, sub] = a._;
-  const command = COMMANDS[`${group} ${sub}`] ?? COMMANDS[group ?? ""];
+  // Own keys only, so `factory constructor` is no command.
+  const name = [`${group} ${sub}`, group ?? ""].find((n) => Object.hasOwn(COMMANDS, n));
+  const command = name ? COMMANDS[name] : undefined;
   if (!command || a.flags.help) {
     console.log(HELP);
     return group && !a.flags.help ? 64 : 0;
   }
   try {
+    const bare = Object.keys(a.flags).find((k) => a.flags[k] === true && !SWITCHES.has(k));
+    if (bare) throw new Usage(`--${bare} takes a value`);
     return await command.run(a);
   } catch (e) {
     if (e instanceof Usage) {

@@ -1912,16 +1912,51 @@ test("a flag the help gives no value takes none, and one it gives a value takes 
 test("a wrong call prints its own command's usage line from the help", async () => {
   const r = await run(["tickets", "revise", "ENG-1"]);
   expect(r.code).toBe(64);
-  expect(r.err).toBe("usage: factory tickets revise <ID> (--body TEXT | --body-file F)\n");
+  expect(r.err).toBe(
+    "usage: factory tickets revise <ID> [--repo o/r] (--body TEXT | --body-file F)\n",
+  );
   expect((await run(["--help"])).out).toContain(
-    "factory tickets revise <ID> (--body TEXT | --body-file F)",
+    "factory tickets revise <ID> [--repo o/r] (--body TEXT | --body-file F)",
   );
 });
 
 test("unknown commands print help and exit 64", async () => {
-  const r = await run(["frobnicate"]);
+  for (const name of ["frobnicate", "constructor", "__proto__"]) {
+    const r = await run([name]);
+    expect(r.code).toBe(64);
+    expect(r.out).toContain("factory doctor");
+  }
+});
+
+test("a flag that takes a value, given none, is a usage error", async () => {
+  const r = await run(["pr", "watch", "7", "--repo", "o/r", "--interval"]);
   expect(r.code).toBe(64);
-  expect(r.out).toContain("factory doctor");
+  expect(r.err).toBe(
+    "--interval takes a value\nusage: factory pr watch [PR] [--repo o/r] [--interval 60]\n",
+  );
+});
+
+test("every command that reads --repo lists it in its usage line", async () => {
+  const help = (await run(["--help"])).out;
+  for (const command of [
+    "inbox",
+    "stats",
+    "tickets next",
+    "tickets show",
+    "tickets claim",
+    "tickets new",
+    "tickets revise",
+    "tickets handback",
+    "pr status",
+    "pr watch",
+    "pr reply",
+    "pr resolve",
+    "pr report",
+    "pr merge",
+  ]) {
+    const line = help.split("\n").find((l) => l.startsWith(`  factory ${command} `)) ?? "";
+    expect(line).toContain("--repo o/r");
+  }
 });
 
 test("doctor expects every skill folder next to factory", () => {
