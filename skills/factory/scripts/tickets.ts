@@ -2,7 +2,7 @@
 // pick up, what a ticket asks for, which session holds it and where it stands.
 // No tracker is named here.
 
-import type { Ticket, TicketComment } from "./trackers/types.ts";
+import { GITHUB_ISSUE, LINEAR_KEY, type Ticket, type TicketComment } from "./trackers/types.ts";
 
 // Triage's state labels, plus the claim.
 export const TRIAGE_LABEL = "needs-triage";
@@ -181,10 +181,11 @@ export function phaseOf(t: Pick<Ticket, "state" | "labels">, openPrs: string[]):
 // The ticket a branch works on. GitHub branches are issue-<n>-slug (checked
 // first, since "issue-12" also looks like a Linear key); Linear's suggested
 // branch names carry the key, as in andre/eng-123-fix-login.
+const BRANCH_KEY = new RegExp(`(?:^|[/_-])(${LINEAR_KEY})(?:[/_-]|$)`);
 export function ticketFromBranch(branch: string, repo: string | null): string | null {
   const gh = /(?:^|\/)issue-(\d+)(?:-|$)/.exec(branch);
   if (gh) return repo ? `${repo.toLowerCase()}#${gh[1]}` : null;
-  const [, id] = /(?:^|[/_-])([a-z][a-z0-9]{1,9}-\d+)(?:[/_-]|$)/i.exec(branch) ?? [];
+  const [, id] = BRANCH_KEY.exec(branch) ?? [];
   return id ? id.toUpperCase() : null;
 }
 
@@ -198,8 +199,10 @@ export function ticketsOfPr(pr: { body: string | null; headRef: string }, repo: 
 
 // The tickets a body closes, one per closing line: Closes ENG-123, Fixes #12,
 // Resolves o/r#12 or an issue URL. A bare #12 is an issue of `repo`.
-const CLOSING =
-  /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+(https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+|[\w.-]+\/[\w.-]+#\d+|#\d+|[a-z][a-z0-9]{1,9}-\d+)\b/gi;
+const CLOSING = new RegExp(
+  `\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\s*:?\\s+(https:\\/\\/github\\.com\\/[\\w.-]+\\/[\\w.-]+\\/issues\\/\\d+|${GITHUB_ISSUE}|#\\d+|${LINEAR_KEY})\\b`,
+  "gi",
+);
 export function closedBy(body: string, repo: string): string[] {
   const out = new Set<string>();
   for (const m of body.matchAll(CLOSING)) {
@@ -211,15 +214,4 @@ export function closedBy(body: string, repo: string): string[] {
     else out.add(ref.toUpperCase());
   }
   return [...out];
-}
-
-export function slug(title: string, max = 40): string {
-  return title
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+/, "")
-    .slice(0, max)
-    .replace(/-+$/, "");
 }

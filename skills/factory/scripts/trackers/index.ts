@@ -9,11 +9,14 @@
 import { parseRepo, readRepoFile } from "../forge.ts";
 import { GithubTracker } from "./github.ts";
 import { LinearTracker, linearToken } from "./linear.ts";
-import type { Tracker, TrackerName } from "./types.ts";
+import { GITHUB_ISSUE, LINEAR_KEY, type Tracker, type TrackerName } from "./types.ts";
+
+const IS_GITHUB = new RegExp(`^(?:${GITHUB_ISSUE}|#\\d+)$`);
+const IS_LINEAR = new RegExp(`^${LINEAR_KEY}$`);
 
 export function trackerOf(id: string): TrackerName | null {
-  if (/^[\w.-]+\/[\w.-]+#\d+$/.test(id) || /^#\d+$/.test(id)) return "github";
-  if (/^[A-Za-z][A-Za-z0-9]*-\d+$/.test(id)) return "linear";
+  if (IS_GITHUB.test(id)) return "github";
+  if (IS_LINEAR.test(id)) return "linear";
   return null;
 }
 

@@ -4,6 +4,13 @@
 
 export type TrackerName = "linear" | "github";
 
+// Ticket ids as each tracker spells them, for every regex that reads one. A
+// Linear key is a team key and a number, as ENG-123; Linear documents no
+// bounds on the team key, so 1 to 10 characters is this CLI's guess. A GitHub
+// issue is owner/name#123.
+export const LINEAR_KEY = "[a-zA-Z][a-zA-Z0-9]{0,9}-\\d+";
+export const GITHUB_ISSUE = "[\\w.-]+\\/[\\w.-]+#\\d+";
+
 export type TicketState = "queued" | "started" | "done" | "canceled";
 
 export type TicketRef = { id: string; title: string; done: boolean };
@@ -45,6 +52,8 @@ export class NotFound extends Error {}
 
 export interface Tracker {
   readonly name: TrackerName;
+  // What it reads, as doctor names it: "issues in o/r", "tickets in Linear".
+  readonly scope: string;
   // Open tickets the factory reads: those with a factory label, and new ones
   // with none. Ready tickets come with their blockers and children.
   open(): Promise<Ticket[]>;

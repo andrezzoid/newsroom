@@ -5,6 +5,7 @@ import {
   byPriority,
   claimant,
   claimLog,
+  closedBy,
   latestClaim,
   plan,
   latestReport,
@@ -12,11 +13,10 @@ import {
   phaseOf,
   readiness,
   report,
-  slug,
   ticketFromBranch,
   ticketsOfPr,
 } from "../scripts/tickets.ts";
-import { blockedByRefs, toTicket as githubTicket } from "../scripts/trackers/github.ts";
+import { blockedByRefs, slug, toTicket as githubTicket } from "../scripts/trackers/github.ts";
 import { normalizeId, trackerLine, trackerOf } from "../scripts/trackers/index.ts";
 import { repoOf, toTicket as linearTicket } from "../scripts/trackers/linear.ts";
 import { expect } from "./expect.ts";
@@ -300,6 +300,15 @@ describe("ticket ids", () => {
     expect(trackerOf("andrezzoid/app#12")).toBe("github");
     expect(trackerOf("#12")).toBe("github");
     expect(trackerOf("12")).toBe(null);
+  });
+
+  test("every reader of an id accepts the same Linear keys", () => {
+    for (const key of ["A-1", "ENG-12", "ABCDEFGHIJ-3"]) {
+      expect(trackerOf(key)).toBe("linear");
+      expect(ticketFromBranch(`andre/${key.toLowerCase()}-thing`, null)).toBe(key);
+      expect(closedBy(`Closes ${key}`, "o/r")).toEqual([key]);
+    }
+    expect(trackerOf("ABCDEFGHIJK-3")).toBe(null);
   });
 
   test("a repo names its tracker in the Tracker line of its Agent skills block", () => {

@@ -276,6 +276,7 @@ async function issues<T = LinearIssue>(
 
 export class LinearTracker implements Tracker {
   readonly name = "linear" as const;
+  readonly scope = "tickets in Linear";
   private raw = new Map<string, WithComments>();
 
   // Linear answers an unknown identifier with null or an "Entity not found" error.

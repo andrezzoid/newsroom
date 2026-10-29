@@ -4,8 +4,9 @@
 // started, any other open issue is queued.
 
 import { api, comments, paginate, viewer as forgeViewer } from "../forge.ts";
-import { CLAIMED_LABEL, HUMAN_LABEL, READY_LABEL, slug, ticketsOfPr } from "../tickets.ts";
+import { CLAIMED_LABEL, HUMAN_LABEL, READY_LABEL, ticketsOfPr } from "../tickets.ts";
 import {
+  GITHUB_ISSUE,
   NotFound,
   type Ticket,
   type TicketComment,
@@ -15,8 +16,10 @@ import {
 
 export class GithubError extends Error {}
 
+const ISSUE_ID = new RegExp(`^${GITHUB_ISSUE}$`);
+
 export function parseId(id: string): { repo: string; number: number } {
-  const [, repo, number] = /^([\w.-]+\/[\w.-]+)#(\d+)$/.exec(id) ?? [];
+  const [repo, number] = ISSUE_ID.test(id) ? id.split("#") : [];
   if (!repo) throw new GithubError(`not a GitHub issue id (owner/repo#123): ${id}`);
   return { repo: repo.toLowerCase(), number: Number(number) };
 }
@@ -99,12 +102,26 @@ function closing(prs: any[], id: string): string[] {
     .map((p) => p.html_url);
 }
 
+// The branch name a GitHub issue suggests: issue-<n>-<slug>.
+export function slug(title: string, max = 40): string {
+  return title
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "")
+    .slice(0, max)
+    .replace(/-+$/, "");
+}
+
 export class GithubTracker implements Tracker {
   readonly name = "github" as const;
   readonly repos: string[];
+  readonly scope: string;
 
   constructor(repos: string[]) {
     this.repos = [...new Set(repos.map((r) => r.toLowerCase()))];
+    this.scope = `issues in ${this.repos.join(", ")}`;
   }
 
   private blockers(repo: string, issue: any): TicketRef[] {

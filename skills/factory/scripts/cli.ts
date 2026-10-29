@@ -32,7 +32,6 @@ import {
   ticketsOfPr,
   TRIAGE_LABEL,
 } from "./tickets.ts";
-import type { GithubTracker } from "./trackers/github.ts";
 import {
   enabledTrackers,
   githubRepos,
@@ -820,13 +819,7 @@ async function doctor(a: Args) {
   for (const t of trackers) {
     try {
       const who = await t.viewer();
-      add(
-        t.name,
-        "ok",
-        t.name === "github"
-          ? `issues in ${(t as GithubTracker).repos.join(", ")} as ${who}`
-          : `authenticated as ${who}`,
-      );
+      add(t.name, "ok", `${t.scope} as ${who}`);
     } catch (e) {
       failed.push({ name: t.name, message: (e as Error).message });
     }
