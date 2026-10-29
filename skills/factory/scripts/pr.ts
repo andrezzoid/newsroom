@@ -124,23 +124,39 @@ export function status(f: PrFacts): Status {
   };
 }
 
-// What stops a merge. Every check counts, required or not, since a repo
-// without branch protection requires none.
-export function mergeBlockers(s: Status): string[] {
-  const out: string[] = [];
-  if (s.state !== "open") out.push(`it is ${s.state}`);
-  if (s.draft) out.push("it is a draft");
-  if (s.conflicts === null) out.push("GitHub is still computing whether it conflicts");
-  else if (s.conflicts) out.push(`it conflicts with ${s.baseRef}`);
-  if (s.checks.failing.length) out.push(`failing: ${s.checks.failing.join(", ")}`);
-  if (s.checks.pending.length) out.push(`pending: ${s.checks.pending.join(", ")}`);
+export type BlockerCode =
+  | "not-open"
+  | "draft"
+  | "computing"
+  | "conflicts"
+  | "failing"
+  | "pending"
+  | "changes-requested"
+  | "threads-unreadable"
+  | "threads"
+  | "behind"
+  | "protected";
+export type Blocker = { code: BlockerCode; text: string };
+
+// What stops a merge, each with a code a caller can act on. Every check
+// counts, required or not, since a repo without branch protection requires
+// none.
+export function mergeBlockers(s: Status): Blocker[] {
+  const out: Blocker[] = [];
+  const add = (code: BlockerCode, text: string) => out.push({ code, text });
+  if (s.state !== "open") add("not-open", `it is ${s.state}`);
+  if (s.draft) add("draft", "it is a draft");
+  if (s.conflicts === null) add("computing", "GitHub is still computing whether it conflicts");
+  else if (s.conflicts) add("conflicts", `it conflicts with ${s.baseRef}`);
+  if (s.checks.failing.length) add("failing", `failing: ${s.checks.failing.join(", ")}`);
+  if (s.checks.pending.length) add("pending", `pending: ${s.checks.pending.join(", ")}`);
   if (s.reviews.changesRequested.length)
-    out.push(`changes requested by ${s.reviews.changesRequested.join(", ")}`);
-  if (s.unresolvedThreads === null) out.push("review threads could not be read");
-  else if (s.unresolvedThreads > 0) out.push(`${s.unresolvedThreads} open review thread(s)`);
-  if (s.mergeableState === "behind") out.push(`behind ${s.baseRef}: update the branch`);
+    add("changes-requested", `changes requested by ${s.reviews.changesRequested.join(", ")}`);
+  if (s.unresolvedThreads === null) add("threads-unreadable", "review threads could not be read");
+  else if (s.unresolvedThreads > 0) add("threads", `${s.unresolvedThreads} open review thread(s)`);
+  if (s.mergeableState === "behind") add("behind", `behind ${s.baseRef}: update the branch`);
   if (s.mergeableState === "blocked")
-    out.push("branch protection blocks it: a required review or check");
+    add("protected", "branch protection blocks it: a required review or check");
   return out;
 }
 

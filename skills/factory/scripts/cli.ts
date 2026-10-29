@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import * as forge from "./forge.ts";
-import { byAgent, fingerprint, mergeBlockers, type Status } from "./pr.ts";
+import { type BlockerCode, byAgent, fingerprint, mergeBlockers, type Status } from "./pr.ts";
 import { inCloud, run } from "./proc.ts";
 import {
   CLAIMED_LABEL,
@@ -199,7 +199,7 @@ function statusLines(s: Status): string {
 // The facts, plus what in them would stop `pr merge`.
 async function prStatus(a: Args) {
   const { status } = await forge.pullStatus(forge.resolvePr(a._[2], str(a.flags.repo)));
-  const blockers = mergeBlockers(status);
+  const blockers = mergeBlockers(status).map((b) => b.text);
   print(
     a,
     { ...status, blockers },
@@ -329,7 +329,7 @@ async function prOpen(a: Args) {
 async function prMerge(a: Args) {
   const ref = forge.resolvePr(a._[2], str(a.flags.repo));
   const { status: s, body } = await forge.pullStatus(ref);
-  const blockers = mergeBlockers(s);
+  const blockers = mergeBlockers(s).map((b) => b.text);
   const named: { id: string; tracker: Tracker }[] = [];
   for (const id of ticketsOfPr({ body, headRef: s.headRef }, ref.repo)) {
     const tracker = trackerFor(id);
@@ -569,6 +569,15 @@ const inboxItem = (t: Ticket, why: string, more: Partial<Item> = {}): Item => ({
   ...more,
 });
 
+// The blockers a pull request's own session would fix, had it not gone, as
+// the inbox words them.
+const AGENT_FIXES: Partial<Record<BlockerCode, (s: Status) => string>> = {
+  conflicts: () => "conflicts",
+  behind: (s) => `is behind ${s.baseRef}`,
+  failing: (s) => `fails ${s.checks.failing.join(", ")}`,
+  "changes-requested": () => "has changes requested",
+};
+
 // Where a claimed ticket's open pull request goes, if anywhere. The comments
 // and the last word depend on the status, so they come after it.
 async function sortPr(t: Ticket, url: string, session: string | undefined): Promise<Sorted> {
@@ -582,16 +591,11 @@ async function sortPr(t: Ticket, url: string, session: string | undefined): Prom
       agent: [],
     };
   }
-  if (!mergeBlockers(s).length) return { human: item("ready to merge"), agent: [] };
-  // What its session would fix, had it not gone. Babysit leaves open the
-  // threads that wait on someone else, so a thread counts only when
-  // someone other than an agent spoke last.
-  const broken = [
-    s.conflicts ? "conflicts" : "",
-    s.mergeableState === "behind" ? `is behind ${s.baseRef}` : "",
-    s.checks.failing.length ? `fails ${s.checks.failing.join(", ")}` : "",
-    s.reviews.changesRequested.length ? "has changes requested" : "",
-  ].filter(Boolean);
+  const blockers = mergeBlockers(s);
+  if (!blockers.length) return { human: item("ready to merge"), agent: [] };
+  // Babysit leaves open the threads that wait on someone else, so a thread
+  // counts only when someone other than an agent spoke last.
+  const broken = blockers.flatMap((b) => AGENT_FIXES[b.code]?.(s) ?? []);
   const stalled = isQuiet(s.updatedAt);
   if (stalled && (s.unresolvedThreads ?? 0) > 0 && !byAgent(forge.lastWord(ref) ?? ""))
     broken.push(`has ${s.unresolvedThreads} open thread(s) waiting on an answer`);
@@ -600,7 +604,7 @@ async function sortPr(t: Ticket, url: string, session: string | undefined): Prom
       human: [],
       agent: item(`its pull request ${broken.join(", ")}, quiet for over ${QUIET}`),
     };
-  if (!broken.length && s.mergeableState === "blocked")
+  if (!broken.length && blockers.some((b) => b.code === "protected"))
     return { human: item("its pull request waits on a required review"), agent: [] };
   return { human: [], agent: [] };
 }

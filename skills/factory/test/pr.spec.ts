@@ -57,7 +57,8 @@ describe("status", () => {
 });
 
 describe("mergeBlockers", () => {
-  const blockers = (over: Partial<PrFacts>) => mergeBlockers(status(facts(over)));
+  const blockers = (over: Partial<PrFacts>) =>
+    mergeBlockers(status(facts(over))).map((b) => b.text);
 
   test("a clean, green, reviewed-clean pull request has none", () => {
     expect(blockers({})).toEqual([]);
