@@ -4,7 +4,7 @@
 // proxy's ccr route, local ones from GraphQL.
 
 import { attributed, type PrFacts } from "./pr.ts";
-import { git, run } from "./proc.ts";
+import { git, inCloud, run } from "./proc.ts";
 
 const GH = process.env.FACTORY_GH ?? "gh";
 
@@ -16,19 +16,17 @@ export function gh(args: string[], input?: string): string {
   return r.stdout;
 }
 
-type ApiOpts = { method?: string; accept?: string; body?: unknown };
+type ApiOpts = { method?: string; body?: unknown };
 
 export function api<T>(path: string, opts: ApiOpts = {}): T {
   const args = ["api", path];
   if (opts.method) args.push("--method", opts.method);
-  if (opts.accept) args.push("-H", `Accept: ${opts.accept}`);
   let input: string | undefined;
   if (opts.body !== undefined) {
     args.push("--input", "-");
     input = JSON.stringify(opts.body);
   }
   const out = gh(args, input);
-  if (opts.accept?.includes("diff")) return out as T;
   return (out.trim() ? JSON.parse(out) : null) as T;
 }
 
@@ -120,49 +118,13 @@ export function countUnresolved(payload: unknown): number | null {
   return open;
 }
 
-const THREADS_QUERY = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}`;
-
-export function unresolvedThreads(r: Repo, number: number): number | null {
-  const viaCcr = () =>
-    countUnresolved(api(`repos/${r.owner}/${r.repo}/pulls/${number}/ccr/review_threads`));
-  const viaGraphql = () => {
-    const out = gh([
-      "api",
-      "graphql",
-      "-f",
-      `query=${THREADS_QUERY}`,
-      "-f",
-      `owner=${r.owner}`,
-      "-f",
-      `name=${r.repo}`,
-      "-F",
-      `number=${number}`,
-    ]);
-    return countUnresolved(JSON.parse(out)?.data?.repository?.pullRequest?.reviewThreads?.nodes);
-  };
-  const order =
-    process.env.CLAUDE_CODE_REMOTE === "true" ? [viaCcr, viaGraphql] : [viaGraphql, viaCcr];
-  for (const attempt of order) {
-    try {
-      const n = attempt();
-      if (n !== null) return n;
-    } catch {
-      // fall through to the other route
-    }
-  }
-  return null;
-}
-
-// A write REST does not expose: the ccr route first in a cloud session, which
+// What REST does not expose: the ccr route first in a cloud session, which
 // blocks GraphQL, and GraphQL first locally, each the other's fallback.
-function eitherRoute(what: string, viaCcr: () => void, viaGraphql: () => void): void {
-  const order =
-    process.env.CLAUDE_CODE_REMOTE === "true" ? [viaCcr, viaGraphql] : [viaGraphql, viaCcr];
+function eitherRoute<T>(what: string, viaCcr: () => T, viaGraphql: () => T): T {
   const failures: string[] = [];
-  for (const attempt of order) {
+  for (const attempt of inCloud() ? [viaCcr, viaGraphql] : [viaGraphql, viaCcr]) {
     try {
-      attempt();
-      return;
+      return attempt();
     } catch (e) {
       failures.push((e as Error).message);
     }
@@ -170,8 +132,45 @@ function eitherRoute(what: string, viaCcr: () => void, viaGraphql: () => void): 
   throw new GhError(`could not ${what}: ${failures.join("; ")}`);
 }
 
-const THREAD_OF_QUERY = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved comments(first:100){nodes{databaseId}}}}}}}`;
+const THREADS_QUERY = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved comments(first:100){nodes{databaseId}}}}}}}`;
 const RESOLVE_MUTATION = `mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}`;
+
+function threadsViaGraphql(r: Repo, number: number): any[] {
+  const out = gh([
+    "api",
+    "graphql",
+    "-f",
+    `query=${THREADS_QUERY}`,
+    "-f",
+    `owner=${r.owner}`,
+    "-f",
+    `name=${r.repo}`,
+    "-F",
+    `number=${number}`,
+  ]);
+  const nodes = JSON.parse(out)?.data?.repository?.pullRequest?.reviewThreads?.nodes;
+  // An answer without threads must not read as a pull request with none open.
+  if (!Array.isArray(nodes)) throw new GhError("GraphQL returned no review threads");
+  return nodes;
+}
+
+// null when neither route answers in a shape countUnresolved can read.
+export function unresolvedThreads(r: Repo, number: number): number | null {
+  const counted = (payload: unknown) => {
+    const n = countUnresolved(payload);
+    if (n === null) throw new GhError("no thread states in the answer");
+    return n;
+  };
+  try {
+    return eitherRoute(
+      "count the open review threads",
+      () => counted(api(`repos/${r.owner}/${r.repo}/pulls/${number}/ccr/review_threads`)),
+      () => counted(threadsViaGraphql(r, number)),
+    );
+  } catch {
+    return null;
+  }
+}
 
 // Resolves the review thread holding a comment.
 export function resolveThread(r: Repo, number: number, commentId: number): void {
@@ -182,22 +181,7 @@ export function resolveThread(r: Repo, number: number, commentId: number): void 
         method: "POST",
       }),
     () => {
-      const out = JSON.parse(
-        gh([
-          "api",
-          "graphql",
-          "-f",
-          `query=${THREAD_OF_QUERY}`,
-          "-f",
-          `owner=${r.owner}`,
-          "-f",
-          `name=${r.repo}`,
-          "-F",
-          `number=${number}`,
-        ]),
-      );
-      const threads: any[] = out?.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
-      const thread = threads.find((t) =>
+      const thread = threadsViaGraphql(r, number).find((t) =>
         t?.comments?.nodes?.some((c: any) => c?.databaseId === commentId),
       );
       if (!thread) throw new GhError("no review thread holds it");

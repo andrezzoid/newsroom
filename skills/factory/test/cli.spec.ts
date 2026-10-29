@@ -281,6 +281,13 @@ describe("pr status", () => {
     expect(JSON.parse(r.out).unresolvedThreads).toBe(1);
   });
 
+  test("threads neither route can read block a merge instead of counting as none", async () => {
+    routes({ GRAPHQL: { data: { repository: null } } });
+    const s = JSON.parse((await run(["pr", "status", "7", "--repo", "o/r", "--json"])).out);
+    expect(s.unresolvedThreads).toBe(null);
+    expect(s.blockers).toContain("review threads could not be read");
+  });
+
   test("names a failing check, and what blocks a merge, and still exits 0", async () => {
     routes({
       [`GET repos/o/r/commits/${SHA}/check-runs`]: {

@@ -16,7 +16,7 @@ import {
   status as statusFromFacts,
   type Status,
 } from "./pr.ts";
-import { run } from "./proc.ts";
+import { inCloud, run } from "./proc.ts";
 import {
   CLAIMED_LABEL,
   claimable,
@@ -90,7 +90,7 @@ export function parseArgs(argv: string[]): Args {
 }
 
 const str = (v: string | true | undefined) => (typeof v === "string" ? v : undefined);
-const runtime = () => (process.env.CLAUDE_CODE_REMOTE === "true" ? "cloud" : "local");
+const runtime = () => (inCloud() ? "cloud" : "local");
 
 // The session running this command, as a claim names it: a link in the
 // cloud, the id `claude --resume` takes on a Mac. `key` tells its own claim

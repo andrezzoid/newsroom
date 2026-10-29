@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Stand-in for `gh` in tests. Routes live in $FAKE_GH_DIR/routes.json keyed by
 // "METHOD path" (with its query, then without, then with a trailing number as
-// :id), "DIFF path" or "GRAPHQL". Every call is appended to calls.jsonl so
+// :id), or "GRAPHQL". Every call is appended to calls.jsonl so
 // tests can assert what was sent.
 //
 // The route value "$append" makes a comment thread live: a POST adds the sent
@@ -22,7 +22,6 @@ const [command, path] = args;
 if (command !== "api" || !path) process.exit(2);
 const flag = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 const method = flag("--method") ?? "GET";
-const accept = flag("-H") ?? "";
 
 const page = /[?&]page=(\d+)/.exec(path)?.[1];
 const query = path.replace(/[?&](per_page|page)=\d+/g, "").replace(/^([^?]*)&/, "$1?");
@@ -30,9 +29,7 @@ const bare = path.replace(/\?.*$/, "");
 const keys =
   path === "graphql"
     ? ["GRAPHQL"]
-    : accept.includes("diff")
-      ? [`DIFF ${bare}`]
-      : [`${method} ${query}`, `${method} ${bare}`, `${method} ${bare.replace(/\/\d+$/, "/:id")}`];
+    : [`${method} ${query}`, `${method} ${bare}`, `${method} ${bare.replace(/\/\d+$/, "/:id")}`];
 const key = keys.find((k) => k in routes);
 
 if (page && page !== "1") {

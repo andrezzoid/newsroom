@@ -1,4 +1,5 @@
-// The one place the CLI starts processes.
+// Where the CLI meets its host: the one place it starts processes, and
+// whether it runs in a cloud session.
 
 import { spawnSync } from "node:child_process";
 
@@ -14,3 +15,5 @@ export function git(args: string[]): string | null {
   const r = run("git", args);
   return r.code === 0 ? r.stdout.trim() : null;
 }
+
+export const inCloud = (): boolean => process.env.CLAUDE_CODE_REMOTE === "true";
