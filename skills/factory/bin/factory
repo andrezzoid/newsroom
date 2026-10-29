@@ -3,7 +3,13 @@
 # Node 22.18+ runs the TypeScript directly; nothing is installed or built.
 set -euo pipefail
 here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-command -v node >/dev/null 2>&1 || { echo "factory needs Node 22.18 or later (mise install node)" >&2; exit 127; }
+# Older Node cannot load cli.ts at all, so only this shim can say why.
+version="$(node --version 2>/dev/null || true)"
+IFS=. read -r major minor _ <<<"${version#v}"
+if [ "${major:-0}" -lt 22 ] || { [ "$major" -eq 22 ] && [ "${minor:-0}" -lt 18 ]; }; then
+  echo "factory needs Node 22.18 or later, and found ${version:-no node} (mise install node)" >&2
+  exit 127
+fi
 # Node's fetch ignores HTTPS_PROXY unless asked, and cloud sessions reach
 # Linear only through the proxy.
 if [ -n "${HTTPS_PROXY:-${https_proxy:-}}" ]; then export NODE_USE_ENV_PROXY=1; fi

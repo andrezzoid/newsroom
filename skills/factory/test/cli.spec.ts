@@ -251,6 +251,23 @@ test("cli.ts runs when started through a symlink", () => {
   expect(r.stdout).toContain("factory:");
 });
 
+// Node before 22.18 cannot load cli.ts at all, so only the shim can say why.
+test("bin/factory runs on Node 22.18 or later, and names the minimum below it", () => {
+  const shim = join(import.meta.dirname, "..", "bin", "factory");
+  const ok = spawnSync(shim, ["--help"], { encoding: "utf8" });
+  expect(ok.stdout).toContain("factory:");
+  const bin = mkdtempSync(join(tmpdir(), "factory-node-"));
+  const node = join(bin, "node");
+  writeFileSync(node, "#!/bin/sh\necho v22.17.0\n");
+  chmodSync(node, 0o755);
+  const old = spawnSync(shim, ["--help"], {
+    encoding: "utf8",
+    env: { ...process.env, PATH: `${bin}:/usr/bin:/bin` },
+  });
+  expect(old.status).toBe(127);
+  expect(old.stderr).toContain("factory needs Node 22.18 or later, and found v22.17.0");
+});
+
 describe("pr status", () => {
   test("reports facts as JSON and exits 0", async () => {
     const r = await run(["pr", "status", "--json", "7", "--repo", "o/r"]);
