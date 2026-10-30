@@ -1313,8 +1313,15 @@ describe("GitHub Issues tickets", () => {
   });
 
   test("a repo whose CLAUDE.md names GitHub Issues joins without FACTORY_GITHUB_REPOS", async () => {
+    // From a clone of another repo, so --repo o/r reads o/r's default branch.
+    const path = clone();
+    spawnSync("git", ["-C", path, "remote", "set-url", "origin", "https://github.com/p/q.git"]);
     routes({ ...current(), "GET repos/o/r/contents/CLAUDE.md": agentSkills("GitHub Issues") });
-    const r = await run(["tickets", "next", "--repo", "o/r", "--json"], { LINEAR_API_KEY: "" });
+    const r = await run(
+      ["tickets", "next", "--repo", "o/r", "--json"],
+      { LINEAR_API_KEY: "" },
+      path,
+    );
     expect(r.err).toBe("");
     expect(JSON.parse(r.out).ready.map((t: any) => t.id)).toEqual(["o/r#12"]);
   });
@@ -1322,7 +1329,6 @@ describe("GitHub Issues tickets", () => {
   test("inside a clone whose AGENTS.md names GitHub Issues, doctor and inbox use its issues", async () => {
     const path = clone();
     writeFileSync(join(path, "AGENTS.md"), "# R\n\n## Agent skills\n\nTracker: GitHub Issues\n");
-    routes({ ...current(), "GET repos/o/r/contents/AGENTS.md": agentSkills("GitHub Issues") });
     const env = { LINEAR_API_KEY: "", FACTORY_GITHUB_REPOS: "" };
     const doctor = await run(["doctor"], env, path);
     expect(doctor.out).toContain("issues in o/r as andrezzoid");

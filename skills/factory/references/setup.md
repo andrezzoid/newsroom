@@ -54,9 +54,11 @@ Commit the block on a branch and open a pull request.
   the cloud environment.
 - Without a run skill, tell the user to run `/run-skill-generator` in the repo and
   commit what it records: agents start the app through it with `/run`.
-- Run `factory doctor` again and show the result. The CLI reads the `Tracker:`
-  line from the default branch, so until the pull request merges, set
-  `FACTORY_GITHUB_REPOS` for this repo or expect `inbox` to skip it.
+- Run `factory doctor` again and show the result. In this clone the CLI reads
+  the `Tracker:` line from the working tree, so `inbox` here sees the repo at
+  once. Sessions on other branches, the routines among them, read it from
+  theirs: until the pull request merges, they skip the repo unless
+  `FACTORY_GITHUB_REPOS` names it.
 
 ## The cloud, once
 
