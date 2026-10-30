@@ -1205,7 +1205,7 @@ describe("Linear tickets", () => {
     expect(d.plan[1].text).toContain("drop the CSV export");
   });
 
-  test("new files an unlabelled follow-up in the ticket's team, linked back to it", async () => {
+  test("followup files an unlabelled follow-up in the ticket's team, linked back to it", async () => {
     const r = await run([
       "mission",
       "followup",
@@ -1542,7 +1542,7 @@ describe("GitHub Issues tickets", () => {
     );
   });
 
-  test("new files the follow-up in the ticket's repository", async () => {
+  test("followup files the follow-up in the ticket's repository", async () => {
     routes({ ...current(), "POST repos/o/r/issues": { number: 31 } });
     const r = await run(
       [
