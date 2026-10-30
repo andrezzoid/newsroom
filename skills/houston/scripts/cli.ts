@@ -463,7 +463,7 @@ async function missionShow(a: Args) {
 }
 
 // The claim is the in-progress label plus a comment naming this session.
-async function missionClaim(a: Args) {
+async function missionStart(a: Args) {
   const id = idArg(a);
   const tracker = trackerFor(id);
   const { ticket, comments } = await tracker.get(id);
@@ -521,7 +521,7 @@ async function missionFollowup(a: Args) {
   return 0;
 }
 
-async function missionProblem(a: Args) {
+async function missionHold(a: Args) {
   const id = idArg(a);
   const body = reportArg(a, "Handed back");
   const tracker = trackerFor(id);
@@ -904,10 +904,10 @@ const COMMANDS: Record<string, Command> = {
     about: "the ticket, its phase, its claim and its plan",
     run: missionShow,
   },
-  "mission claim": {
-    usage: "mission claim <ID> [--repo o/r] [--take-over]",
-    about: `label it ${CLAIMED_LABEL} for this session; exit 3 if another session holds it, or it is blocked or not ${READY_LABEL}`,
-    run: missionClaim,
+  "mission start": {
+    usage: "mission start <ID> [--repo o/r] [--take-over]",
+    about: `claim it: label it ${CLAIMED_LABEL} for this session; exit 3 if another session holds it, or it is blocked or not ${READY_LABEL}`,
+    run: missionStart,
   },
   "mission followup": {
     usage: "mission followup --from <ID> [--repo o/r] --title T (--body TEXT | --body-file F)",
@@ -919,10 +919,10 @@ const COMMANDS: Record<string, Command> = {
     about: 'post a "Revised ·" report, which joins the plan',
     run: missionRevise,
   },
-  "mission problem": {
-    usage: "mission problem <ID> [--repo o/r] (--body TEXT | --body-file F)",
-    about: `post a "Handed back ·" report and relabel it ${HUMAN_LABEL}`,
-    run: missionProblem,
+  "mission hold": {
+    usage: "mission hold <ID> [--repo o/r] (--body TEXT | --body-file F)",
+    about: `hand it back: post a "Handed back ·" report and relabel it ${HUMAN_LABEL}`,
+    run: missionHold,
   },
   "pr status": {
     usage: "pr status [PR] [--repo o/r] [--json]",
@@ -964,7 +964,7 @@ const COMMANDS: Record<string, Command> = {
 };
 
 // A flag is a switch unless its usage line follows it with a space and a
-// value, as in "--max N", so `claim --take-over ENG-1` keeps ENG-1 as the
+// value, as in "--max N", so `start --take-over ENG-1` keeps ENG-1 as the
 // ticket instead of swallowing it.
 const SWITCHES = new Set([
   "help",

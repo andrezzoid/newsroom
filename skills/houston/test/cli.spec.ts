@@ -1048,14 +1048,14 @@ describe("Linear tickets", () => {
     );
     chmodSync(linear, 0o755);
     const env = { LINEAR_API_KEY: "", PATH: `${bin}:${process.env.PATH}` };
-    expect((await run(["mission", "claim", "ENG-1"], env)).code).toBe(0);
+    expect((await run(["mission", "start", "ENG-1"], env)).code).toBe(0);
     expect((await run(["inbox"], env)).code).toBe(0);
     expect(linearCalls.every((c) => c.auth === "lin_api_from_cli")).toBe(true);
     expect(readFileSync(join(dir, "linear-calls"), "utf8")).toBe("auth token\nauth token\n");
   });
 
-  test("claim labels it in-progress, assigns, starts it and logs the local session", async () => {
-    const r = await run(["mission", "claim", "eng-1"], { CLAUDE_CODE_SESSION_ID: "sess-1" });
+  test("start labels it in-progress, assigns, starts it and logs the local session", async () => {
+    const r = await run(["mission", "start", "eng-1"], { CLAUDE_CODE_SESSION_ID: "sess-1" });
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
     expect(ops("HoustonAddLabel")).toEqual([{ id: "uuid-1", labelId: "lbl-in-progress" }]);
@@ -1064,7 +1064,7 @@ describe("Linear tickets", () => {
   });
 
   test("a cloud session's claim links the session", async () => {
-    await run(["mission", "claim", "ENG-1"], { CLAUDE_CODE_REMOTE_SESSION_ID: "cse_abc" });
+    await run(["mission", "start", "ENG-1"], { CLAUDE_CODE_REMOTE_SESSION_ID: "cse_abc" });
     expect(issueComments[0].body).toBe(
       "Claimed by [a cloud session](https://claude.ai/code/session_abc).",
     );
@@ -1079,14 +1079,14 @@ describe("Linear tickets", () => {
       body: claimLog("[a cloud session](https://claude.ai/code/session_x)", null),
       createdAt: "2026-09-01T10:00:00Z",
     });
-    const refused = await run(["mission", "claim", "ENG-1"]);
+    const refused = await run(["mission", "start", "ENG-1"]);
     expect(refused.code).toBe(3);
     expect(refused.err).toContain(
       "claimed by [a cloud session](https://claude.ai/code/session_x), claimed 2026-09-01 10:00",
     );
     expect(refused.err).toContain("--take-over");
     expect(ops("HoustonComment")).toEqual([]);
-    expect((await run(["mission", "claim", "--take-over", "ENG-1"])).code).toBe(0);
+    expect((await run(["mission", "start", "--take-over", "ENG-1"])).code).toBe(0);
     expect(issueComments.at(-1).body).toContain(
       "Takes over from [a cloud session](https://claude.ai/code/session_x), claimed 2026-09-01 10:00.",
     );
@@ -1102,21 +1102,21 @@ describe("Linear tickets", () => {
       body: claimLog("[a cloud session](https://claude.ai/code/session_abc)", null),
       createdAt: hoursAgo(1),
     });
-    const r = await run(["mission", "claim", "ENG-1"], {
+    const r = await run(["mission", "start", "ENG-1"], {
       CLAUDE_CODE_REMOTE_SESSION_ID: "cse_abc",
     });
     expect(r.code).toBe(0);
     expect(ops("HoustonComment")).toEqual([]);
   });
 
-  test("claim refuses a ticket that is not ready-for-agent", async () => {
+  test("start refuses a ticket that is not ready-for-agent", async () => {
     linearIssues = [linearIssue({ identifier: "ENG-1", labels: ["needs-info"] })];
-    const r = await run(["mission", "claim", "ENG-1"]);
+    const r = await run(["mission", "start", "ENG-1"]);
     expect(r.code).toBe(3);
     expect(r.err).toContain("no ready-for-agent label");
   });
 
-  test("claim refuses a ticket with an open blocker or open children", async () => {
+  test("start refuses a ticket with an open blocker or open children", async () => {
     linearIssues = [
       linearIssue({
         identifier: "ENG-1",
@@ -1125,7 +1125,7 @@ describe("Linear tickets", () => {
         },
       }),
     ];
-    const blocked = await run(["mission", "claim", "ENG-1"]);
+    const blocked = await run(["mission", "start", "ENG-1"]);
     expect(blocked.code).toBe(3);
     expect(blocked.err).toContain("blocked by ENG-0");
     linearIssues = [
@@ -1134,19 +1134,19 @@ describe("Linear tickets", () => {
         children: { nodes: [{ identifier: "ENG-2", state: { type: "unstarted" } }] },
       }),
     ];
-    expect((await run(["mission", "claim", "ENG-1"])).err).toContain("parent of 1 open ticket(s)");
+    expect((await run(["mission", "start", "ENG-1"])).err).toContain("parent of 1 open ticket(s)");
     expect([...ops("HoustonAddLabel"), ...ops("HoustonComment")]).toEqual([]);
   });
 
-  test("claim refuses what mission next refuses: a colleague's ticket, or one with no repository", async () => {
+  test("start refuses what mission next refuses: a colleague's ticket, or one with no repository", async () => {
     linearIssues = [
       linearIssue({ identifier: "ENG-1", assignee: { id: "r", name: "Rita", isMe: false } }),
     ];
-    const theirs = await run(["mission", "claim", "ENG-1"]);
+    const theirs = await run(["mission", "start", "ENG-1"]);
     expect(theirs.code).toBe(3);
     expect(theirs.err).toContain("assigned to Rita");
     linearIssues = [linearIssue({ identifier: "ENG-1", description: "No repo line." })];
-    const nowhere = await run(["mission", "claim", "ENG-1"]);
+    const nowhere = await run(["mission", "start", "ENG-1"]);
     expect(nowhere.code).toBe(3);
     expect(nowhere.err).toContain("no repository");
     expect([...ops("HoustonUpdate"), ...ops("HoustonAddLabel"), ...ops("HoustonComment")]).toEqual(
@@ -1154,9 +1154,9 @@ describe("Linear tickets", () => {
     );
   });
 
-  test("claim fails before writing anything when Linear has no in-progress label", async () => {
+  test("start fails before writing anything when Linear has no in-progress label", async () => {
     missingLabels = ["in-progress"];
-    const r = await run(["mission", "claim", "ENG-1"]);
+    const r = await run(["mission", "start", "ENG-1"]);
     expect(r.code).toBe(1);
     expect(r.err).toContain("no in-progress label exists in Linear");
     expect([...ops("HoustonUpdate"), ...ops("HoustonAddLabel"), ...ops("HoustonComment")]).toEqual(
@@ -1164,7 +1164,7 @@ describe("Linear tickets", () => {
     );
   });
 
-  test("problem posts the report, swaps the labels and moves the ticket back", async () => {
+  test("hold posts the report, swaps the labels and moves the ticket back", async () => {
     linearIssues = [
       linearIssue({ identifier: "ENG-1", labels: ["ready-for-agent", "in-progress"] }),
     ];
@@ -1172,7 +1172,7 @@ describe("Linear tickets", () => {
       "report.md",
       "## Handed back · acceptance line 2 cannot hold\n\n**Expected:** x",
     );
-    const r = await run(["mission", "problem", "ENG-1", "--body-file", report]);
+    const r = await run(["mission", "hold", "ENG-1", "--body-file", report]);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
     expect(ops("HoustonComment")[0].body).toContain(
@@ -1183,9 +1183,9 @@ describe("Linear tickets", () => {
     expect(ops("HoustonUpdate")[0].input).toEqual({ stateId: "s-todo" });
   });
 
-  test("problem and revise post only a report of their own kind", async () => {
+  test("hold and revise post only a report of their own kind", async () => {
     const wrong = file("wrong.md", "## Revised · drop the export");
-    expect((await run(["mission", "problem", "ENG-1", "--body-file", wrong])).code).toBe(64);
+    expect((await run(["mission", "hold", "ENG-1", "--body-file", wrong])).code).toBe(64);
     expect(
       (await run(["mission", "revise", "ENG-1", "--body", "Revised the plan, see thread"])).code,
     ).toBe(64);
@@ -1377,8 +1377,8 @@ describe("GitHub Issues tickets", () => {
     expect(preflight.out).not.toContain("missing in");
   });
 
-  test("claim assigns the viewer, labels it in-progress and logs the session", async () => {
-    const r = await run(["mission", "claim", "#12", "--repo", "o/r"], gh);
+  test("start assigns the viewer, labels it in-progress and logs the session", async () => {
+    const r = await run(["mission", "start", "#12", "--repo", "o/r"], gh);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
     expect(sent("POST", "repos/o/r/issues/12/assignees")).toEqual([{ assignees: ["andrezzoid"] }]);
@@ -1388,22 +1388,22 @@ describe("GitHub Issues tickets", () => {
     );
   });
 
-  test("claim leaves the assignee of a ticket assigned to the viewer", async () => {
+  test("start leaves the assignee of a ticket assigned to the viewer", async () => {
     routes({
       ...current(),
       "GET repos/o/r/issues/12": githubIssue({ number: 12, assignees: [{ login: "andrezzoid" }] }),
     });
-    expect((await run(["mission", "claim", "o/r#12"], gh)).code).toBe(0);
+    expect((await run(["mission", "start", "o/r#12"], gh)).code).toBe(0);
     expect(sent("POST", "repos/o/r/issues/12/assignees")).toEqual([]);
     expect(sent("POST", "repos/o/r/issues/12/labels")).toEqual([{ labels: ["in-progress"] }]);
   });
 
-  test("claim refuses a colleague's ticket, as mission next does", async () => {
+  test("start refuses a colleague's ticket, as mission next does", async () => {
     routes({
       ...current(),
       "GET repos/o/r/issues/12": githubIssue({ number: 12, assignees: [{ login: "rita" }] }),
     });
-    const r = await run(["mission", "claim", "o/r#12"], gh);
+    const r = await run(["mission", "start", "o/r#12"], gh);
     expect(r.code).toBe(3);
     expect(r.err).toContain("assigned to rita");
     expect(ghCalls().some((c) => c.args.includes("POST"))).toBe(false);
@@ -1522,10 +1522,10 @@ describe("GitHub Issues tickets", () => {
     expect((await run(["preflight"])).out).toMatch(/^fail\s+linear\s+Linear: Account disabled$/m);
   });
 
-  test("problem posts the report, takes off ready-for-agent and in-progress, and labels it ready-for-human", async () => {
+  test("hold posts the report, takes off ready-for-agent and in-progress, and labels it ready-for-human", async () => {
     const report = join(dir, "report.md");
     writeFileSync(report, "**Handed back · acceptance line 2 cannot hold**");
-    const r = await run(["mission", "problem", "#12", "--repo", "o/r", "--body-file", report], gh);
+    const r = await run(["mission", "hold", "#12", "--repo", "o/r", "--body-file", report], gh);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
     expect(
@@ -1997,6 +1997,8 @@ test("unknown commands print help and exit 64", async () => {
     expect(r.code).toBe(64);
     expect(r.out).toContain("houston preflight");
   }
+  for (const old of ["claim", "problem", "handback", "new"])
+    expect((await run(["mission", old, "ENG-1"])).code).toBe(64);
 });
 
 test("a flag that takes a value, given none, is a usage error", async () => {
@@ -2014,10 +2016,10 @@ test("every command that reads --repo lists it in its usage line", async () => {
     "stats",
     "mission next",
     "mission show",
-    "mission claim",
+    "mission start",
     "mission followup",
     "mission revise",
-    "mission problem",
+    "mission hold",
     "pr status",
     "pr watch",
     "pr reply",

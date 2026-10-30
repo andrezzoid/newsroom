@@ -61,9 +61,9 @@ Run each step's skill. Call the Skill tool with it, or, for a skill only the use
 
 ## The CLI at each step
 
-- **Claim:** `houston mission claim <ID>`, with `--take-over` when the request carried it. Exit 3 means it isn't yours to build: say why and stop.
+- **Claim:** `houston mission start <ID>`, with `--take-over` when the request carried it. Exit 3 means it isn't yours to build: say why and stop.
 - **Pull request:** open it with `houston pr open --ticket <ticket or issue ID> --title <title> --body-file <file>`, with the body the "pr" skill wrote. It pushes the branch and ends the body with the ticket's closing line, which the merge check and the tracker read. Without a ticket, the same command works without `--ticket`.
-- **Hand-back:** post the report with `houston mission problem <ID> --body-file <report>` before the pull request opens, and `houston pr report <PR> --body-file <report>` after. A hand-back on a pull request turns it into a draft: once the user answers and the work goes on, mark it ready again with `gh pr ready <PR>`, or it can't merge.
+- **Hand-back:** post the report with `houston mission hold <ID> --body-file <report>` before the pull request opens, and `houston pr report <PR> --body-file <report>` after. A hand-back on a pull request turns it into a draft: once the user answers and the work goes on, mark it ready again with `gh pr ready <PR>`, or it can't merge.
 - **Debrief:** post it on the pull request with `houston pr report <PR> --body-file <report>`.
 - **A plan change the user agreed:** `houston mission revise <ID> --body-file <report>`, with a `Revised ·` title.
 - **Followups:** file each one beside the ticket, where triage picks it up: `houston mission followup --from <ID> --title <title> --body-file <file>`.

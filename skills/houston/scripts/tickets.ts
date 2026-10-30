@@ -34,7 +34,7 @@ export const HOUSTON_LABELS = [
 export type Readiness = { ready: true } | { ready: false; reason: string };
 
 // Whether an agent may build the ticket, whichever session holds it now:
-// `mission claim` asks this, and a take-over passes a claimed ticket.
+// `mission start` asks this, and a take-over passes a claimed ticket.
 export function claimable(t: Ticket): Readiness {
   if (!t.labels.includes(READY_LABEL)) return { ready: false, reason: `no ${READY_LABEL} label` };
   if (t.state === "done" || t.state === "canceled")
