@@ -5,11 +5,7 @@
 
 ## Agent skills
 
-### Issue tracker
-GitHub Issues, PRs on GitHub. See `.agents/factory.md`.
-
-### Triage labels
-Matt Pocock's triage roles under their own names, plus `autonomy:merge`. See `.agents/factory.md`.
-
-### Domain docs
-Multi-context. See `.agents/factory.md`.
+Tracker: GitHub Issues
+Labels: bug, enhancement, needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix, in-progress
+Each mod in mods/ also has a label named after its folder.
+Domain docs: GLOSSARY-MAP.md, which lists each context's GLOSSARY.md and docs/adr/
