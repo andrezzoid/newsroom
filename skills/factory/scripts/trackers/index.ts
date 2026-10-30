@@ -3,10 +3,12 @@
 // Linear is on when credentials exist. GitHub Issues covers the repositories
 // in FACTORY_GITHUB_REPOS (comma-separated owner/name, a cloud environment
 // variable or a local export), plus any repository a command names whose
-// own instructions name GitHub Issues as its tracker. A new tracker adds an
-// adapter here.
+// own instructions name GitHub Issues as its tracker (see repoTracker). A new
+// tracker adds an adapter here.
 
-import { parseRepo, readRepoFile } from "../forge.ts";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { currentRepo, parseRepo, readRepoFile, repoRoot } from "../forge.ts";
 import { GithubTracker } from "./github.ts";
 import { LinearTracker, linearTeams, linearToken } from "./linear.ts";
 import {
@@ -77,12 +79,23 @@ export function trackerLine(text: string | null): TrackerName | null {
   return line.includes("github") ? "github" : line.includes("linear") ? "linear" : null;
 }
 
-// The tracker a repository names, read from its default branch.
+// The tracker a repository names. In the clone the CLI runs in, it reads the
+// working tree, so a branch that adds or changes the Tracker line routes its
+// own runs before it merges. Any other repository it reads from its default
+// branch on GitHub, the only copy there is.
 export function repoTracker(repo: string): TrackerName | null {
   const r = parseRepo(repo);
   if (!r) return null;
+  const root = r === currentRepo() ? repoRoot() : null;
+  // In the clone, a file missing from the working tree names no tracker: the
+  // default branch's copy doesn't speak for this branch.
+  const read = (file: string) => {
+    if (!root) return readRepoFile(r, file);
+    const path = join(root, file);
+    return existsSync(path) ? readFileSync(path, "utf8") : null;
+  };
   for (const file of ["CLAUDE.md", "AGENTS.md"]) {
-    const found = trackerLine(readRepoFile(r, file));
+    const found = trackerLine(read(file));
     if (found) return found;
   }
   return null;

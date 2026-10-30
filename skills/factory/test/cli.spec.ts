@@ -1342,6 +1342,21 @@ describe("GitHub Issues tickets", () => {
     });
   });
 
+  test("inside a clone, inbox follows the branch's CLAUDE.md, not the default branch's", async () => {
+    const path = clone();
+    writeFileSync(join(path, "CLAUDE.md"), "# R\n\n## Agent skills\n\nTracker: GitHub Issues\n");
+    routes({
+      ...current(),
+      "GET repos/o/r/contents/CLAUDE.md": {
+        encoding: "base64",
+        content: Buffer.from("# R\n\n## Gates\n").toString("base64"),
+      },
+    });
+    const inbox = await run(["inbox", "--agent", "--json"], { LINEAR_API_KEY: "" }, path);
+    expect(inbox.err).toBe("");
+    expect(JSON.parse(inbox.out).agent.map((i: any) => i.id)).toEqual(["o/r#12"]);
+  });
+
   test("doctor counts a skill linked into the clone's own .claude/skills as installed", async () => {
     const path = clone();
     mkdirSync(join(path, ".claude"), { recursive: true });
