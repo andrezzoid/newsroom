@@ -26,11 +26,19 @@ _Avoid_: Meta skill, router
 The way a codebase means you to do things, as its docs, lint rules and best-kept code show it.
 _Avoid_: Golden path, broken windows
 
-### Factory
+### Houston
 
 **Flow**:
 The order the orchestrator runs workflows in, from a request to its outcome: Shape, Tickets, Build or Review.
 _Avoid_: Pipeline, process
+
+**Mission**:
+A ticket as the `houston mission` commands act on it: launched, claimed, revised, handed back or followed up.
+_Avoid_: Job, task
+
+**Launch**:
+To start an agent session on a ready ticket.
+_Avoid_: Dispatch, spawn
 
 **Inbox**:
 What waits on the user, and what an agent can pick up now.
@@ -40,8 +48,12 @@ _Avoid_: Queue, backlog
 The `in-progress` label an agent adds to a ticket before it builds, so no other session takes the ticket.
 _Avoid_: Assign, lock
 
+**Lost signal**:
+A claimed ticket or a broken pull request with no activity for over 3 hours, whose session has most likely gone. Another session may take it over.
+_Avoid_: Quiet, stale, stalled
+
 **Phase**:
-Where a ticket stands for the factory: shape, iterate, babysit or done.
+Where a ticket stands for Houston: shape, iterate, babysit or done.
 _Avoid_: Status, state
 
 ### Work

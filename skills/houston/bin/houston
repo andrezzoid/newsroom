@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Thin shim so the factory skill can run the CLI wherever it loads, locally and in cloud sessions.
+# Thin shim so the houston skill can run the CLI wherever it loads, locally and in cloud sessions.
 # Node 22.18+ runs the TypeScript directly; nothing is installed or built.
 set -euo pipefail
 here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
@@ -7,7 +7,7 @@ here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 version="$(node --version 2>/dev/null || true)"
 IFS=. read -r major minor _ <<<"${version#v}"
 if ! [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ ]] || ((major < 22 || (major == 22 && minor < 18))); then
-  echo "factory needs Node 22.18 or later, and found ${version:-no node} (mise install node)" >&2
+  echo "houston needs Node 22.18 or later, and found ${version:-no node} (mise install node)" >&2
   exit 127
 fi
 # Node's fetch ignores HTTPS_PROXY unless asked, and cloud sessions reach

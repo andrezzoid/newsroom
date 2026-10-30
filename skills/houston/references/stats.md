@@ -1,7 +1,7 @@
 # Stats
 
 The weekly review says what got done, what went wrong, and why each open
-ticket is still open. `factory stats --json` has the facts, seven days back unless
+ticket is still open. `houston stats --json` has the facts, seven days back unless
 `--since` says otherwise; the judgment is yours.
 
 ## Process

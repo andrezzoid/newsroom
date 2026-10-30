@@ -56,11 +56,11 @@ function page(nodes: any[], after: string | null | undefined) {
 function answer(op: string, variables: any): { status: number; body: unknown } {
   const data = (d: unknown) => ({ status: 200, body: { data: d } });
   switch (op) {
-    case "FactoryOpen":
+    case "HoustonOpen":
       return data({ issues: page(linearIssues, variables.after) });
-    case "FactoryDone":
+    case "HoustonDone":
       return data({ issues: page(doneIssues, variables.after) });
-    case "FactoryIssue": {
+    case "HoustonIssue": {
       const found = [...linearIssues, ...doneIssues].find((i) => i.identifier === variables.id);
       if (!found && notFoundAsError)
         return {
@@ -75,11 +75,11 @@ function answer(op: string, variables: any): { status: number; body: unknown } {
           : null,
       });
     }
-    case "FactoryTeams":
+    case "HoustonTeams":
       return data({ teams: { nodes: linearTeams.map((key) => ({ key })) } });
-    case "FactoryViewer":
+    case "HoustonViewer":
       return data({ viewer: { id: "me", name: "André" } });
-    case "FactoryTeamStates":
+    case "HoustonTeamStates":
       return data({
         team: {
           states: {
@@ -91,9 +91,9 @@ function answer(op: string, variables: any): { status: number; body: unknown } {
           },
         },
       });
-    case "FactoryUpdate":
+    case "HoustonUpdate":
       return data({ issueUpdate: { success: true } });
-    case "FactoryComment":
+    case "HoustonComment":
       issueComments.push({
         id: `c-${issueComments.length}`,
         body: variables.body,
@@ -101,7 +101,7 @@ function answer(op: string, variables: any): { status: number; body: unknown } {
         user: { name: "André" },
       });
       return data({ commentCreate: { success: true, comment: { id: "c" } } });
-    case "FactoryLabel":
+    case "HoustonLabel":
       return data({
         issueLabels: {
           nodes: missingLabels.includes(variables.name)
@@ -109,11 +109,11 @@ function answer(op: string, variables: any): { status: number; body: unknown } {
             : [{ id: `lbl-${variables.name}`, name: variables.name, team: null }],
         },
       });
-    case "FactoryCreate":
+    case "HoustonCreate":
       return data({ issueCreate: { success: true, issue: { identifier: "ENG-50" } } });
-    case "FactoryRemoveLabel":
+    case "HoustonRemoveLabel":
       return data({ issueRemoveLabel: { success: true } });
-    case "FactoryAddLabel":
+    case "HoustonAddLabel":
       return data({ issueAddLabel: { success: true } });
     default:
       return { status: 400, body: { errors: [{ message: `unexpected ${op}` }] } };
@@ -214,12 +214,12 @@ function run(
     cwd,
     env: {
       ...process.env,
-      FACTORY_GH: FAKE_GH,
+      HOUSTON_GH: FAKE_GH,
       FAKE_GH_DIR: dir,
-      FACTORY_LINEAR_URL: linearUrl,
-      FACTORY_CLAUDE: "/nonexistent/claude",
+      HOUSTON_LINEAR_URL: linearUrl,
+      HOUSTON_CLAUDE: "/nonexistent/claude",
       LINEAR_API_KEY: "lin_api_test",
-      FACTORY_GITHUB_REPOS: "",
+      HOUSTON_GITHUB_REPOS: "",
       CLAUDE_CODE_REMOTE: "",
       CLAUDE_CODE_REMOTE_SESSION_ID: "",
       CLAUDE_CODE_SESSION_ID: "",
@@ -241,7 +241,7 @@ function clone(): string {
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "factory-cli-"));
+  dir = mkdtempSync(join(tmpdir(), "houston-cli-"));
   linearCalls = [];
   issueComments = [];
   commentsFor = {};
@@ -255,23 +255,23 @@ beforeEach(() => {
   routes();
 });
 
-// Stow installs the skill behind symlinks; bin/factory resolves them, but
+// Stow installs the skill behind symlinks; bin/houston resolves them, but
 // anything that starts cli.ts directly must not silently do nothing.
 test("cli.ts runs when started through a symlink", () => {
-  const link = join(mkdtempSync(join(tmpdir(), "factory-link-")), "cli.ts");
+  const link = join(mkdtempSync(join(tmpdir(), "houston-link-")), "cli.ts");
   symlinkSync(CLI, link);
   const r = spawnSync(process.execPath, ["--disable-warning=ExperimentalWarning", link, "--help"], {
     encoding: "utf8",
   });
-  expect(r.stdout).toContain("factory:");
+  expect(r.stdout).toContain("houston:");
 });
 
 // Node before 22.18 cannot load cli.ts at all, so only the shim can say why.
-test("bin/factory runs on Node 22.18 or later, and names the minimum below it", () => {
-  const shim = join(import.meta.dirname, "..", "bin", "factory");
+test("bin/houston runs on Node 22.18 or later, and names the minimum below it", () => {
+  const shim = join(import.meta.dirname, "..", "bin", "houston");
   const ok = spawnSync(shim, ["--help"], { encoding: "utf8" });
-  expect(ok.stdout).toContain("factory:");
-  const bin = mkdtempSync(join(tmpdir(), "factory-node-"));
+  expect(ok.stdout).toContain("houston:");
+  const bin = mkdtempSync(join(tmpdir(), "houston-node-"));
   const node = join(bin, "node");
   writeFileSync(node, "#!/bin/sh\necho v22.17.0\n");
   chmodSync(node, 0o755);
@@ -280,7 +280,7 @@ test("bin/factory runs on Node 22.18 or later, and names the minimum below it", 
     env: { ...process.env, PATH: `${bin}:/usr/bin:/bin` },
   });
   expect(old.status).toBe(127);
-  expect(old.stderr).toContain("factory needs Node 22.18 or later, and found v22.17.0");
+  expect(old.stderr).toContain("houston needs Node 22.18 or later, and found v22.17.0");
   // A version manager's shim can answer with an error instead of a version.
   writeFileSync(node, "#!/bin/sh\necho mise ERROR no version set\n");
   const junk = spawnSync(shim, ["--help"], {
@@ -289,7 +289,7 @@ test("bin/factory runs on Node 22.18 or later, and names the minimum below it", 
   });
   expect(junk.status).toBe(127);
   expect(junk.stderr).toBe(
-    "factory needs Node 22.18 or later, and found mise ERROR no version set (mise install node)\n",
+    "houston needs Node 22.18 or later, and found mise ERROR no version set (mise install node)\n",
   );
 });
 
@@ -351,14 +351,14 @@ describe("pr watch", () => {
     for (const interval of ["1m", "0"]) {
       const r = await run(["pr", "watch", "7", "--repo", "o/r", "--interval", interval]);
       expect(r.code).toBe(64);
-      expect(r.err).toContain("usage: factory pr watch");
+      expect(r.err).toContain("usage: houston pr watch");
     }
     expect(ghCalls()).toEqual([]);
   });
 });
 
 describe("pr merge", () => {
-  test("merges at the checked head with the repo's method, then takes the factory's labels off its ticket", async () => {
+  test("merges at the checked head with the repo's method, then takes Houston's labels off its ticket", async () => {
     linearIssues = [
       linearIssue({ identifier: "ENG-1", labels: ["ready-for-agent", "in-progress"] }),
     ];
@@ -366,7 +366,7 @@ describe("pr merge", () => {
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
     expect(sent("PUT", "repos/o/r/pulls/7/merge")).toEqual([{ merge_method: "squash", sha: SHA }]);
-    expect(ops("FactoryRemoveLabel")).toEqual([
+    expect(ops("HoustonRemoveLabel")).toEqual([
       { id: "uuid-1", labelId: "lbl-0" },
       { id: "uuid-1", labelId: "lbl-1" },
     ]);
@@ -456,7 +456,7 @@ describe("pr merge", () => {
     const r = await run(["pr", "merge", "7", "--repo", "o/r"]);
     expect(r.code).toBe(0);
     expect(r.out).toContain("UTF-8 names no ticket, so it was not checked: Linear has no team UTF");
-    expect(ops("FactoryIssue")).toEqual([]);
+    expect(ops("HoustonIssue")).toEqual([]);
   });
 
   test("without Linear connected, a Linear-looking id names no ticket and the merge goes on", async () => {
@@ -788,7 +788,7 @@ describe("pr open", () => {
   test("without --title, exits 64 with the usage", async () => {
     const r = await run(["pr", "open", "--body", "Does it."], {}, branch());
     expect(r.code).toBe(64);
-    expect(r.err).toContain("usage: factory pr open");
+    expect(r.err).toContain("usage: houston pr open");
     expect(pushedOrOpened()).toEqual([]);
   });
 
@@ -801,7 +801,7 @@ describe("pr open", () => {
         path,
       );
       expect(r.code).toBe(64);
-      expect(r.err).toContain("usage: factory pr open");
+      expect(r.err).toContain("usage: houston pr open");
     }
     expect(pushedOrOpened()).toEqual([]);
   });
@@ -978,7 +978,7 @@ describe("Linear tickets", () => {
       linearIssue({ id: "u3", identifier: "ENG-3", labels: ["ready-for-agent", "in-progress"] }),
       linearIssue({ id: "u4", identifier: "ENG-4", labels: ["needs-triage"] }),
     );
-    const r = await run(["tickets", "next", "--json"]);
+    const r = await run(["mission", "next", "--json"]);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
     const d = JSON.parse(r.out);
@@ -1014,7 +1014,7 @@ describe("Linear tickets", () => {
         },
       }),
     ];
-    const r = await run(["tickets", "next", "--json"]);
+    const r = await run(["mission", "next", "--json"]);
     expect(r.err).toBe("");
     expect(JSON.parse(r.out).ready.map((t: any) => [t.id, t.repo])).toEqual([
       ["ENG-1", "andrezzoid/app"],
@@ -1024,16 +1024,16 @@ describe("Linear tickets", () => {
   test("next pages through every open ticket", async () => {
     pageSize = 1;
     linearIssues.push(linearIssue({ id: "u2", identifier: "ENG-2" }));
-    const r = await run(["tickets", "next", "--json"]);
+    const r = await run(["mission", "next", "--json"]);
     expect(JSON.parse(r.out).ready.map((t: any) => t.id)).toEqual(["ENG-1", "ENG-2"]);
-    expect(ops("FactoryOpen")).toHaveLength(2);
+    expect(ops("HoustonOpen")).toHaveLength(2);
   });
 
   test("sends the personal key as is, and no key when the cloud proxy injects it", async () => {
-    await run(["tickets", "show", "ENG-1"]);
+    await run(["mission", "show", "ENG-1"]);
     expect(linearCalls.map((c) => c.auth)).toEqual(["lin_api_test"]);
     linearCalls = [];
-    const r = await run(["tickets", "show", "ENG-1"], { LINEAR_API_KEY: "proxy-injected" });
+    const r = await run(["mission", "show", "ENG-1"], { LINEAR_API_KEY: "proxy-injected" });
     expect(r.code).toBe(0);
     expect(linearCalls.map((c) => c.auth)).toEqual([undefined]);
   });
@@ -1048,23 +1048,23 @@ describe("Linear tickets", () => {
     );
     chmodSync(linear, 0o755);
     const env = { LINEAR_API_KEY: "", PATH: `${bin}:${process.env.PATH}` };
-    expect((await run(["tickets", "claim", "ENG-1"], env)).code).toBe(0);
+    expect((await run(["mission", "claim", "ENG-1"], env)).code).toBe(0);
     expect((await run(["inbox"], env)).code).toBe(0);
     expect(linearCalls.every((c) => c.auth === "lin_api_from_cli")).toBe(true);
     expect(readFileSync(join(dir, "linear-calls"), "utf8")).toBe("auth token\nauth token\n");
   });
 
   test("claim labels it in-progress, assigns, starts it and logs the local session", async () => {
-    const r = await run(["tickets", "claim", "eng-1"], { CLAUDE_CODE_SESSION_ID: "sess-1" });
+    const r = await run(["mission", "claim", "eng-1"], { CLAUDE_CODE_SESSION_ID: "sess-1" });
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
-    expect(ops("FactoryAddLabel")).toEqual([{ id: "uuid-1", labelId: "lbl-in-progress" }]);
-    expect(ops("FactoryUpdate")[0].input).toEqual({ assigneeId: "me", stateId: "s-doing" });
+    expect(ops("HoustonAddLabel")).toEqual([{ id: "uuid-1", labelId: "lbl-in-progress" }]);
+    expect(ops("HoustonUpdate")[0].input).toEqual({ assigneeId: "me", stateId: "s-doing" });
     expect(issueComments[0].body).toMatch(/^Claimed by local session sess-1 on .+\.$/);
   });
 
   test("a cloud session's claim links the session", async () => {
-    await run(["tickets", "claim", "ENG-1"], { CLAUDE_CODE_REMOTE_SESSION_ID: "cse_abc" });
+    await run(["mission", "claim", "ENG-1"], { CLAUDE_CODE_REMOTE_SESSION_ID: "cse_abc" });
     expect(issueComments[0].body).toBe(
       "Claimed by [a cloud session](https://claude.ai/code/session_abc).",
     );
@@ -1079,18 +1079,18 @@ describe("Linear tickets", () => {
       body: claimLog("[a cloud session](https://claude.ai/code/session_x)", null),
       createdAt: "2026-09-01T10:00:00Z",
     });
-    const refused = await run(["tickets", "claim", "ENG-1"]);
+    const refused = await run(["mission", "claim", "ENG-1"]);
     expect(refused.code).toBe(3);
     expect(refused.err).toContain(
       "claimed by [a cloud session](https://claude.ai/code/session_x), claimed 2026-09-01 10:00",
     );
     expect(refused.err).toContain("--take-over");
-    expect(ops("FactoryComment")).toEqual([]);
-    expect((await run(["tickets", "claim", "--take-over", "ENG-1"])).code).toBe(0);
+    expect(ops("HoustonComment")).toEqual([]);
+    expect((await run(["mission", "claim", "--take-over", "ENG-1"])).code).toBe(0);
     expect(issueComments.at(-1).body).toContain(
       "Takes over from [a cloud session](https://claude.ai/code/session_x), claimed 2026-09-01 10:00.",
     );
-    expect(ops("FactoryAddLabel")).toEqual([]);
+    expect(ops("HoustonAddLabel")).toEqual([]);
   });
 
   test("the session that holds the claim may claim again", async () => {
@@ -1102,16 +1102,16 @@ describe("Linear tickets", () => {
       body: claimLog("[a cloud session](https://claude.ai/code/session_abc)", null),
       createdAt: hoursAgo(1),
     });
-    const r = await run(["tickets", "claim", "ENG-1"], {
+    const r = await run(["mission", "claim", "ENG-1"], {
       CLAUDE_CODE_REMOTE_SESSION_ID: "cse_abc",
     });
     expect(r.code).toBe(0);
-    expect(ops("FactoryComment")).toEqual([]);
+    expect(ops("HoustonComment")).toEqual([]);
   });
 
   test("claim refuses a ticket that is not ready-for-agent", async () => {
     linearIssues = [linearIssue({ identifier: "ENG-1", labels: ["needs-info"] })];
-    const r = await run(["tickets", "claim", "ENG-1"]);
+    const r = await run(["mission", "claim", "ENG-1"]);
     expect(r.code).toBe(3);
     expect(r.err).toContain("no ready-for-agent label");
   });
@@ -1125,7 +1125,7 @@ describe("Linear tickets", () => {
         },
       }),
     ];
-    const blocked = await run(["tickets", "claim", "ENG-1"]);
+    const blocked = await run(["mission", "claim", "ENG-1"]);
     expect(blocked.code).toBe(3);
     expect(blocked.err).toContain("blocked by ENG-0");
     linearIssues = [
@@ -1134,37 +1134,37 @@ describe("Linear tickets", () => {
         children: { nodes: [{ identifier: "ENG-2", state: { type: "unstarted" } }] },
       }),
     ];
-    expect((await run(["tickets", "claim", "ENG-1"])).err).toContain("parent of 1 open ticket(s)");
-    expect([...ops("FactoryAddLabel"), ...ops("FactoryComment")]).toEqual([]);
+    expect((await run(["mission", "claim", "ENG-1"])).err).toContain("parent of 1 open ticket(s)");
+    expect([...ops("HoustonAddLabel"), ...ops("HoustonComment")]).toEqual([]);
   });
 
-  test("claim refuses what tickets next refuses: a colleague's ticket, or one with no repository", async () => {
+  test("claim refuses what mission next refuses: a colleague's ticket, or one with no repository", async () => {
     linearIssues = [
       linearIssue({ identifier: "ENG-1", assignee: { id: "r", name: "Rita", isMe: false } }),
     ];
-    const theirs = await run(["tickets", "claim", "ENG-1"]);
+    const theirs = await run(["mission", "claim", "ENG-1"]);
     expect(theirs.code).toBe(3);
     expect(theirs.err).toContain("assigned to Rita");
     linearIssues = [linearIssue({ identifier: "ENG-1", description: "No repo line." })];
-    const nowhere = await run(["tickets", "claim", "ENG-1"]);
+    const nowhere = await run(["mission", "claim", "ENG-1"]);
     expect(nowhere.code).toBe(3);
     expect(nowhere.err).toContain("no repository");
-    expect([...ops("FactoryUpdate"), ...ops("FactoryAddLabel"), ...ops("FactoryComment")]).toEqual(
+    expect([...ops("HoustonUpdate"), ...ops("HoustonAddLabel"), ...ops("HoustonComment")]).toEqual(
       [],
     );
   });
 
   test("claim fails before writing anything when Linear has no in-progress label", async () => {
     missingLabels = ["in-progress"];
-    const r = await run(["tickets", "claim", "ENG-1"]);
+    const r = await run(["mission", "claim", "ENG-1"]);
     expect(r.code).toBe(1);
     expect(r.err).toContain("no in-progress label exists in Linear");
-    expect([...ops("FactoryUpdate"), ...ops("FactoryAddLabel"), ...ops("FactoryComment")]).toEqual(
+    expect([...ops("HoustonUpdate"), ...ops("HoustonAddLabel"), ...ops("HoustonComment")]).toEqual(
       [],
     );
   });
 
-  test("handback posts the report, swaps the labels and moves the ticket back", async () => {
+  test("problem posts the report, swaps the labels and moves the ticket back", async () => {
     linearIssues = [
       linearIssue({ identifier: "ENG-1", labels: ["ready-for-agent", "in-progress"] }),
     ];
@@ -1172,43 +1172,43 @@ describe("Linear tickets", () => {
       "report.md",
       "## Handed back · acceptance line 2 cannot hold\n\n**Expected:** x",
     );
-    const r = await run(["tickets", "handback", "ENG-1", "--body-file", report]);
+    const r = await run(["mission", "problem", "ENG-1", "--body-file", report]);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
-    expect(ops("FactoryComment")[0].body).toContain(
+    expect(ops("HoustonComment")[0].body).toContain(
       "## Handed back · acceptance line 2 cannot hold",
     );
-    expect(ops("FactoryRemoveLabel").map((v) => v.labelId)).toEqual(["lbl-0", "lbl-1"]);
-    expect(ops("FactoryAddLabel")).toEqual([{ id: "uuid-1", labelId: "lbl-ready-for-human" }]);
-    expect(ops("FactoryUpdate")[0].input).toEqual({ stateId: "s-todo" });
+    expect(ops("HoustonRemoveLabel").map((v) => v.labelId)).toEqual(["lbl-0", "lbl-1"]);
+    expect(ops("HoustonAddLabel")).toEqual([{ id: "uuid-1", labelId: "lbl-ready-for-human" }]);
+    expect(ops("HoustonUpdate")[0].input).toEqual({ stateId: "s-todo" });
   });
 
-  test("handback and revise post only a report of their own kind", async () => {
+  test("problem and revise post only a report of their own kind", async () => {
     const wrong = file("wrong.md", "## Revised · drop the export");
-    expect((await run(["tickets", "handback", "ENG-1", "--body-file", wrong])).code).toBe(64);
+    expect((await run(["mission", "problem", "ENG-1", "--body-file", wrong])).code).toBe(64);
     expect(
-      (await run(["tickets", "revise", "ENG-1", "--body", "Revised the plan, see thread"])).code,
+      (await run(["mission", "revise", "ENG-1", "--body", "Revised the plan, see thread"])).code,
     ).toBe(64);
-    expect(ops("FactoryComment")).toEqual([]);
+    expect(ops("HoustonComment")).toEqual([]);
   });
 
-  test("revise posts a revision that tickets show reads into the plan", async () => {
+  test("revise posts a revision that mission show reads into the plan", async () => {
     const revision = file(
       "revision.md",
       "## Revised · drop the CSV export\n\n**Expected:** no CSV button",
     );
-    const r = await run(["tickets", "revise", "ENG-1", "--body-file", revision]);
+    const r = await run(["mission", "revise", "ENG-1", "--body-file", revision]);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
-    const d = JSON.parse((await run(["tickets", "show", "ENG-1", "--json"])).out);
+    const d = JSON.parse((await run(["mission", "show", "ENG-1", "--json"])).out);
     expect(d.plan.map((p: any) => p.kind)).toEqual(["body", "revised"]);
     expect(d.plan[1].text).toContain("drop the CSV export");
   });
 
   test("new files an unlabelled follow-up in the ticket's team, linked back to it", async () => {
     const r = await run([
-      "tickets",
-      "new",
+      "mission",
+      "followup",
       "--from",
       "ENG-1",
       "--title",
@@ -1218,7 +1218,7 @@ describe("Linear tickets", () => {
     ]);
     expect(r.err).toBe("");
     expect(r.out).toContain("filed ENG-50, a follow-up of ENG-1");
-    expect(ops("FactoryCreate")).toEqual([
+    expect(ops("HoustonCreate")).toEqual([
       {
         input: {
           teamId: "team-1",
@@ -1227,7 +1227,7 @@ describe("Linear tickets", () => {
         },
       },
     ]);
-    expect((await run(["tickets", "new", "--from", "ENG-1", "--body", "x"])).code).toBe(64);
+    expect((await run(["mission", "followup", "--from", "ENG-1", "--body", "x"])).code).toBe(64);
   });
 
   test("show names the phase, the open pull requests and the claim", async () => {
@@ -1239,7 +1239,7 @@ describe("Linear tickets", () => {
       body: claimLog("local session s1 on mac", null),
       createdAt: hoursAgo(1),
     });
-    const d = JSON.parse((await run(["tickets", "show", "ENG-1", "--json"])).out);
+    const d = JSON.parse((await run(["mission", "show", "ENG-1", "--json"])).out);
     expect(d).toMatchObject({
       phase: "iterate",
       openPrs: [],
@@ -1250,7 +1250,7 @@ describe("Linear tickets", () => {
 });
 
 describe("GitHub Issues tickets", () => {
-  const gh = { FACTORY_GITHUB_REPOS: "O/R", LINEAR_API_KEY: "" };
+  const gh = { HOUSTON_GITHUB_REPOS: "O/R", LINEAR_API_KEY: "" };
   const agentSkills = (tracker: string) => ({
     encoding: "base64",
     content: Buffer.from(`# R\n\n## Agent skills\n\nTracker: ${tracker}\n`).toString("base64"),
@@ -1266,7 +1266,7 @@ describe("GitHub Issues tickets", () => {
         githubIssue({ number: 15, title: "Parent" }),
         githubIssue({
           number: 16,
-          title: "A bug nobody triaged into the factory",
+          title: "A bug nobody triaged into Houston",
           labels: ["bug"],
         }),
       ],
@@ -1288,8 +1288,8 @@ describe("GitHub Issues tickets", () => {
     });
   });
 
-  test("next reads the repos in FACTORY_GITHUB_REPOS and honours Blocked by lines", async () => {
-    const r = await run(["tickets", "next", "--json"], gh);
+  test("next reads the repos in HOUSTON_GITHUB_REPOS and honours Blocked by lines", async () => {
+    const r = await run(["mission", "next", "--json"], gh);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
     const d = JSON.parse(r.out);
@@ -1312,13 +1312,13 @@ describe("GitHub Issues tickets", () => {
     expect(d.human.map((i: any) => [i.id, i.why])).toEqual([["o/r#16", "new, needs triage"]]);
   });
 
-  test("a repo whose CLAUDE.md names GitHub Issues joins without FACTORY_GITHUB_REPOS", async () => {
+  test("a repo whose CLAUDE.md names GitHub Issues joins without HOUSTON_GITHUB_REPOS", async () => {
     // From a clone of another repo, so --repo o/r reads o/r's default branch.
     const path = clone();
     spawnSync("git", ["-C", path, "remote", "set-url", "origin", "https://github.com/p/q.git"]);
     routes({ ...current(), "GET repos/o/r/contents/CLAUDE.md": agentSkills("GitHub Issues") });
     const r = await run(
-      ["tickets", "next", "--repo", "o/r", "--json"],
+      ["mission", "next", "--repo", "o/r", "--json"],
       { LINEAR_API_KEY: "" },
       path,
     );
@@ -1326,13 +1326,13 @@ describe("GitHub Issues tickets", () => {
     expect(JSON.parse(r.out).ready.map((t: any) => t.id)).toEqual(["o/r#12"]);
   });
 
-  test("inside a clone whose AGENTS.md names GitHub Issues, doctor and inbox use its issues", async () => {
+  test("inside a clone whose AGENTS.md names GitHub Issues, preflight and inbox use its issues", async () => {
     const path = clone();
     writeFileSync(join(path, "AGENTS.md"), "# R\n\n## Agent skills\n\nTracker: GitHub Issues\n");
-    const env = { LINEAR_API_KEY: "", FACTORY_GITHUB_REPOS: "" };
-    const doctor = await run(["doctor"], env, path);
-    expect(doctor.out).toContain("issues in o/r as andrezzoid");
-    expect(doctor.out).toContain("AGENTS.md names github");
+    const env = { LINEAR_API_KEY: "", HOUSTON_GITHUB_REPOS: "" };
+    const preflight = await run(["preflight"], env, path);
+    expect(preflight.out).toContain("issues in o/r as andrezzoid");
+    expect(preflight.out).toContain("AGENTS.md names github");
     const inbox = await run(["inbox", "--agent", "--json"], env, path);
     expect(inbox.err).toBe("");
     expect(JSON.parse(inbox.out)).toEqual({
@@ -1363,22 +1363,22 @@ describe("GitHub Issues tickets", () => {
     expect(JSON.parse(inbox.out).agent.map((i: any) => i.id)).toEqual(["o/r#12"]);
   });
 
-  test("doctor counts a skill linked into the clone's own .claude/skills as installed", async () => {
+  test("preflight counts a skill linked into the clone's own .claude/skills as installed", async () => {
     const path = clone();
     mkdirSync(join(path, ".claude"), { recursive: true });
     symlinkSync(join(import.meta.dirname, "..", ".."), join(path, ".claude", "skills"));
     routes(current());
     const home = mkdtempSync(join(tmpdir(), "home-"));
-    const doctor = await run(
-      ["doctor"],
-      { HOME: home, LINEAR_API_KEY: "", FACTORY_GITHUB_REPOS: "" },
+    const preflight = await run(
+      ["preflight"],
+      { HOME: home, LINEAR_API_KEY: "", HOUSTON_GITHUB_REPOS: "" },
       path,
     );
-    expect(doctor.out).not.toContain("missing in");
+    expect(preflight.out).not.toContain("missing in");
   });
 
   test("claim assigns the viewer, labels it in-progress and logs the session", async () => {
-    const r = await run(["tickets", "claim", "#12", "--repo", "o/r"], gh);
+    const r = await run(["mission", "claim", "#12", "--repo", "o/r"], gh);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
     expect(sent("POST", "repos/o/r/issues/12/assignees")).toEqual([{ assignees: ["andrezzoid"] }]);
@@ -1393,17 +1393,17 @@ describe("GitHub Issues tickets", () => {
       ...current(),
       "GET repos/o/r/issues/12": githubIssue({ number: 12, assignees: [{ login: "andrezzoid" }] }),
     });
-    expect((await run(["tickets", "claim", "o/r#12"], gh)).code).toBe(0);
+    expect((await run(["mission", "claim", "o/r#12"], gh)).code).toBe(0);
     expect(sent("POST", "repos/o/r/issues/12/assignees")).toEqual([]);
     expect(sent("POST", "repos/o/r/issues/12/labels")).toEqual([{ labels: ["in-progress"] }]);
   });
 
-  test("claim refuses a colleague's ticket, as tickets next does", async () => {
+  test("claim refuses a colleague's ticket, as mission next does", async () => {
     routes({
       ...current(),
       "GET repos/o/r/issues/12": githubIssue({ number: 12, assignees: [{ login: "rita" }] }),
     });
-    const r = await run(["tickets", "claim", "o/r#12"], gh);
+    const r = await run(["mission", "claim", "o/r#12"], gh);
     expect(r.code).toBe(3);
     expect(r.err).toContain("assigned to rita");
     expect(ghCalls().some((c) => c.args.includes("POST"))).toBe(false);
@@ -1411,13 +1411,13 @@ describe("GitHub Issues tickets", () => {
 
   test("--repo takes a remote URL or any case, for tickets as for pull requests", async () => {
     const r = await run(
-      ["tickets", "show", "#12", "--repo", "https://github.com/O/R.git", "--json"],
+      ["mission", "show", "#12", "--repo", "https://github.com/O/R.git", "--json"],
       gh,
     );
     expect(r.err).toBe("");
     expect(JSON.parse(r.out).id).toBe("o/r#12");
     const pr = await run(
-      ["tickets", "show", "#12", "--repo", "https://github.com/o/r/pull/5", "--json"],
+      ["mission", "show", "#12", "--repo", "https://github.com/o/r/pull/5", "--json"],
       gh,
     );
     expect(JSON.parse(pr.out).id).toBe("o/r#12");
@@ -1430,7 +1430,7 @@ describe("GitHub Issues tickets", () => {
         { number: 7, html_url: "https://github.com/o/r/pull/7" },
       ],
     });
-    const d = JSON.parse((await run(["tickets", "show", "o/r#12", "--json"], gh)).out);
+    const d = JSON.parse((await run(["mission", "show", "o/r#12", "--json"], gh)).out);
     expect(d.phase).toBe("babysit");
     expect(d.openPrs).toEqual(["https://github.com/o/r/pull/7"]);
   });
@@ -1443,7 +1443,7 @@ describe("GitHub Issues tickets", () => {
       ],
       "GET repos/o/r/pulls/8": pull(8),
     });
-    const d = JSON.parse((await run(["tickets", "show", "o/r#12", "--json"], gh)).out);
+    const d = JSON.parse((await run(["mission", "show", "o/r#12", "--json"], gh)).out);
     expect(d.phase).toBe("babysit");
     expect(d.openPrs).toEqual(["https://github.com/o/r/pull/8"]);
   });
@@ -1460,7 +1460,7 @@ describe("GitHub Issues tickets", () => {
       "GET repos/o/r/pulls/9": pull(9),
       "GET repos/o/r/pulls/10": pull(10),
     });
-    const d = JSON.parse((await run(["tickets", "show", "o/r#12", "--json"], gh)).out);
+    const d = JSON.parse((await run(["mission", "show", "o/r#12", "--json"], gh)).out);
     expect(d.openPrs).toEqual([
       "https://github.com/o/r/pull/8",
       "https://github.com/o/r/pull/9",
@@ -1498,8 +1498,8 @@ describe("GitHub Issues tickets", () => {
       "GET repos/o/r/issues": [],
       "GET repos/o/r/pulls?state=closed&sort=updated&direction=desc": [],
     });
-    const env = { FACTORY_GITHUB_REPOS: "O/R" };
-    const next = await run(["tickets", "next", "--json"], env);
+    const env = { HOUSTON_GITHUB_REPOS: "O/R" };
+    const next = await run(["mission", "next", "--json"], env);
     expect(next.code).toBe(0);
     expect(next.err).toContain("Linear: Account disabled");
     expect(JSON.parse(next.out).ready.map((t: any) => t.id)).toEqual(["o/r#12"]);
@@ -1509,23 +1509,23 @@ describe("GitHub Issues tickets", () => {
     const stats = await run(["stats", "--json"], env);
     expect(stats.code).toBe(0);
     expect(stats.err.match(/skipped linear/g)).toHaveLength(1);
-    const doctor = await run(["doctor"], env);
-    expect(doctor.out).toMatch(/^warn\s+linear\s+Linear: Account disabled$/m);
-    expect(doctor.out).toMatch(/^ok\s+github\s/m);
+    const preflight = await run(["preflight"], env);
+    expect(preflight.out).toMatch(/^warn\s+linear\s+Linear: Account disabled$/m);
+    expect(preflight.out).toMatch(/^ok\s+github\s/m);
   });
 
   test("a command fails when every tracker fails", async () => {
     linearDown = "Account disabled";
-    const r = await run(["inbox"], { FACTORY_GITHUB_REPOS: "" });
+    const r = await run(["inbox"], { HOUSTON_GITHUB_REPOS: "" });
     expect(r.code).toBe(1);
     expect(r.err).toContain("Linear: Account disabled");
-    expect((await run(["doctor"])).out).toMatch(/^fail\s+linear\s+Linear: Account disabled$/m);
+    expect((await run(["preflight"])).out).toMatch(/^fail\s+linear\s+Linear: Account disabled$/m);
   });
 
-  test("handback posts the report, takes off ready-for-agent and in-progress, and labels it ready-for-human", async () => {
+  test("problem posts the report, takes off ready-for-agent and in-progress, and labels it ready-for-human", async () => {
     const report = join(dir, "report.md");
     writeFileSync(report, "**Handed back · acceptance line 2 cannot hold**");
-    const r = await run(["tickets", "handback", "#12", "--repo", "o/r", "--body-file", report], gh);
+    const r = await run(["mission", "problem", "#12", "--repo", "o/r", "--body-file", report], gh);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
     expect(
@@ -1546,8 +1546,8 @@ describe("GitHub Issues tickets", () => {
     routes({ ...current(), "POST repos/o/r/issues": { number: 31 } });
     const r = await run(
       [
-        "tickets",
-        "new",
+        "mission",
+        "followup",
         "--from",
         "o/r#12",
         "--title",
@@ -1564,7 +1564,7 @@ describe("GitHub Issues tickets", () => {
     ]);
   });
 
-  test("next --dispatch starts a background session per ready ticket of this clone", async () => {
+  test("next --launch starts a background session per ready ticket of this clone", async () => {
     const claude = join(dir, "claude");
     writeFileSync(
       claude,
@@ -1580,13 +1580,13 @@ describe("GitHub Issues tickets", () => {
       "GET repos/o/r/issues/17/sub_issues": [],
     });
     const r = await run(
-      ["tickets", "next", "--dispatch", "--max", "1"],
-      { ...gh, FACTORY_CLAUDE: claude },
+      ["mission", "next", "--launch", "--max", "1"],
+      { ...gh, HOUSTON_CLAUDE: claude },
       clone(),
     );
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
-    expect(r.out).toBe("dispatched o/r#12: started abc123\n");
+    expect(r.out).toBe("launched o/r#12: started abc123\n");
     expect(readFileSync(join(dir, "claude-args"), "utf8").trim().split("\n")).toEqual([
       "--bg",
       "-n",
@@ -1595,13 +1595,13 @@ describe("GitHub Issues tickets", () => {
       "o-r-12",
       "--permission-mode",
       "auto",
-      "/factory o/r#12",
+      "/houston o/r#12",
     ]);
   });
 
-  test("next --dispatch refuses in a cloud session, which dispatches with create_session", async () => {
+  test("next --launch refuses in a cloud session, which launches with create_session", async () => {
     const r = await run(
-      ["tickets", "next", "--dispatch"],
+      ["mission", "next", "--launch"],
       { ...gh, CLAUDE_CODE_REMOTE: "true" },
       clone(),
     );
@@ -1694,7 +1694,7 @@ describe("inbox", () => {
       ],
       [
         "ENG-6",
-        "claimed, but no pull request and quiet for over 3h",
+        "claimed, but no pull request and no signal for over 3h",
         null,
         "local session s6 on mac",
       ],
@@ -1709,7 +1709,7 @@ describe("inbox", () => {
     expect(d.agent.map((i: any) => [i.id, i.why, i.pr ?? null, i.session ?? null])).toEqual([
       [
         "ENG-9",
-        "its pull request fails test, quiet for over 3h",
+        "its pull request fails test, no signal for over 3h",
         "https://github.com/o/r/pull/9",
         "local session s9 on mac",
       ],
@@ -1727,18 +1727,18 @@ describe("inbox", () => {
     expect(human.out).not.toContain("## For agents");
     const agent = await run(["inbox", "--agent"]);
     expect(agent.out).toBe(
-      "## For agents\n- ENG-9 T9: its pull request fails test, quiet for over 3h · https://github.com/o/r/pull/9 · local session s9 on mac\n- ENG-1 T1: ready to build\n",
+      "## For agents\n- ENG-9 T9: its pull request fails test, no signal for over 3h · https://github.com/o/r/pull/9 · local session s9 on mac\n- ENG-1 T1: ready to build\n",
     );
   });
 
-  test("an open thread counts against a quiet pull request only when someone else spoke last", async () => {
-    const quietPr = (n: number) =>
+  test("an open thread counts against a pull request that lost signal only when someone else spoke last", async () => {
+    const silentPr = (n: number) =>
       pull(n, { updated_at: hoursAgo(5), head: { sha: SHA, ref: `andre/eng-${n}` } });
     linearIssues = [claimed("ENG-7", 7, pr(7)), claimed("ENG-10", 10, pr(10))];
     commentsFor = { "ENG-7": [], "ENG-10": [] };
     routes({
-      "GET repos/o/r/pulls/7": quietPr(7),
-      "GET repos/o/r/pulls/10": quietPr(10),
+      "GET repos/o/r/pulls/7": silentPr(7),
+      "GET repos/o/r/pulls/10": silentPr(10),
       "GET repos/o/r/pulls/7/reviews": [],
       "GET repos/o/r/pulls/10/reviews": [],
       GRAPHQL: {
@@ -1761,7 +1761,10 @@ describe("inbox", () => {
     });
     const d = JSON.parse((await run(["inbox", "--agent", "--json"])).out);
     expect(d.agent.map((i: any) => [i.id, i.why])).toEqual([
-      ["ENG-10", "its pull request has 1 open thread(s) waiting on an answer, quiet for over 3h"],
+      [
+        "ENG-10",
+        "its pull request has 1 open thread(s) waiting on an answer, no signal for over 3h",
+      ],
     ]);
   });
 
@@ -1779,7 +1782,7 @@ describe("inbox", () => {
     });
     const d = JSON.parse((await run(["inbox", "--json"])).out);
     expect(d.agent.map((i: any) => [i.id, i.why])).toEqual([
-      ["ENG-7", "its pull request is behind main, quiet for over 3h"],
+      ["ENG-7", "its pull request is behind main, no signal for over 3h"],
     ]);
     expect(d.human.map((i: any) => [i.id, i.why])).toEqual([
       ["ENG-10", "its pull request waits on a required review"],
@@ -1798,14 +1801,14 @@ describe("inbox", () => {
     });
     const d = JSON.parse((await run(["inbox", "--json"])).out);
     expect(d.agent.map((i: any) => i.why)).toEqual([
-      "its pull request is behind main, fails test, quiet for over 3h",
+      "its pull request is behind main, fails test, no signal for over 3h",
     ]);
   });
 
   test("with no tracker configured, says how to configure one", async () => {
     const r = await run(["inbox"], { LINEAR_API_KEY: "", PATH: "/nonexistent" });
     expect(r.code).toBe(1);
-    expect(r.err).toContain("FACTORY_GITHUB_REPOS");
+    expect(r.err).toContain("HOUSTON_GITHUB_REPOS");
   });
 });
 
@@ -1937,7 +1940,7 @@ describe("stats", () => {
       "GET repos/o/r/pulls?state=closed&sort=updated&direction=desc": [],
     });
     const r = await run(["stats", "--json", "--since", "48h"], {
-      FACTORY_GITHUB_REPOS: "o/r",
+      HOUSTON_GITHUB_REPOS: "o/r",
       LINEAR_API_KEY: "",
     });
     expect(r.err).toBe("");
@@ -1952,7 +1955,7 @@ describe("stats", () => {
 });
 
 test("a flag's value keeps every = after the first", () => {
-  expect(parseArgs(["tickets", "new", "--title=Fix a=b parsing"]).flags.title).toBe(
+  expect(parseArgs(["mission", "followup", "--title=Fix a=b parsing"]).flags.title).toBe(
     "Fix a=b parsing",
   );
 });
@@ -1960,7 +1963,7 @@ test("a flag's value keeps every = after the first", () => {
 // The usage lines in the help are the one list of flags: a flag they give no
 // value is a switch, and leaves the next word alone.
 test("a flag the help gives no value takes none, and one it gives a value takes the next word", () => {
-  for (const flag of ["json", "help", "human", "agent", "here", "dispatch", "take-over", "resolve"])
+  for (const flag of ["json", "help", "human", "agent", "here", "launch", "take-over", "resolve"])
     expect(parseArgs([`--${flag}`, "x"])).toEqual({ _: ["x"], flags: { [flag]: true } });
   for (const flag of [
     "repo",
@@ -1978,21 +1981,21 @@ test("a flag the help gives no value takes none, and one it gives a value takes 
 });
 
 test("a wrong call prints its own command's usage line from the help", async () => {
-  const r = await run(["tickets", "revise", "ENG-1"]);
+  const r = await run(["mission", "revise", "ENG-1"]);
   expect(r.code).toBe(64);
   expect(r.err).toBe(
-    "usage: factory tickets revise <ID> [--repo o/r] (--body TEXT | --body-file F)\n",
+    "usage: houston mission revise <ID> [--repo o/r] (--body TEXT | --body-file F)\n",
   );
   expect((await run(["--help"])).out).toContain(
-    "factory tickets revise <ID> [--repo o/r] (--body TEXT | --body-file F)",
+    "houston mission revise <ID> [--repo o/r] (--body TEXT | --body-file F)",
   );
 });
 
 test("unknown commands print help and exit 64", async () => {
-  for (const name of ["frobnicate", "constructor", "__proto__"]) {
+  for (const name of ["frobnicate", "constructor", "__proto__", "tickets", "doctor"]) {
     const r = await run([name]);
     expect(r.code).toBe(64);
-    expect(r.out).toContain("factory doctor");
+    expect(r.out).toContain("houston preflight");
   }
 });
 
@@ -2000,7 +2003,7 @@ test("a flag that takes a value, given none, is a usage error", async () => {
   const r = await run(["pr", "watch", "7", "--repo", "o/r", "--interval"]);
   expect(r.code).toBe(64);
   expect(r.err).toBe(
-    "--interval takes a value\nusage: factory pr watch [PR] [--repo o/r] [--interval 60]\n",
+    "--interval takes a value\nusage: houston pr watch [PR] [--repo o/r] [--interval 60]\n",
   );
 });
 
@@ -2009,12 +2012,12 @@ test("every command that reads --repo lists it in its usage line", async () => {
   for (const command of [
     "inbox",
     "stats",
-    "tickets next",
-    "tickets show",
-    "tickets claim",
-    "tickets new",
-    "tickets revise",
-    "tickets handback",
+    "mission next",
+    "mission show",
+    "mission claim",
+    "mission followup",
+    "mission revise",
+    "mission problem",
     "pr status",
     "pr watch",
     "pr reply",
@@ -2022,13 +2025,13 @@ test("every command that reads --repo lists it in its usage line", async () => {
     "pr report",
     "pr merge",
   ]) {
-    const line = help.split("\n").find((l) => l.startsWith(`  factory ${command} `)) ?? "";
+    const line = help.split("\n").find((l) => l.startsWith(`  houston ${command} `)) ?? "";
     expect(line).toContain("--repo o/r");
   }
 });
 
-test("doctor expects every skill folder next to factory", () => {
+test("preflight expects every skill folder next to houston", () => {
   const skills = expectedSkills(join(import.meta.dirname, "..", ".."));
-  for (const s of ["factory", "implement", "grilling", "correct"]) expect(skills).toContain(s);
+  for (const s of ["houston", "implement", "grilling", "correct"]) expect(skills).toContain(s);
   expect(skills).not.toContain("rem-cli");
 });

@@ -10,7 +10,7 @@ import { run } from "../proc.ts";
 import {
   BRIEF_HEADING,
   CLAIMED_LABEL,
-  FACTORY_LABELS,
+  HOUSTON_LABELS,
   HUMAN_LABEL,
   latestBrief,
   READY_LABEL,
@@ -23,7 +23,7 @@ import {
   type Tracker,
 } from "./types.ts";
 
-const ENDPOINT = process.env.FACTORY_LINEAR_URL ?? "https://api.linear.app/graphql";
+const ENDPOINT = process.env.HOUSTON_LINEAR_URL ?? "https://api.linear.app/graphql";
 export const PROXY_INJECTED = "proxy-injected";
 
 export class LinearError extends Error {}
@@ -88,10 +88,10 @@ fragment IssueFields on Issue {
   briefs: comments(last: 3, filter: { body: { contains: "${BRIEF_HEADING}" } }) { nodes { id body createdAt } }
 }`;
 
-// Open tickets the factory reads: labelled with one of its labels, or new,
+// Open tickets Houston reads: labelled with one of its labels, or new,
 // with none of them, and filed by or assigned to the viewer.
 export const OPEN_QUERY = `
-query FactoryOpen($labels: [String!], $after: String) {
+query HoustonOpen($labels: [String!], $after: String) {
   issues(first: 50, after: $after, filter: {
     state: { type: { nin: ["completed", "canceled"] } }
     or: [
@@ -106,7 +106,7 @@ query FactoryOpen($labels: [String!], $after: String) {
 ${ISSUE_FIELDS}`;
 
 export const ISSUE_QUERY = `
-query FactoryIssue($id: String!) {
+query HoustonIssue($id: String!) {
   issue(id: $id) {
     ...IssueFields
     comments(last: 50) { nodes { id body createdAt user { name } } }
@@ -117,7 +117,7 @@ ${ISSUE_FIELDS}`;
 // The viewer's tickets completed since a moment, with the label changes that
 // say when each became ready-for-agent.
 export const DONE_QUERY = `
-query FactoryDone($since: DateTimeOrDuration!, $after: String) {
+query HoustonDone($since: DateTimeOrDuration!, $after: String) {
   issues(first: 25, after: $after, filter: {
     assignee: { isMe: { eq: true } }
     completedAt: { gt: $since }
@@ -125,9 +125,9 @@ query FactoryDone($since: DateTimeOrDuration!, $after: String) {
 }
 ${ISSUE_FIELDS}`;
 
-export const VIEWER_QUERY = `query FactoryViewer { viewer { id name } }`;
+export const VIEWER_QUERY = `query HoustonViewer { viewer { id name } }`;
 
-export const TEAMS_QUERY = `query FactoryTeams { teams(first: 250) { nodes { key } } }`;
+export const TEAMS_QUERY = `query HoustonTeams { teams(first: 250) { nodes { key } } }`;
 
 // The workspace's team keys, uppercased, asked for once per process.
 let teamKeys: Promise<Set<string>> | undefined;
@@ -139,37 +139,37 @@ export function linearTeams(): Promise<Set<string>> {
 }
 
 export const TEAM_STATES_QUERY = `
-query FactoryTeamStates($id: String!) {
+query HoustonTeamStates($id: String!) {
   team(id: $id) { states { nodes { id name type position } } }
 }`;
 
 export const LABEL_QUERY = `
-query FactoryLabel($name: String!) {
+query HoustonLabel($name: String!) {
   issueLabels(first: 20, filter: { name: { eqIgnoreCase: $name } }) { nodes { id name team { id } } }
 }`;
 
 export const UPDATE_ISSUE = `
-mutation FactoryUpdate($id: String!, $input: IssueUpdateInput!) {
+mutation HoustonUpdate($id: String!, $input: IssueUpdateInput!) {
   issueUpdate(id: $id, input: $input) { success }
 }`;
 
 export const ADD_LABEL = `
-mutation FactoryAddLabel($id: String!, $labelId: String!) {
+mutation HoustonAddLabel($id: String!, $labelId: String!) {
   issueAddLabel(id: $id, labelId: $labelId) { success }
 }`;
 
 export const REMOVE_LABEL = `
-mutation FactoryRemoveLabel($id: String!, $labelId: String!) {
+mutation HoustonRemoveLabel($id: String!, $labelId: String!) {
   issueRemoveLabel(id: $id, labelId: $labelId) { success }
 }`;
 
 export const CREATE_COMMENT = `
-mutation FactoryComment($issueId: String!, $body: String!) {
+mutation HoustonComment($issueId: String!, $body: String!) {
   commentCreate(input: { issueId: $issueId, body: $body }) { success comment { id } }
 }`;
 
 export const CREATE_ISSUE = `
-mutation FactoryCreate($input: IssueCreateInput!) {
+mutation HoustonCreate($input: IssueCreateInput!) {
   issueCreate(input: $input) { success issue { identifier } }
 }`;
 
@@ -339,7 +339,7 @@ export class LinearTracker implements Tracker {
   }
 
   async open(): Promise<Ticket[]> {
-    return (await issues(OPEN_QUERY, { labels: FACTORY_LABELS })).map(toTicket);
+    return (await issues(OPEN_QUERY, { labels: HOUSTON_LABELS })).map(toTicket);
   }
 
   async get(id: string): Promise<{ ticket: Ticket; comments: TicketComment[] }> {
@@ -362,7 +362,7 @@ export class LinearTracker implements Tracker {
       : await this.labelId(CLAIMED_LABEL, i.team.id);
     if (!t.labels.includes(CLAIMED_LABEL) && !claimed)
       throw new LinearError(
-        `no ${CLAIMED_LABEL} label exists in Linear: create it, as /factory setup does`,
+        `no ${CLAIMED_LABEL} label exists in Linear: create it, as /houston setup does`,
       );
     if (claimed) await linear(ADD_LABEL, { id: i.id, labelId: claimed });
     const input: Record<string, string> = {};

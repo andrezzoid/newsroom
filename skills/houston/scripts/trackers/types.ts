@@ -1,4 +1,4 @@
-// What the factory needs from an issue tracker. Every tracker is adapted to
+// What Houston needs from an issue tracker. Every tracker is adapted to
 // this shape, so the policy in tickets.ts and the commands in cli.ts never
 // know which one they talk to. Adding a tracker means adding one adapter.
 
@@ -58,7 +58,7 @@ export type Ticket = {
   prs: string[];
   // What a PR body says so the tracker closes the ticket on merge.
   closes: string;
-  // The humans it belongs to; `me` marks the account running the factory.
+  // The humans it belongs to; `me` marks the account running Houston.
   assignees: { name: string; me: boolean }[];
 };
 
@@ -70,9 +70,9 @@ export class NotFound extends Error {}
 
 export interface Tracker {
   readonly name: TrackerName;
-  // What it reads, as doctor names it: "issues in o/r", "tickets in Linear".
+  // What it reads, as preflight names it: "issues in o/r", "tickets in Linear".
   readonly scope: string;
-  // Open tickets the factory reads: those with a factory label, and new ones
+  // Open tickets Houston reads: those with one of its labels, and new ones
   // with none. Ready tickets come with their blockers and children.
   open(): Promise<Ticket[]>;
   get(id: string): Promise<{ ticket: Ticket; comments: TicketComment[] }>;

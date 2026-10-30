@@ -1,4 +1,4 @@
-// factory: the deterministic half of the factory. It exposes the facts and
+// houston: the deterministic half of Houston. It exposes the facts and
 // state of tickets, claims and pull requests, and enforces the two gates a
 // skill can't (a claim, a merge), so every session, local or cloud, reads and
 // writes them the same way. Skills set the goals; the model makes the calls.
@@ -18,7 +18,7 @@ import {
   claimLog,
   closedBy,
   plan,
-  FACTORY_LABELS,
+  HOUSTON_LABELS,
   HUMAN_LABEL,
   INFO_LABEL,
   latestClaim,
@@ -42,13 +42,13 @@ import {
 } from "./trackers/index.ts";
 import { NotFound, type Ticket, type Tracker } from "./trackers/types.ts";
 
-// The folder holding every skill, two levels above this file in skills/factory/scripts/.
+// The folder holding every skill, two levels above this file in skills/houston/scripts/.
 const SKILLS_DIR = resolve(import.meta.dirname, "..", "..");
-// A claimed ticket or a broken pull request this quiet has most likely lost
-// its session.
-const QUIET_MS = 3 * 3600_000;
-const QUIET = `${QUIET_MS / 3600_000}h`;
-const CLAUDE = process.env.FACTORY_CLAUDE ?? "claude";
+// A claimed ticket or a broken pull request silent this long has lost signal:
+// its session has most likely gone.
+const SIGNAL_LOST_MS = 3 * 3600_000;
+const SIGNAL_LOST = `${SIGNAL_LOST_MS / 3600_000}h`;
+const CLAUDE = process.env.HOUSTON_CLAUDE ?? "claude";
 // Where /run-skill-generator records how to run the app, for the built-in /run.
 const RUN_SKILLS = ".claude/skills";
 
@@ -125,7 +125,7 @@ function trackersFor(repo: string | null): Tracker[] {
   if (!trackers.length)
     throw new Exit(
       1,
-      "no tracker configured: set LINEAR_API_KEY, or FACTORY_GITHUB_REPOS for GitHub Issues",
+      "no tracker configured: set LINEAR_API_KEY, or HOUSTON_GITHUB_REPOS for GitHub Issues",
     );
   return trackers;
 }
@@ -148,7 +148,7 @@ async function fromEach<T>(trackers: Tracker[], ask: (t: Tracker) => Promise<T[]
   if (failed.length === results.length) throw new Error(failed.map((f) => f.message).join("; "));
   for (const f of failed.filter((f) => !named.has(f.name))) {
     named.add(f.name);
-    console.error(`factory: skipped ${f.name}, which failed: ${f.message}`);
+    console.error(`houston: skipped ${f.name}, which failed: ${f.message}`);
   }
   return results.flatMap((r) => r.items);
 }
@@ -268,7 +268,7 @@ async function prReport(a: Args) {
   const body = bodyArg(a);
   const r = report(body);
   if (r?.kind === "Revised")
-    throw new Exit(64, "a Revised report goes on the ticket: factory tickets revise");
+    throw new Exit(64, "a Revised report goes on the ticket: houston mission revise");
   if (!r)
     throw new Exit(64, `the report must start with its title line, such as "Done · <subject>"`);
   const ref = forge.resolvePr(a._[2], repoArg(a));
@@ -312,7 +312,7 @@ async function prOpen(a: Args) {
 }
 
 // Merges only a pull request whose facts allow it, at the head it checked,
-// then takes the factory's labels off the tickets it names.
+// then takes Houston's labels off the tickets it names.
 async function prMerge(a: Args) {
   const ref = forge.resolvePr(a._[2], repoArg(a));
   const s = await forge.pullStatus(ref);
@@ -368,18 +368,18 @@ function summary(t: Ticket) {
   };
 }
 
-// Ready tickets, best first. --dispatch starts one background session per
+// Ready tickets, best first. --launch starts one background session per
 // ready ticket of the clone it runs in, each in a worktree named after the
-// ticket; cloud sessions dispatch with the create_session tool instead.
-async function ticketsNext(a: Args) {
-  const dispatch = a.flags.dispatch === true;
-  if (dispatch && runtime() === "cloud")
+// ticket; cloud sessions launch with the create_session tool instead.
+async function missionNext(a: Args) {
+  const launch = a.flags.launch === true;
+  if (launch && runtime() === "cloud")
     throw new Exit(
       64,
-      "--dispatch starts background sessions on this machine; from a cloud session, start one per ticket with the create_session tool",
+      "--launch starts background sessions on this machine; from a cloud session, start one per ticket with the create_session tool",
     );
-  const repo = dispatch ? forge.currentRepo() : a.flags.here || a.flags.repo ? repoArg(a) : null;
-  if ((dispatch || a.flags.here || a.flags.repo) && !repo)
+  const repo = launch ? forge.currentRepo() : a.flags.here || a.flags.repo ? repoArg(a) : null;
+  if ((launch || a.flags.here || a.flags.repo) && !repo)
     throw new Exit(
       64,
       "cannot tell which repository: pass --repo owner/name or run inside a clone",
@@ -389,7 +389,7 @@ async function ticketsNext(a: Args) {
   const labelled = (await openTickets(repo)).filter((t) => t.labels.includes(READY_LABEL));
   const { skipped, ...next } = nextTickets(labelled, repo ? { repo } : {});
   const ready = next.ready.slice(0, max);
-  const dispatched = dispatch
+  const launched = launch
     ? ready.map((t) => {
         const slug = t.id.toLowerCase().replace(/[^a-z0-9]/g, "-");
         const r = run(CLAUDE, [
@@ -400,17 +400,17 @@ async function ticketsNext(a: Args) {
           slug,
           "--permission-mode",
           "auto",
-          `/factory ${t.id}`,
+          `/houston ${t.id}`,
         ]);
         return { id: t.id, ok: r.code === 0, output: (r.code === 0 ? r.stdout : r.stderr).trim() };
       })
     : [];
-  print(a, { ready: ready.map(summary), skipped, ...(dispatch ? { dispatched } : {}) }, () => {
-    if (dispatch)
+  print(a, { ready: ready.map(summary), skipped, ...(launch ? { launched } : {}) }, () => {
+    if (launch)
       return (
-        dispatched
+        launched
           .map((d) =>
-            d.ok ? `dispatched ${d.id}: ${d.output}` : `could not dispatch ${d.id}: ${d.output}`,
+            d.ok ? `launched ${d.id}: ${d.output}` : `could not launch ${d.id}: ${d.output}`,
           )
           .join("\n") || `no ticket is ready for ${repo}`
       );
@@ -418,7 +418,7 @@ async function ticketsNext(a: Args) {
       return `no ticket is ready${repo ? ` for ${repo}` : ""} (${skipped.length} labelled but waiting)`;
     return ready.map((t) => `${t.id}  ${t.repo}  ${t.title}`).join("\n");
   });
-  return dispatched.every((d) => d.ok) ? 0 : 1;
+  return launched.every((d) => d.ok) ? 0 : 1;
 }
 
 function idArg(a: Args): string {
@@ -426,7 +426,7 @@ function idArg(a: Args): string {
   return normalizeId(a._[2], repoArg(a));
 }
 
-async function ticketsShow(a: Args) {
+async function missionShow(a: Args) {
   const id = idArg(a);
   const { ticket, comments } = await trackerFor(id).get(id);
   const open = ticket.repo ? forge.openPrs(ticket.repo, ticket.branchName, ticket.prs) : [];
@@ -463,7 +463,7 @@ async function ticketsShow(a: Args) {
 }
 
 // The claim is the in-progress label plus a comment naming this session.
-async function ticketsClaim(a: Args) {
+async function missionClaim(a: Args) {
   const id = idArg(a);
   const tracker = trackerFor(id);
   const { ticket, comments } = await tracker.get(id);
@@ -498,16 +498,16 @@ async function ticketsClaim(a: Args) {
 }
 
 // A plan change the user agreed in a session, posted where the plan lives.
-async function ticketsRevise(a: Args) {
+async function missionRevise(a: Args) {
   const id = idArg(a);
   await trackerFor(id).comment(id, reportArg(a, "Revised"));
-  console.log(`posted the revision on ${id}: tickets show now reads it as part of the plan`);
+  console.log(`posted the revision on ${id}: mission show now reads it as part of the plan`);
   return 0;
 }
 
 // A follow-up found while working a ticket: a new ticket beside it, with no
 // labels, so the next triage picks it up.
-async function ticketsNew(a: Args) {
+async function missionFollowup(a: Args) {
   const from = str(a.flags.from);
   const title = str(a.flags.title);
   if (!from || !title) throw new Usage();
@@ -521,7 +521,7 @@ async function ticketsNew(a: Args) {
   return 0;
 }
 
-async function ticketsHandback(a: Args) {
+async function missionProblem(a: Args) {
   const id = idArg(a);
   const body = reportArg(a, "Handed back");
   const tracker = trackerFor(id);
@@ -544,7 +544,7 @@ type Item = {
 };
 type Sorted = { human: Item[]; agent: Item[] };
 
-const isQuiet = (at: string) => Date.now() - Date.parse(at) > QUIET_MS;
+const lostSignal = (at: string) => Date.now() - Date.parse(at) > SIGNAL_LOST_MS;
 const inboxItem = (t: Ticket, why: string, more: Partial<Item> = {}): Item => ({
   id: t.id,
   title: t.title,
@@ -585,13 +585,13 @@ async function sortPr(t: Ticket, url: string, session: string | undefined): Prom
   const broken = Object.entries(AGENT_FIXES).flatMap(([code, word]) =>
     codes.has(code as BlockerCode) ? word(s) : [],
   );
-  const stalled = isQuiet(s.updatedAt);
+  const stalled = lostSignal(s.updatedAt);
   if (stalled && (s.unresolvedThreads ?? 0) > 0 && !byAgent(forge.lastWord(ref) ?? ""))
     broken.push(`has ${s.unresolvedThreads} open thread(s) waiting on an answer`);
   if (broken.length && stalled)
     return {
       human: [],
-      agent: item(`its pull request ${broken.join(", ")}, quiet for over ${QUIET}`),
+      agent: item(`its pull request ${broken.join(", ")}, no signal for over ${SIGNAL_LOST}`),
     };
   if (!broken.length && blockers.some((b) => b.code === "protected"))
     return { human: item("its pull request waits on a required review"), agent: [] };
@@ -604,7 +604,7 @@ async function sortTicket(t: Ticket): Promise<Sorted> {
   if (!t.labels.includes(HUMAN_LABEL) && !claimed) {
     if (t.labels.includes(INFO_LABEL))
       return { human: [inboxItem(t, "waiting on more information")], agent: [] };
-    if (t.labels.includes(TRIAGE_LABEL) || !t.labels.some((l) => FACTORY_LABELS.includes(l)))
+    if (t.labels.includes(TRIAGE_LABEL) || !t.labels.some((l) => HOUSTON_LABELS.includes(l)))
       return { human: [inboxItem(t, "new, needs triage")], agent: [] };
     return { human: [], agent: [] };
   }
@@ -625,13 +625,17 @@ async function sortTicket(t: Ticket): Promise<Sorted> {
     };
   }
   const prs = t.repo ? forge.openPrs(t.repo, t.branchName, t.prs) : [];
-  const quiet =
-    !prs.length && isQuiet(t.updatedAt)
-      ? [inboxItem(t, `claimed, but no pull request and quiet for over ${QUIET}`, { session })]
+  const silent =
+    !prs.length && lostSignal(t.updatedAt)
+      ? [
+          inboxItem(t, `claimed, but no pull request and no signal for over ${SIGNAL_LOST}`, {
+            session,
+          }),
+        ]
       : [];
   const each = await Promise.all(prs.map((url) => sortPr(t, url, session)));
   return {
-    human: [...quiet, ...each.flatMap((e) => e.human)],
+    human: [...silent, ...each.flatMap((e) => e.human)],
     agent: each.flatMap((e) => e.agent),
   };
 }
@@ -788,7 +792,7 @@ export function expectedSkills(skillsDir = SKILLS_DIR): string[] {
     .map((d) => d.name);
 }
 
-async function doctor(a: Args) {
+async function preflight(a: Args) {
   const checks: Check[] = [];
   const add = (name: string, level: Check["level"], detail: string) =>
     checks.push({ name, level, detail });
@@ -808,7 +812,7 @@ async function doctor(a: Args) {
     add(
       "trackers",
       "fail",
-      "none: set LINEAR_API_KEY for Linear, FACTORY_GITHUB_REPOS=owner/a,owner/b for GitHub Issues",
+      "none: set LINEAR_API_KEY for Linear, HOUSTON_GITHUB_REPOS=owner/a,owner/b for GitHub Issues",
     );
   const failed: { name: string; message: string }[] = [];
   for (const t of trackers) {
@@ -847,7 +851,7 @@ async function doctor(a: Args) {
       named ? "ok" : "warn",
       named
         ? `${named.file} names ${named.tracker}`
-        : "no Tracker line in an ## Agent skills block of CLAUDE.md or AGENTS.md: run /factory setup",
+        : "no Tracker line in an ## Agent skills block of CLAUDE.md or AGENTS.md: run /houston setup",
     );
     const dir = join(root, RUN_SKILLS);
     const runSkill = existsSync(dir)
@@ -875,10 +879,10 @@ type Command = { usage: string; about: string; run: (a: Args) => Promise<number>
 // Every command, its usage line and what it does. The help, the usage a
 // wrong call prints and the flags that take no value all come from here.
 const COMMANDS: Record<string, Command> = {
-  doctor: {
-    usage: "doctor [--json]",
+  preflight: {
+    usage: "preflight [--json]",
     about: "check gh, trackers, skills, the repo's tracker and run skill",
-    run: doctor,
+    run: preflight,
   },
   inbox: {
     usage: "inbox [--repo o/r] [--human | --agent] [--json]",
@@ -890,35 +894,35 @@ const COMMANDS: Record<string, Command> = {
     about: "what got done, what went wrong, what is still open",
     run: stats,
   },
-  "tickets next": {
-    usage: "tickets next [--repo o/r | --here] [--dispatch] [--max N] [--json]",
-    about: `tickets labelled ${READY_LABEL} whose blockers are done, best first; --dispatch starts a background session for each, in this clone`,
-    run: ticketsNext,
+  "mission next": {
+    usage: "mission next [--repo o/r | --here] [--launch] [--max N] [--json]",
+    about: `tickets labelled ${READY_LABEL} whose blockers are done, best first; --launch starts a background session for each, in this clone`,
+    run: missionNext,
   },
-  "tickets show": {
-    usage: "tickets show <ID> [--repo o/r] [--json]",
+  "mission show": {
+    usage: "mission show <ID> [--repo o/r] [--json]",
     about: "the ticket, its phase, its claim and its plan",
-    run: ticketsShow,
+    run: missionShow,
   },
-  "tickets claim": {
-    usage: "tickets claim <ID> [--repo o/r] [--take-over]",
+  "mission claim": {
+    usage: "mission claim <ID> [--repo o/r] [--take-over]",
     about: `label it ${CLAIMED_LABEL} for this session; exit 3 if another session holds it, or it is blocked or not ${READY_LABEL}`,
-    run: ticketsClaim,
+    run: missionClaim,
   },
-  "tickets new": {
-    usage: "tickets new --from <ID> [--repo o/r] --title T (--body TEXT | --body-file F)",
+  "mission followup": {
+    usage: "mission followup --from <ID> [--repo o/r] --title T (--body TEXT | --body-file F)",
     about: "file a follow-up beside the ticket, unlabelled, for triage",
-    run: ticketsNew,
+    run: missionFollowup,
   },
-  "tickets revise": {
-    usage: "tickets revise <ID> [--repo o/r] (--body TEXT | --body-file F)",
+  "mission revise": {
+    usage: "mission revise <ID> [--repo o/r] (--body TEXT | --body-file F)",
     about: 'post a "Revised ·" report, which joins the plan',
-    run: ticketsRevise,
+    run: missionRevise,
   },
-  "tickets handback": {
-    usage: "tickets handback <ID> [--repo o/r] (--body TEXT | --body-file F)",
+  "mission problem": {
+    usage: "mission problem <ID> [--repo o/r] (--body TEXT | --body-file F)",
     about: `post a "Handed back ·" report and relabel it ${HUMAN_LABEL}`,
-    run: ticketsHandback,
+    run: missionProblem,
   },
   "pr status": {
     usage: "pr status [PR] [--repo o/r] [--json]",
@@ -980,27 +984,27 @@ function helpEntry(c: Command): string {
       lines[lines.length - 1] = `${last} ${word}`;
     else lines.push(word);
   }
-  const usage = `  factory ${c.usage}`;
+  const usage = `  houston ${c.usage}`;
   const indent = " ".repeat(ABOUT_AT);
   const [first = "", ...rest] = lines;
   const head = usage.length < ABOUT_AT ? [usage.padEnd(ABOUT_AT) + first] : [usage, indent + first];
   return [...head, ...rest.map((l) => indent + l)].join("\n");
 }
 
-const HELP = `factory: the facts and gates of the ticket → pull request → merge factory
+const HELP = `houston: the facts and gates that fly a ticket to a merged pull request
 
-Tickets are ENG-123 (Linear), owner/repo#123 (GitHub Issues), or #123 inside a clone.
+A mission is a ticket: ENG-123 (Linear), owner/repo#123 (GitHub Issues), or #123 inside a clone.
 
 ${Object.values(COMMANDS).map(helpEntry).join("\n")}
 
 Trackers: Linear when LINEAR_API_KEY is set (or \`linear auth login\` locally); GitHub Issues for
-the repos in FACTORY_GITHUB_REPOS, and for a repo whose CLAUDE.md or AGENTS.md says
+the repos in HOUSTON_GITHUB_REPOS, and for a repo whose CLAUDE.md or AGENTS.md says
 "Tracker: GitHub Issues" in its "## Agent skills" block.`;
 
 export async function main(argv: string[]): Promise<number> {
   const a = parseArgs(argv);
   const [group, sub] = a._;
-  // Own keys only, so `factory constructor` is no command.
+  // Own keys only, so `houston constructor` is no command.
   const name = [`${group} ${sub}`, group ?? ""].find((n) => Object.hasOwn(COMMANDS, n));
   const command = name ? COMMANDS[name] : undefined;
   if (!command || a.flags.help) {
@@ -1013,14 +1017,14 @@ export async function main(argv: string[]): Promise<number> {
     return await command.run(a);
   } catch (e) {
     if (e instanceof Usage) {
-      console.error(`${e.message ? `${e.message}\n` : ""}usage: factory ${command.usage}`);
+      console.error(`${e.message ? `${e.message}\n` : ""}usage: houston ${command.usage}`);
       return 64;
     }
     if (e instanceof Exit) {
       console.error(e.message);
       return e.code;
     }
-    console.error(`factory: ${(e as Error).message}`);
+    console.error(`houston: ${(e as Error).message}`);
     return 1;
   }
 }

@@ -52,6 +52,6 @@ done
 sh "$DIR/scripts/install-vale.sh" /usr/local/bin || echo "cloud-setup: Vale did not install, so prose-lint can't lint" >&2
 
 if ! node -e 'const [a, b] = process.versions.node.split(".").map(Number); process.exit(a > 22 || (a === 22 && b >= 18) ? 0 : 1)' 2>/dev/null; then
-  echo "cloud-setup: the factory CLI needs Node 22.18 or later on PATH" >&2
+  echo "cloud-setup: the houston CLI needs Node 22.18 or later on PATH" >&2
 fi
 echo "cloud-setup: $linked links into ~/.claude from $(git -C "$DIR" rev-parse --short HEAD)"

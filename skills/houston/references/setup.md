@@ -1,7 +1,7 @@
 # Setup
 
-Make the repo you are in ready for the factory, and when the user wants
-routines, the cloud side too. `factory doctor`'s `fail` and `warn` lines are
+Make the repo you are in ready for Houston, and when the user wants
+routines, the cloud side too. `houston preflight`'s `fail` and `warn` lines are
 the gaps this closes. Find the facts yourself and put the decisions to the user
 in one round, each with your recommended answer, the way the grilling skill
 does. Write nothing until they confirm.
@@ -50,15 +50,15 @@ Commit the block on a branch and open a pull request.
 
 - Create each missing label: `gh label create <name> --repo <o>/<r>`, or with
   the linear CLI.
-- On GitHub Issues, tell the user to add the repo to `FACTORY_GITHUB_REPOS` in
+- On GitHub Issues, tell the user to add the repo to `HOUSTON_GITHUB_REPOS` in
   the cloud environment.
 - Without a run skill, tell the user to run `/run-skill-generator` in the repo and
   commit what it records: agents start the app through it with `/run`.
-- Run `factory doctor` again and show the result. In this clone the CLI reads
+- Run `houston preflight` again and show the result. In this clone the CLI reads
   the `Tracker:` line from the working tree, so `inbox` here sees the repo at
   once. Sessions on other branches, the routines among them, read it from
   theirs: until the pull request merges, they skip the repo unless
-  `FACTORY_GITHUB_REPOS` names it.
+  `HOUSTON_GITHUB_REPOS` names it.
 
 ## The cloud, once
 
@@ -70,7 +70,7 @@ script, which clones newsroom and links its skills, agents and mods into
    serves every repo.
    - Setup script:
      `curl -fsSL https://raw.githubusercontent.com/andrezzoid/newsroom/main/scripts/cloud-setup.sh | bash`
-   - The variable `FACTORY_GITHUB_REPOS=<owner/a>,<owner/b>`, the repos whose
+   - The variable `HOUSTON_GITHUB_REPOS=<owner/a>,<owner/b>`, the repos whose
      tickets live in GitHub Issues. No token: the cloud's GitHub proxy signs
      `gh` in.
    - The Linear key, one of two ways:
@@ -82,7 +82,7 @@ script, which clones newsroom and links its skills, agents and mods into
      - Otherwise the variable `LINEAR_API_KEY=<personal API key>`, which anyone
        using the environment can read, and network access **Custom** with
        `api.linear.app` added to the default list.
-2. **Routines**, both in that environment, on every repo the factory serves,
+2. **Routines**, both in that environment, on every repo Houston serves,
    with notifications on and every connector removed, since the CLI talks to
    Linear and GitHub itself. Create them at claude.ai/code/routines, or with
    `/schedule` in the local CLI: a cloud session's `create_trigger` tool cannot
@@ -90,7 +90,7 @@ script, which clones newsroom and links its skills, agents and mods into
 
    | Routine | Schedule | Prompt |
    |---|---|---|
-   | Factory | hourly | `/factory` |
-   | Factory stats | weekly | `/factory stats` |
+   | Houston | hourly | `/houston` |
+   | Houston stats | weekly | `/houston stats` |
 
-3. Start a fresh session in the environment and run `factory doctor`.
+3. Start a fresh session in the environment and run `houston preflight`.

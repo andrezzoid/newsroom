@@ -22,7 +22,7 @@ export const WONTFIX_LABEL = "wontfix";
 export const CLAIMED_LABEL = "in-progress";
 // A ticket with none of these is new, whatever else it carries: a reporter's
 // `bug` label is not triage.
-export const FACTORY_LABELS = [
+export const HOUSTON_LABELS = [
   TRIAGE_LABEL,
   INFO_LABEL,
   READY_LABEL,
@@ -34,7 +34,7 @@ export const FACTORY_LABELS = [
 export type Readiness = { ready: true } | { ready: false; reason: string };
 
 // Whether an agent may build the ticket, whichever session holds it now:
-// `tickets claim` asks this, and a take-over passes a claimed ticket.
+// `mission claim` asks this, and a take-over passes a claimed ticket.
 export function claimable(t: Ticket): Readiness {
   if (!t.labels.includes(READY_LABEL)) return { ready: false, reason: `no ${READY_LABEL} label` };
   if (t.state === "done" || t.state === "canceled")
@@ -55,7 +55,7 @@ export function claimable(t: Ticket): Readiness {
   return { ready: true };
 }
 
-// Whether `tickets next` offers the ticket: claimable, and nobody holds it.
+// Whether `mission next` offers the ticket: claimable, and nobody holds it.
 export function readiness(t: Ticket, opts: { repo?: string } = {}): Readiness {
   const c = claimable(t);
   if (!c.ready) return c;
@@ -92,7 +92,7 @@ const oldestFirst = (a: TicketComment, b: TicketComment) =>
 // The claim is the in-progress label. Each claim also logs a comment naming
 // the session, so anyone reading the ticket can find that session and steer
 // it. Two sessions that claim one ticket at the same moment can both win:
-// accepted, since one hourly routine does the dispatching.
+// accepted, since one hourly routine does the launching.
 export function claimLog(session: string, replaces: string | null): string {
   return `Claimed by ${session}.${replaces ? ` Takes over from ${replaces}.` : ""}`;
 }
@@ -174,7 +174,7 @@ export function plan(t: Pick<Ticket, "body" | "createdAt">, comments: TicketComm
   return [head, ...revisions];
 }
 
-// Where a ticket is in the factory: the phase that acts on it next. Shape is
+// Where a ticket is for Houston: the phase that acts on it next. Shape is
 // the user's (or triage's); iterate builds it; babysit lands its pull request.
 // A ticket handed back waits on the human even while its pull request is open.
 export type Phase = "shape" | "iterate" | "babysit" | "done";

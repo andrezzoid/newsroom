@@ -10,7 +10,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { attributed, type PrFacts, status, type Status } from "./pr.ts";
 import { git, inCloud, run } from "./proc.ts";
 
-const GH = process.env.FACTORY_GH ?? "gh";
+const GH = process.env.HOUSTON_GH ?? "gh";
 
 export class GhError extends Error {}
 
@@ -208,7 +208,7 @@ export function resolveThread(pr: Ref, commentId: number): void {
 
 const DRAFT_MUTATION = `mutation($id:ID!){convertPullRequestToDraft(input:{pullRequestId:$id}){pullRequest{isDraft}}}`;
 
-// Turns a pull request back into a draft, the factory's sign that it waits on
+// Turns a pull request back into a draft, Houston's sign that it waits on
 // the user.
 export function convertToDraft(pr: Ref): void {
   eitherRoute(

@@ -1,7 +1,7 @@
 // Which tracker owns a ticket, and which trackers a run polls.
 //
 // Linear is on when credentials exist. GitHub Issues covers the repositories
-// in FACTORY_GITHUB_REPOS (comma-separated owner/name, a cloud environment
+// in HOUSTON_GITHUB_REPOS (comma-separated owner/name, a cloud environment
 // variable or a local export), plus any repository a command names whose
 // own instructions name GitHub Issues as its tracker (see repoTracker). A new
 // tracker adds an adapter here.
@@ -51,7 +51,7 @@ export async function notATicket(id: string): Promise<string | null> {
 }
 
 export function githubRepos(extra: string[] = []): string[] {
-  const env = (process.env.FACTORY_GITHUB_REPOS ?? "")
+  const env = (process.env.HOUSTON_GITHUB_REPOS ?? "")
     .split(",")
     .map((r) => r.trim())
     .filter(Boolean);
@@ -70,7 +70,7 @@ export function enabledTrackers(extraGithubRepos: string[] = []): Tracker[] {
   return out;
 }
 
-// The Tracker line of the "## Agent skills" block that /factory setup writes
+// The Tracker line of the "## Agent skills" block that /houston setup writes
 // into a repo's CLAUDE.md or AGENTS.md.
 export function trackerLine(text: string | null): TrackerName | null {
   const block =
