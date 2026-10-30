@@ -11,7 +11,7 @@ This skill takes the current conversation context and codebase understanding and
 
 Write a spec for each unit of work settled in the conversation. A unit that is still open goes into Out of Scope or as a follow-up.
 
-The issue tracker and triage label vocabulary should have been provided to you. If not, tell the user to run `/factory setup`.
+The issue tracker and triage label vocabulary should have been provided to you. If not, tell the user to run `/houston setup`.
 
 ## Process
 

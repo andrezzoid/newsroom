@@ -1,0 +1,22 @@
+{
+  "name": "newsroom",
+  "description": "My Claude Code harness: mods and skills, each installable on its own.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andrezzoid/newsroom.git"
+  },
+  "license": "MIT",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/andrezzoid/newsroom/issues"
+  },
+  "homepage": "https://github.com/andrezzoid/newsroom#readme",
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "oxfmt": "0.75.0",
+    "oxlint": "1.90.0",
+    "oxlint-tsgolint": "7.0.2005",
+    "typescript": "7.0.2"
+  },
+  "private": true
+}

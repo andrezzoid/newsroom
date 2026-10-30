@@ -41,7 +41,9 @@ For when you finish. Leave out a field with nothing in it.
 <what the user can do now, in one or two sentences>
 
 **Proof:** <each acceptance criterion: its test or script>
+**Revised:** <each plan change the user agreed, and where it is recorded>
 **Deviations:** <each: what the plan said, what you did, why, whether its acceptance criterion holds>
+**Unverified:** <each claim neither a test nor a script could prove, and why>
 **Decisions:** <each: the call, the option not taken>
 **Followups:** <each: title, problem (not a fix), reproduction steps, impact>
 ```
