@@ -39,7 +39,6 @@ import {
   notATicket,
   repoTracker,
   trackerFor,
-  trackerLine,
 } from "./trackers/index.ts";
 import { NotFound, type Ticket, type Tracker } from "./trackers/types.ts";
 
@@ -119,7 +118,7 @@ function repoArg(a: Args): string | null {
 
 // A repository whose instructions name GitHub Issues joins the GitHub tracker.
 const trackersIn = (repo: string | null) =>
-  enabledTrackers(repo && repoTracker(repo) === "github" ? [repo] : []);
+  enabledTrackers(repo && repoTracker(repo)?.tracker === "github" ? [repo] : []);
 
 function trackersFor(repo: string | null): Tracker[] {
   const trackers = trackersIn(repo);
@@ -842,14 +841,12 @@ async function doctor(a: Args) {
   );
 
   if (repo && root) {
-    const file = ["CLAUDE.md", "AGENTS.md"].find((f) =>
-      trackerLine(existsSync(join(root, f)) ? readFileSync(join(root, f), "utf8") : null),
-    );
+    const named = repoTracker(repo);
     add(
       "tracker",
-      file ? "ok" : "warn",
-      file
-        ? `${file} names ${trackerLine(readFileSync(join(root, file), "utf8"))}`
+      named ? "ok" : "warn",
+      named
+        ? `${named.file} names ${named.tracker}`
         : "no Tracker line in an ## Agent skills block of CLAUDE.md or AGENTS.md: run /factory setup",
     );
     const dir = join(root, RUN_SKILLS);

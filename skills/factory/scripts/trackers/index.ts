@@ -79,11 +79,12 @@ export function trackerLine(text: string | null): TrackerName | null {
   return line.includes("github") ? "github" : line.includes("linear") ? "linear" : null;
 }
 
-// The tracker a repository names. In the clone the CLI runs in, it reads the
-// working tree, so a branch that adds or changes the Tracker line routes its
-// own runs before it merges. Any other repository it reads from its default
-// branch on GitHub, the only copy there is.
-export function repoTracker(repo: string): TrackerName | null {
+// The tracker a repository names, and the file that names it: CLAUDE.md
+// first, then AGENTS.md. In the clone the CLI runs in, it reads the working
+// tree, so a branch that adds or changes the Tracker line routes its own runs
+// before it merges. Any other repository it reads from its default branch on
+// GitHub, the only copy there is. Null when neither file names a tracker.
+export function repoTracker(repo: string): { file: string; tracker: TrackerName } | null {
   const r = parseRepo(repo);
   if (!r) return null;
   const root = r === currentRepo() ? repoRoot() : null;
@@ -95,8 +96,8 @@ export function repoTracker(repo: string): TrackerName | null {
     return existsSync(path) ? readFileSync(path, "utf8") : null;
   };
   for (const file of ["CLAUDE.md", "AGENTS.md"]) {
-    const found = trackerLine(read(file));
-    if (found) return found;
+    const tracker = trackerLine(read(file));
+    if (tracker) return { file, tracker };
   }
   return null;
 }
