@@ -1,6 +1,6 @@
 # Protocols are skills of their own, outside the orchestrator
 
-Hand-backs, debriefs and dispositions live in their own `protocol-*` skills, which every workflow calls by name, instead of inside the houston orchestrator. A workflow called on its own, with no orchestrator in its context, still reports and triages the same way.
+Hand-backs, debriefs and dispositions live in their own `protocol-*` skills, which every workflow calls by name, instead of inside the Houston orchestrator. A workflow called on its own, with no orchestrator in its context, still reports and triages the same way.
 
 ## Considered options
 

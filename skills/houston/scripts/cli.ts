@@ -46,8 +46,8 @@ import { NotFound, type Ticket, type Tracker } from "./trackers/types.ts";
 const SKILLS_DIR = resolve(import.meta.dirname, "..", "..");
 // A claimed ticket or a broken pull request silent this long has lost signal:
 // its session has most likely gone.
-const SIGNAL_LOST_MS = 3 * 3600_000;
-const SIGNAL_LOST = `${SIGNAL_LOST_MS / 3600_000}h`;
+const LOST_SIGNAL_MS = 3 * 3600_000;
+const LOST_SIGNAL = `${LOST_SIGNAL_MS / 3600_000}h`;
 const CLAUDE = process.env.HOUSTON_CLAUDE ?? "claude";
 // Where /run-skill-generator records how to run the app, for the built-in /run.
 const RUN_SKILLS = ".claude/skills";
@@ -544,7 +544,7 @@ type Item = {
 };
 type Sorted = { human: Item[]; agent: Item[] };
 
-const lostSignal = (at: string) => Date.now() - Date.parse(at) > SIGNAL_LOST_MS;
+const lostSignal = (at: string) => Date.now() - Date.parse(at) > LOST_SIGNAL_MS;
 const inboxItem = (t: Ticket, why: string, more: Partial<Item> = {}): Item => ({
   id: t.id,
   title: t.title,
@@ -585,13 +585,13 @@ async function sortPr(t: Ticket, url: string, session: string | undefined): Prom
   const broken = Object.entries(AGENT_FIXES).flatMap(([code, word]) =>
     codes.has(code as BlockerCode) ? word(s) : [],
   );
-  const stalled = lostSignal(s.updatedAt);
-  if (stalled && (s.unresolvedThreads ?? 0) > 0 && !byAgent(forge.lastWord(ref) ?? ""))
+  const lost = lostSignal(s.updatedAt);
+  if (lost && (s.unresolvedThreads ?? 0) > 0 && !byAgent(forge.lastWord(ref) ?? ""))
     broken.push(`has ${s.unresolvedThreads} open thread(s) waiting on an answer`);
-  if (broken.length && stalled)
+  if (broken.length && lost)
     return {
       human: [],
-      agent: item(`its pull request ${broken.join(", ")}, no signal for over ${SIGNAL_LOST}`),
+      agent: item(`its pull request ${broken.join(", ")}, no signal for over ${LOST_SIGNAL}`),
     };
   if (!broken.length && blockers.some((b) => b.code === "protected"))
     return { human: item("its pull request waits on a required review"), agent: [] };
@@ -625,17 +625,17 @@ async function sortTicket(t: Ticket): Promise<Sorted> {
     };
   }
   const prs = t.repo ? forge.openPrs(t.repo, t.branchName, t.prs) : [];
-  const silent =
+  const lost =
     !prs.length && lostSignal(t.updatedAt)
       ? [
-          inboxItem(t, `claimed, but no pull request and no signal for over ${SIGNAL_LOST}`, {
+          inboxItem(t, `claimed, but no pull request and no signal for over ${LOST_SIGNAL}`, {
             session,
           }),
         ]
       : [];
   const each = await Promise.all(prs.map((url) => sortPr(t, url, session)));
   return {
-    human: [...silent, ...each.flatMap((e) => e.human)],
+    human: [...lost, ...each.flatMap((e) => e.human)],
     agent: each.flatMap((e) => e.agent),
   };
 }
