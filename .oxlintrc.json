@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "unicorn",
+    "oxc"
+  ],
+  "categories": {
+    "correctness": "error"
+  },
+  "options": {
+    "typeAware": true
+  },
+  "rules": {
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-floating-promises": [
+      "error",
+      {
+        "allowForKnownSafeCalls": [
+          {
+            "from": "package",
+            "package": "node:test",
+            "name": ["test", "describe", "it", "suite", "before", "after", "beforeEach", "afterEach"]
+          }
+        ]
+      }
+    ]
+  },
+  "env": {
+    "builtin": true
+  }
+}

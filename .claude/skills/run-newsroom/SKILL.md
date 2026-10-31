@@ -107,7 +107,7 @@ Both pass: validate warns that `plugin.json` has no `version`.
 
 - **Claude Code's sandbox denies `openpty()`**, so the driver runs outside it:
   `.claude/settings.json` excludes `python3 .claude/skills/run-newsroom/driver.py *`.
-  The exclusion matches only a call that starts with exactly that text and
+  The exclusion matches only a call that starts with that text, verbatim, and
   chains nothing: no `cd`, pipe or redirect, or the call stays sandboxed and
   fails with `out of pty devices`. Outside the sandbox `$TMPDIR` is macOS's own
   `/var/folders/…/T/`, not the sandbox's, so give `--cwd` a literal `/tmp/…`
@@ -138,12 +138,3 @@ Both pass: validate warns that `plugin.json` has no `version`.
   the same sandbox, for tmux. Use the driver outside it.
 - **`Not logged in · Please run /login`**: `CLAUDE_CONFIG_DIR` points at an
   empty folder. Unset it; the separate stats store already isolates test runs.
-- **pip: `SSLCertVerificationError('OSStatus -26276')`**: pip can't reach the
-  macOS keychain from the sandbox. `--use-deprecated=legacy-certs` (in the
-  Prerequisites line) makes it use its own certificates.
-- **`prose-lint: Vale did not run; the toast says why`** in a fresh worktree:
-  the bundled packages (`AiTells`, `write-good`) are git-ignored, so the mod
-  runs `vale sync`, and inside the sandbox Vale's download fails with `x509:
-  OSStatus -26276`. Copy them from a checkout that has them:
-  `cp -R <main checkout>/mods/prose-lint/vale/styles/{AiTells,write-good}
-  mods/prose-lint/vale/styles/`.

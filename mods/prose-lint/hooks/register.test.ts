@@ -28,7 +28,7 @@ const isBundled = (argv: readonly string[]) => argv.includes('--config')
 
 // The run that lints the file as it stood before an edit, piped in, to tell
 // existing alerts from new ones.
-const isPiped = (argv: readonly string[]) => argv.some(arg => arg.startsWith('--ext='))
+const isPiped = (argv: readonly string[]) => argv.some(arg => arg.startsWith('--path='))
 
 const dir = { value: { kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false } }
 
@@ -91,7 +91,7 @@ test('an Edit hands Claude the alerts on the lines it added, not the ones alread
 
 test('an Edit that rewords a line reports only its new alerts, not the ones the line had', async ($, on) => {
   on('fs.stat', () => dir)
-  // Vale finds "just" in the removed line, and "just" and "really" in the new one.
+  // Vale finds one filler adverb in the removed line, and two in the new one.
   on('process.run', (_, e) =>
     !isBundled(e.argv)
       ? noConfig
@@ -102,7 +102,7 @@ test('an Edit that rewords a line reports only its new alerts, not the ones the 
   on('tool.call', { tool: 'Edit' }, () => ({
     result: {
       ...editRecord,
-      // The old line had "just"; the new one adds "really".
+      // The new line keeps the old line's adverb and adds a second.
       structuredPatch: [{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 2, lines: [' a', '-It just works.', '+It just really works.'] }],
     },
   }))
@@ -217,6 +217,26 @@ test('/prose-lint lists every alert of the files it names', async ($, on) => {
   expect(ran.text).toContain('`notes.md`')
 })
 
+test('/prose-lint on a file with 250 alerts lists 200 and counts the rest', async ($, on) => {
+  on('fs.stat', () => ({ deny: 'ENOENT' }))
+  on('session.cwd', () => ({ value: '/repo' }))
+  on('process.run', (_, e) => {
+    if (!isBundled(e.argv)) return noConfig
+    const alerts = Array.from({ length: 250 }, (_, index) => alert(index + 1, `adverb${index + 1}`))
+    return result(0, JSON.stringify({ [e.argv.at(-1) ?? '']: alerts }))
+  })
+
+  const ran = await $.command.run({
+    command: 'prose-lint',
+    args: 'README.md',
+    origin: { kind: 'composer' },
+    presentation: { isFullscreen: false, columns: 100 },
+  })
+
+  expect(ran.text?.split('\n').filter(line => /^- \d+:\d+ /.test(line))).toHaveLength(200)
+  expect(ran.text).toEndWith('\n(50 more not shown)')
+})
+
 test('/prose-lint on a file with no alerts says so', async ($, on) => {
   on('fs.stat', () => dir)
   on('session.cwd', () => ({ value: '/repo' }))
@@ -277,6 +297,37 @@ const writeWith = ($: Engine, on: On, alerts: unknown[]) => {
   on('tool.call', { tool: 'Write' }, created('/repo/notes.md'))
   return $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/repo/notes.md', content: '...' })
 }
+
+// One alert on each of lines 1 to `count`, the error rule's on the last
+// `errors` lines and an adverb warning on the rest, each with words of its own.
+const manyAlerts = (count: number, errors = 0) =>
+  Array.from({ length: count }, (_, index) =>
+    index < count - errors
+      ? { ...alert(index + 1, `adverb${index + 1}`), Severity: 'warning' }
+      : { ...alert(index + 1, `—${index + 1}`), Check: 'AiTells.Dash', Severity: 'error', Message: 'Em/en dash: recast.' },
+  )
+
+// The alert rows of Claude's note.
+const rowsOf = (note: string | undefined) => (note ?? '').split('\n').filter(line => /^- \d+:\d+ /.test(line))
+
+test("Claude's note lists every alert of a Write that raised 25", async ($, on) => {
+  const ran = await writeWith($, on, manyAlerts(25))
+
+  expect(rowsOf(ran.context?.[0])).toHaveLength(25)
+})
+
+test("Claude's note of a Write that raised 25 alerts has no line of alerts not shown", async ($, on) => {
+  const ran = await writeWith($, on, manyAlerts(25))
+
+  expect(ran.context?.[0]).not.toContain('more not shown')
+})
+
+test("Claude's note puts every error of a long Write under must-fix, even the file's last lines", async ($, on) => {
+  const ran = await writeWith($, on, manyAlerts(25, 3))
+
+  const mustFix = ran.context?.[0]?.split('Must fix:\n')[1]?.split('\nFix, or tell the user why not:')[0]
+  expect(rowsOf(mustFix)).toEqual(['- 23:1 Em/en dash: recast.', '- 24:1 Em/en dash: recast.', '- 25:1 Em/en dash: recast.'])
+})
 
 // The terminal row of the Write w1 as it stands now.
 const mountRow = ($: Engine) =>
@@ -352,6 +403,102 @@ test('a flagged Write adds its words and alerts to the day\'s stats', async ($, 
   })
 })
 
+// A project whose .vale.ini has one prose section, [**/docs/*.md]. Like Vale,
+// the mock matches the section against the name a run lints: the path it
+// names, the path --path gives piped text, or stdin.<ext> for --ext. A run
+// whose name doesn't match finds nothing. Piped runs find `before`, the others
+// `after`; each run lands in `runs`.
+const docsConfig = (
+  on: On,
+  before: unknown[] | 'fails',
+  after: unknown[],
+  runs: { argv: readonly string[]; cwd?: string; stdin?: string }[] = [],
+) => {
+  const store = session(on)
+  on('env.get', () => ({ value: '/home/someone' }))
+  on('fs.stat', (_, e) => (e.path === '/work/newsroom/.vale.ini' ? dir : { deny: 'ENOENT' }))
+  on('fs.read', () => ({ value: 'a\nIt just works now.\n' }))
+  on('process.run', (_, e) => {
+    runs.push({ argv: e.argv, cwd: e.init?.cwd, stdin: e.init?.stdin })
+    const ext = e.argv.find(arg => arg.startsWith('--ext='))?.slice('--ext='.length)
+    const name = e.argv.find(arg => arg.startsWith('--path='))?.slice('--path='.length) ?? (ext ? `stdin${ext}` : e.argv.at(-1))
+    if (!/^\/.+\/docs\/[^/]+\.md$/.test(name ?? '')) return vale([])
+    if (!isPiped(e.argv) && !ext) return vale(after)
+    return before === 'fails' ? failure('E100 something broke', 'E100') : vale(before)
+  })
+  return store
+}
+
+// An Edit of /work/newsroom/docs/big.md that rewrites line 2 into `line`.
+const docsEdit = ($: Engine, on: On, line: string) => {
+  on('tool.call', { tool: 'Edit' }, () => ({
+    result: {
+      ...editRecord,
+      filePath: '/work/newsroom/docs/big.md',
+      originalFile: 'a\nIt just works.\n',
+      structuredPatch: [{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 2, lines: [' a', '-It just works.', `+${line}`] }],
+    },
+  }))
+  return $.tool.call({ ...edit, file_path: '/work/newsroom/docs/big.md' })
+}
+
+test('the lint before an edit names the edited file with --path, as the lint after it did, from the same folder', async ($, on) => {
+  const runs: { argv: readonly string[]; cwd?: string; stdin?: string }[] = []
+  docsConfig(on, [alert(2, 'just')], [alert(2, 'just')], runs)
+
+  await docsEdit($, on, 'It just works now.')
+
+  const piped = runs.find(run => run.stdin !== undefined)
+  const file = runs.find(run => run.stdin === undefined)
+  expect(file?.argv.at(-1)).toBe('/work/newsroom/docs/big.md')
+  expect(piped?.argv).toContain('--path=/work/newsroom/docs/big.md')
+  expect(piped?.cwd).toBe(file?.cwd)
+})
+
+test('the lint before an edit gives Vale no --ext', async ($, on) => {
+  const runs: { argv: readonly string[]; cwd?: string; stdin?: string }[] = []
+  docsConfig(on, [alert(2, 'just')], [alert(2, 'just')], runs)
+
+  await docsEdit($, on, 'It just works now.')
+
+  const piped = runs.find(run => run.stdin !== undefined)
+  expect(piped).toBeDefined()
+  expect(piped?.argv.some(arg => arg.startsWith('--ext'))).toBe(false)
+})
+
+test("a project config scoped to **/docs/*.md doesn't report an alert the edited line already had", async ($, on) => {
+  docsConfig(on, [alert(2, 'just')], [alert(2, 'just')])
+
+  const ran = await docsEdit($, on, 'It just works now.')
+
+  expect(ran.context).toBeUndefined()
+})
+
+test("a project config scoped to **/docs/*.md doesn't count an alert the edited line already had as written", async ($, on) => {
+  const store = docsConfig(on, [alert(2, 'just')], [alert(2, 'just')])
+
+  await docsEdit($, on, 'It just works now.')
+
+  const stats = store.get(STATS) as { rules?: Record<string, { docs?: { written: number } }> } | undefined
+  expect(stats?.rules?.['AiTells.Adverb']?.docs?.written ?? 0).toBe(0)
+})
+
+test('a project config scoped to **/docs/*.md reports the second instance an edit adds to a line, once', async ($, on) => {
+  docsConfig(on, [alert(2, 'just')], [alert(2, 'just'), alert(2, 'just')])
+
+  const ran = await docsEdit($, on, 'It just works, just now.')
+
+  expect(rowsOf(ran.context?.[0])).toEqual(["- 2:1 Filler adverb 'just': let the verb carry it."])
+})
+
+test('when the lint before an edit fails, the note lists every alert on the added lines', async ($, on) => {
+  docsConfig(on, 'fails', [alert(2, 'just'), alert(2, 'really')])
+
+  const ran = await docsEdit($, on, 'It just really works.')
+
+  expect(rowsOf(ran.context?.[0])).toHaveLength(2)
+})
+
 test("the turn's end counts what Claude fixed and what it kept", async ($, on) => {
   let lints = 0
   const store = session(on)
@@ -360,8 +507,9 @@ test("the turn's end counts what Claude fixed and what it kept", async ($, on) =
   on('process.run', (_, e) => {
     if (!isBundled(e.argv)) return noConfig
     lints++
-    // The edit's lint finds both; the turn's end finds only "just" left. Real
-    // spans in "It just really works.", so the row can match its alerts.
+    // The edit's lint finds both adverbs; the turn's end finds only the first
+    // left. The spans are real ones in the file's line, so the row can match
+    // its alerts.
     const just = { ...alert(1, 'just'), Span: [4, 7] }
     const really = { ...alert(1, 'really'), Span: [9, 14] }
     return vale(lints === 1 ? [just, really] : [just])
@@ -382,6 +530,141 @@ test("the turn's end counts what Claude fixed and what it kept", async ($, on) =
   expect(struck.map(element => element.text)).toContain('really')
   expect(struck.map(element => element.text)).not.toContain('just')
   expect(await ui.find({ type: 'Text', text: 'prose-lint · 2 alerts · 1 fixed · bundled rules' })).toBeDefined()
+})
+
+// A session's Write, w1, of a new /work/newsroom/notes.md in which Vale
+// finds 25 alerts, 3 of them errors, until isFixed() turns true; from then
+// on it finds none.
+const writeManyInSession = ($: Engine, on: On, isFixed: () => boolean) => {
+  const store = session(on)
+  on('fs.stat', () => dir)
+  on('fs.read', () => ({ value: 'Notes.\n' }))
+  on('process.run', (_, e) => (isBundled(e.argv) ? vale(isFixed() ? [] : manyAlerts(25, 3), 1) : noConfig))
+  on('tool.call', { tool: 'Write' }, created('/work/newsroom/notes.md'))
+  on('turn.complete', () => ({ text: '' }))
+  return store
+}
+
+const answered = { answer: '', durationMs: 0, isAborted: false, turnId: 't1', reason: 'answer' } as const
+
+test('the turn\'s end counts every alert a long Write kept, past the 20th', async ($, on) => {
+  const store = writeManyInSession($, on, () => false)
+
+  await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/work/newsroom/notes.md', content: '...' })
+  await $.turn.complete(answered)
+
+  expect(store.get(STATS)).toMatchObject({
+    rules: {
+      'AiTells.Adverb': { docs: { written: 22, fixed: 0, kept: 22 } },
+      'AiTells.Dash': { docs: { written: 3, fixed: 0, kept: 3 } },
+    },
+  })
+})
+
+test('the turn\'s end counts every alert an Edit removed from a long Write, past the 20th', async ($, on) => {
+  let isFixed = false
+  const store = writeManyInSession($, on, () => isFixed)
+  // The Edit rewrites the file, so every lint from then on finds nothing.
+  on('tool.call', { tool: 'Edit' }, () => {
+    isFixed = true
+    return {
+      result: {
+        ...editRecord,
+        filePath: '/work/newsroom/notes.md',
+        originalFile: 'Notes, with every alert.\n',
+        structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-Notes, with every alert.', '+Notes.'] }],
+      },
+    }
+  })
+
+  await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/work/newsroom/notes.md', content: '...' })
+  await $.tool.call({ ...edit, tool_use_id: 'e1', file_path: '/work/newsroom/notes.md' })
+  await $.turn.complete(answered)
+
+  expect(store.get(STATS)).toMatchObject({
+    rules: {
+      'AiTells.Adverb': { docs: { written: 22, fixed: 22, kept: 0 } },
+      'AiTells.Dash': { docs: { written: 3, fixed: 3, kept: 0 } },
+    },
+  })
+})
+
+// A session's Write, w1, of a new /work/newsroom/notes.md whose line 1 raises
+// one alert, then an Edit, e1, with this patch, which adds no line. Vale finds
+// the alert until the Edit lands. Returns the day's stats before the Edit, the
+// Edit's result, and the Vale runs from the Edit on.
+const deleteInSession = async ($: Engine, on: On, structuredPatch: unknown[]) => {
+  let isEdited = false
+  const runs: string[] = []
+  const store = session(on)
+  on('fs.stat', () => dir)
+  on('fs.read', () => ({ value: isEdited ? 'Notes.\n' : 'It just works.\nNotes.\n' }))
+  on('process.run', (_, e) => {
+    if (isEdited) runs.push(e.argv.join(' '))
+    return isBundled(e.argv) ? vale(isEdited ? [] : [alert(1, 'just')]) : noConfig
+  })
+  on('tool.call', { tool: 'Write' }, created('/work/newsroom/notes.md'))
+  on('tool.call', { tool: 'Edit' }, () => {
+    isEdited = true
+    return {
+      result: { ...editRecord, filePath: '/work/newsroom/notes.md', originalFile: 'It just works.\nNotes.\n', structuredPatch },
+    }
+  })
+  on('turn.complete', () => ({ text: '' }))
+
+  await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/work/newsroom/notes.md', content: '...' })
+  // A copy, since the store hands out the record the next update changes.
+  const before = JSON.parse(JSON.stringify(store.get(STATS)))
+  const ran = await $.tool.call({ ...edit, tool_use_id: 'e1', file_path: '/work/newsroom/notes.md' })
+  return { store, before, ran, runs }
+}
+
+// Removes line 1, which holds the alert.
+const deleteFlaggedLine = [{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 1, lines: ['-It just works.', ' Notes.'] }]
+
+test('an Edit that only deletes the line of an open alert counts a fix edit', async ($, on) => {
+  const { store, before } = await deleteInSession($, on, deleteFlaggedLine)
+
+  expect((store.get(STATS) as { fixEdits: number }).fixEdits).toBe(before.fixEdits + 1)
+})
+
+test('an Edit that only deletes lines runs no Vale', async ($, on) => {
+  const { runs } = await deleteInSession($, on, deleteFlaggedLine)
+
+  expect(runs).toEqual([])
+})
+
+test("an Edit that only deletes lines leaves the day's words alone", async ($, on) => {
+  const { store, before } = await deleteInSession($, on, deleteFlaggedLine)
+
+  expect((store.get(STATS) as { words: unknown }).words).toEqual(before.words)
+})
+
+test('an Edit that only deletes lines hands Claude no note', async ($, on) => {
+  const { ran } = await deleteInSession($, on, deleteFlaggedLine)
+
+  expect(ran.context).toBeUndefined()
+})
+
+test('an alert whose line an Edit deleted counts fixed at the turn\'s end', async ($, on) => {
+  const { store } = await deleteInSession($, on, deleteFlaggedLine)
+  await $.turn.complete(answered)
+
+  expect(store.get(STATS)).toMatchObject({ rules: { 'AiTells.Adverb': { docs: { written: 1, fixed: 1, kept: 0 } } } })
+})
+
+test("an Edit that only deletes lines without an open alert's words counts no fix edit", async ($, on) => {
+  const { store, before } = await deleteInSession($, on, [
+    { oldStart: 1, oldLines: 2, newStart: 1, newLines: 1, lines: [' It just works.', '-Notes.'] },
+  ])
+
+  expect((store.get(STATS) as { fixEdits: number }).fixEdits).toBe(before.fixEdits)
+})
+
+test('an Edit with an empty diff counts no fix edit', async ($, on) => {
+  const { store, before } = await deleteInSession($, on, [])
+
+  expect((store.get(STATS) as { fixEdits: number }).fixEdits).toBe(before.fixEdits)
 })
 
 test("a fixed alert's row names its rule in full after the struck message", async ($, on) => {
@@ -440,7 +723,7 @@ test('a kept alert fixed in a later turn turns fixed on its row, and its stats s
 
   await $.tool.call({ tool: 'Write', tool_use_id: 'w1', file_path: '/work/newsroom/notes.md', content: '...' })
   await $.turn.complete(answered)
-  // The next turn fixes it: the file changes and Vale finds nothing.
+  // The next turn fixes it, so the file changes and Vale finds nothing.
   isFixed = true
   mtimeMs = 2
   await $.turn.complete({ ...answered, turnId: 't2' })
@@ -541,6 +824,195 @@ test("/prose-lint stats with a project counts only that project, and this sessio
   expect(ran.text).not.toContain('This session')
 })
 
+const counts = (written: number, fixed: number, kept: number) => ({ docs: { written, fixed, kept } })
+
+// 1,300 words of writing: a day under the bundled rules, then this session's
+// record under a project's config. Six rules, so the coach's top five leave
+// Copulatives out.
+const coachHistory = () =>
+  new Map<string, unknown>([
+    [
+      'stats/2026-10-08/newsroom',
+      {
+        configs: ['bundled rules'],
+        words: { docs: 1000 },
+        rules: {
+          'Newsroom.Adverbs': counts(30, 27, 3),
+          'Newsroom.Passive': counts(20, 2, 18),
+          'Newsroom.AIVocabulary': counts(12, 6, 6),
+          'Newsroom.EmDashes': counts(8, 8, 0),
+          'Newsroom.Copulatives': counts(2, 2, 0),
+        },
+        fixEdits: 4,
+        examples: { 'Newsroom.Adverbs': ['just', 'really', 'very'], 'Newsroom.Passive': ['was written'] },
+      },
+    ],
+    [
+      STATS,
+      {
+        configs: ['/repo/.vale.ini'],
+        words: { docs: 300 },
+        rules: { 'Team.Terms': counts(5, 1, 4) },
+        fixEdits: 1,
+        examples: { 'Team.Terms': ['newsroom', 'Vale'] },
+      },
+    ],
+  ])
+
+const coach = stats('coach')
+
+test('/prose-lint coach leads with this session\'s line', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text).toContain(
+    '**This session** · 300 words · 16.7 alerts and 3.3 fix edits per 1,000 words · 5 written, 1 fixed, 4 kept',
+  )
+})
+
+test("/prose-lint coach says when this session hasn't written yet", async ($, on) => {
+  const earlier = coachHistory()
+  earlier.delete(STATS)
+  storeIn(on, earlier)
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text?.split('\n')[0]).toBe('**This session** · no prose written yet')
+})
+
+test('/prose-lint coach heads its table with the window it covers', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text).toContain('**prose-lint coach** · last 30 days · all projects · 1,300 words\n\n| Rule |')
+})
+
+test('/prose-lint coach lists the five rules with the most written alerts, most first', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text).toMatch(
+    /\| Newsroom\.Adverbs \|[^\n]*\n\| Newsroom\.Passive \|[^\n]*\n\| Newsroom\.AIVocabulary \|[^\n]*\n\| Newsroom\.EmDashes \|[^\n]*\n\| Team\.Terms \|/,
+  )
+  expect(ran.text).not.toContain('Copulatives')
+})
+
+test('/prose-lint coach shows each rule\'s written count, kept rate, examples and the config that ran it', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text).toContain('| Rule | Written | Kept | Examples | Config |')
+  expect(ran.text).toContain('| Newsroom.Passive | 20 | 90% | "was written" | bundled rules |')
+  expect(ran.text).toContain('| Newsroom.EmDashes | 8 | 0% |  | bundled rules |')
+  expect(ran.text).toContain('| Team.Terms | 5 | 80% | "newsroom", "Vale" | /repo/.vale.ini |')
+})
+
+test('/prose-lint coach asks Claude, out of the user\'s sight, for up to three changes', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.context?.join('\n')).toContain('Propose up to three changes')
+  expect(ran.text).not.toContain('Propose')
+})
+
+test('/prose-lint coach starts a turn, so Claude proposes without the user asking again', async ($, on) => {
+  const prompts: string[] = []
+  on('prompt.submit', (_, e) => (prompts.push(e.text), { text: e.text }))
+  storeIn(on, coachHistory())
+  const clock = mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  await $.command.run(coach)
+  await clock.settle()
+
+  expect(prompts).toEqual(['Propose changes from the /prose-lint coach table.'])
+})
+
+test('/prose-lint coach tells Claude to apply only the changes the user picks', async ($, on) => {
+  storeIn(on, coachHistory())
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.context?.join('\n')).toContain('Apply only the changes the user picks')
+})
+
+test('/prose-lint coach under 1,000 words says there is not enough writing yet', async ($, on) => {
+  // 999 words: this session's 300 and 699 of another day's.
+  const thin = coachHistory()
+  thin.set('stats/2026-10-08/newsroom', { ...(thin.get('stats/2026-10-08/newsroom') as object), words: { docs: 699 } })
+  storeIn(on, thin)
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.text).toBe(
+    'prose-lint: not enough writing yet to coach from: 999 words in the last 30 days, and the coach needs 1,000.',
+  )
+})
+
+test('/prose-lint coach under 1,000 words hands Claude nothing', async ($, on) => {
+  storeIn(on, new Map([[STATS, { ...(coachHistory().get(STATS) as object) }]]))
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  const ran = await $.command.run(coach)
+
+  expect(ran.context).toBeUndefined()
+})
+
+test('/prose-lint ./coach lints the folder named coach', async ($, on) => {
+  const linted: string[] = []
+  on('fs.stat', () => dir)
+  on('session.cwd', () => ({ value: '/repo' }))
+  on('process.run', (_, e) => {
+    linted.push(e.argv.at(-1) ?? '')
+    return isBundled(e.argv) ? vale([]) : noConfig
+  })
+
+  const ran = await $.command.run(stats('./coach'))
+
+  expect(linted).toContain('/repo/./coach')
+  expect(ran.text).toBe('prose-lint: no alerts found (bundled rules).')
+})
+
+// The test answers no fs or process call, so a coach that wrote a file or ran
+// a command would fail; the store is the one place it could still write.
+const coachChangesNothing = async ($: Engine, on: On, memory: Map<string, unknown>) => {
+  const before = JSON.stringify([...memory])
+  storeIn(on, memory)
+  mock.clock(on, { now: NOON })
+  on('session.id', () => ({ value: 's1' }))
+
+  await $.command.run(coach)
+
+  expect(JSON.stringify([...memory])).toBe(before)
+}
+
+test('/prose-lint coach changes nothing', ($, on) => coachChangesNothing($, on, coachHistory()))
+
+test('/prose-lint coach under 1,000 words changes nothing', ($, on) =>
+  coachChangesNothing($, on, new Map([[STATS, coachHistory().get(STATS)]])))
+
 test("a session's start folds earlier days into one record per day and project", async ($, on) => {
   const day = (written: number) => ({
     configs: ['bundled rules'],
@@ -603,7 +1075,7 @@ const bash = (on: On, { hasConfig = true, files = {} as Record<string, string>, 
     return e.path in files ? { value: files[e.path]! } : { deny: 'ENOENT' }
   })
   on('process.run', (_, e) => {
-    if (isPiped(e.argv)) piped.push({ argv: e.argv, stdin: e.init?.stdin })
+    if (e.init?.stdin !== undefined) piped.push({ argv: e.argv, stdin: e.init?.stdin })
     if (!hasConfig && !isBundled(e.argv)) return noConfig
     return vale(e.init?.stdin?.includes('just') ? [alert(1, 'just')] : [])
   })

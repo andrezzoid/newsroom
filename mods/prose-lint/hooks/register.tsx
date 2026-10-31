@@ -33,16 +33,15 @@ type ValeAlert = {
 // the project's or the user's own, else --config with the bundled one.
 type Linted = { configLabel: string; configArgs: string[]; byFile: Record<string, ValeAlert[]> }
 
-// Caps the alerts Claude reads per edit, so a file full of alerts costs a short
-// note, not a page of context. The transcript row still shows them all.
-const MAX_ALERTS = 20
-
 // Caps the alerts /prose-lint prints, so a folder of old prose stays readable.
 const MAX_REPORTED = 200
 
 // The label of the plugin's own rules, which also tells parse() that a failure
 // isn't a team's unsynced styles.
 const BUNDLED = 'bundled rules'
+
+// What /prose-lint takes, for its hint and its usage line.
+const USAGE = '<file or folder>… | stats [project] | coach'
 
 // The report of each flagged Edit or Write, for its transcript row.
 const reports = atom({ plugin: 'prose-lint', key: 'reports' } as const, { configLabel: '', alerts: [] })
@@ -64,6 +63,16 @@ const STATS_DAYS = 30
 // kilobyte per day and project, far below the store's 4 MiB limit.
 const KEEP_DAYS = 365
 
+// The rules /prose-lint stats lists, by written alerts.
+const STATS_RULES = 8
+
+// The rules /prose-lint coach lists, by written alerts.
+const COACH_RULES = 5
+
+// The words the coach needs before it proposes anything: the rates are per
+// 1,000 words, and below that one alert moves a rule's rate a lot.
+const COACH_WORDS = 1000
+
 export const register: Register = on => {
   // A reload fires session.start again, so the command survives one; and the
   // engine awaits this hook, so /prose-lint exists before the first prompt.
@@ -71,8 +80,8 @@ export const register: Register = on => {
     await fold($).catch(() => {})
     await $.command.register({
       name: 'prose-lint',
-      description: 'Lint files or folders with Vale, or `stats [project]` for your writing stats',
-      argumentHint: '<file or folder>… | stats [project]',
+      description: 'Lint files or folders with Vale, `stats [project]` for your writing stats, or `coach` for changes to make from them',
+      argumentHint: USAGE,
     })
     return next(e)
   })
@@ -93,12 +102,14 @@ export const register: Register = on => {
   // "fix these" can follow.
   on('command.run', { command: 'prose-lint' }, async ($, e) => {
     const paths = e.args.split(/\s+/).filter(Boolean)
-    if (paths.length === 0) return { text: 'Usage: /prose-lint <file or folder>… | stats [project]' }
+    if (paths.length === 0) return { text: `Usage: /prose-lint ${USAGE}` }
     // `stats` alone, or with a project name (no slash), is the stats view;
     // ./stats lints a folder by that name, and `stats docs/` lints both.
     if (paths[0] === 'stats' && paths.length <= 2 && !paths[1]?.includes('/')) {
       return { text: await statsReport($, paths[1]) }
     }
+    // `coach` alone is the coach; ./coach lints a folder by that name.
+    if (paths[0] === 'coach' && paths.length === 1) return coachReport($)
 
     const cwd = await $.session.cwd()
     const results: (Linted | undefined)[] = []
@@ -289,9 +300,11 @@ const refusal = async ($: EngineInterface, command: string): Promise<string | un
 // Lints the written file and hands Claude the alerts on the lines the write
 // added, so it fixes its own prose and leaves the prose that was already there
 // alone. With no original to diff against (a new file, or an old one too large
-// for Claude Code to keep), every line counts; an empty diff (nothing changed,
-// or the diff timed out) lints nothing. Also keeps the alerts under the call's
-// id for its transcript row. Returns `ran` unchanged when no alert lands.
+// for Claude Code to keep), every line counts. An edit that adds no line adds
+// no alerts or words, so it lints nothing, but it still counts a fix edit when
+// it deleted an open alert's words; an empty diff (nothing changed, or the diff
+// timed out) is one such edit. Also keeps the alerts under the call's id for
+// its transcript row. Returns `ran` unchanged when no alert lands.
 const withAlerts = async <R extends { context?: readonly string[] }>(
   $: EngineInterface,
   ran: R,
@@ -306,11 +319,15 @@ const withAlerts = async <R extends { context?: readonly string[] }>(
 ): Promise<R> => {
   const { filePath: path, originalFile, structuredPatch } = written
   const lines = originalFile === null ? undefined : addedLines(structuredPatch)
-  if (lines?.size === 0) return ran
+  const removed = structuredPatch.flatMap(hunk => hunk.lines.filter(l => l.startsWith('-')).map(l => l.slice(1)))
+  if (lines?.size === 0) {
+    // Stats must never fail Claude's edit, so this drops a failure there.
+    await countFixEdit($, path, removed).catch(() => {})
+    return ran
+  }
 
   const linted = await lint($, [path], dirname(path))
   if (!linted) return ran
-  const removed = structuredPatch.flatMap(hunk => hunk.lines.filter(l => l.startsWith('-')).map(l => l.slice(1)))
   const found = await newAlerts(
     $,
     (Object.values(linted.byFile)[0] ?? []).filter(a => lines === undefined || lines.has(a.Line)),
@@ -364,10 +381,8 @@ const lint = async (
   dir: string,
 ): Promise<Linted | undefined> => {
   const [targets, stdin] = Array.isArray(input) ? [input, undefined] : [[`--ext=.${input.ext}`], input.text]
-  // The docs say `root` is the folder holding plugin.json, which could mean
-  // .claude-plugin/ itself; the config sits beside .claude-plugin/ either way.
-  const root = $.plugin.root.replace(/\/\.claude-plugin\/?$/, '')
-  const bundled = `${root}/vale/.vale.ini`
+  const root = pluginRoot($)
+  const bundled = bundledConfig($)
 
   // Vale would find the bundled config above the plugin's own files and label
   // it as a project's.
@@ -382,19 +397,27 @@ const lint = async (
   return run && parse($, run, BUNDLED, ['--config', bundled])
 }
 
-// The alerts in `text`, linted as a file of type `ext` from `dir` with the
+// The docs say `root` is the folder holding plugin.json, which could mean
+// .claude-plugin/ itself; the plugin's files sit beside .claude-plugin/ either way.
+const pluginRoot = ($: EngineInterface): string => $.plugin.root.replace(/\/\.claude-plugin\/?$/, '')
+
+const bundledConfig = ($: EngineInterface): string => `${pluginRoot($)}/vale/.vale.ini`
+
+// The alerts in `text`, linted as the file at `path` from `dir` with the
 // config arguments an earlier lint() settled on, so no config search or label
-// runs again. Undefined, with no toast, when Vale fails: the caller treats that
-// as "no alerts known".
+// runs again. Vale matches a config's sections against the path string as it
+// is given, so `path` and `dir` must be the ones that lint got for the same
+// sections to apply. Undefined, with no toast, when Vale fails: the caller
+// treats that as "no alerts known".
 const lintText = async (
   $: EngineInterface,
   text: string,
-  ext: string,
+  path: string,
   dir: string,
   configArgs: string[],
 ): Promise<ValeAlert[] | undefined> => {
   const run = await $.process
-    .run(['vale', ...configArgs, `--ext=.${ext}`, '--output', 'JSON'], { cwd: dir, timeoutMs: 60_000, stdin: text })
+    .run(['vale', ...configArgs, `--path=${path}`, '--output', 'JSON'], { cwd: dir, timeoutMs: 60_000, stdin: text })
     .catch(() => undefined)
   if (!run || run.exitCode > 1) return undefined
   try {
@@ -469,20 +492,19 @@ const shorten = async ($: EngineInterface, path: string): Promise<string> => {
 // on an added line too. Vale lints the whole pre-edit file, so code blocks and
 // comment delimiters read as they did, and each alert on a
 // removed line cancels one of the same alert on an added line of the same
-// hunk. A line that goes from one "just" to two still reports the new
-// one, and a "just" removed in one section never hides one added in another.
+// hunk. A line that goes from one filler word to two still reports the new
+// one, and a word removed in one section never hides the same word added in
+// another.
 // When that lint fails, nothing cancels: better a repeated alert than a hidden
-// one. Vale names piped text stdin.<ext>, so a project config whose sections
-// match paths (docs/*.md) lints none of it, and the existing alerts repeat.
+// one.
 const newAlerts = async (
   $: EngineInterface,
   found: ValeAlert[],
   written: { filePath: string; originalFile: string | null; structuredPatch: readonly Hunk[] },
   configArgs: string[],
 ): Promise<ValeAlert[]> => {
-  const ext = extOf(written.filePath)
-  if (found.length === 0 || written.originalFile === null || !ext) return found
-  const before = await lintText($, written.originalFile, ext, dirname(written.filePath), configArgs)
+  if (found.length === 0 || written.originalFile === null) return found
+  const before = await lintText($, written.originalFile, written.filePath, dirname(written.filePath), configArgs)
   if (!before) return found
 
   // Which hunk each removed line (old numbering) and added line (new) is in.
@@ -540,9 +562,7 @@ const addedLines = (patch: readonly Hunk[]): Set<number> => {
 
 // Adds one Write or Edit to today's stats: the prose words it added, every
 // alert on them, and a fix edit when it removed words an open alert matched
-// in that file. Opens only the alerts Claude's note shows, for the turn's end
-// to give a verdict; one past the note's cut counts as written and never
-// gets one.
+// in that file. Opens every alert for the turn's end to give a verdict.
 // Files whose kind it can't tell don't count.
 const recordEdit = async (
   $: EngineInterface,
@@ -555,10 +575,7 @@ const recordEdit = async (
   const kind = kindOf(path)
   if (!kind) return
 
-  const removedWords = sameWords(change.removed.join(' '))
-  const isFixEdit = (await read($, open)).some(
-    alert => alert.file === path && removedWords.includes(sameWords(alert.match)),
-  )
+  const isFixEdit = await removesOpen($, path, change.removed)
   await updateStats($, stats => {
     if (!stats.configs.includes(configLabel)) stats.configs.push(configLabel)
     stats.words[kind] = (stats.words[kind] ?? 0) + countWords(change.added, path)
@@ -569,11 +586,27 @@ const recordEdit = async (
       if (examples.length < 3 && !examples.includes(a.Match)) examples.push(a.Match)
     }
   })
-  const shown = new Set(forNote(found))
-  const opened: OpenAlert[] = found.flatMap((a, index) =>
-    shown.has(a) ? [{ id, index, file: path, check: a.Check, match: a.Match, kind }] : [],
-  )
+  const opened: OpenAlert[] = found.map((a, index) => ({ id, index, file: path, check: a.Check, match: a.Match, kind }))
   if (opened.length > 0) await update($, open, list => [...list, ...opened])
+}
+
+// Adds a fix edit to today's stats for an edit that added no line, when it
+// removed an open alert's words. No config linted it, so `configs` stays as is.
+const countFixEdit = async ($: EngineInterface, path: string, removed: string[]): Promise<void> => {
+  if (await removesOpen($, path, removed)) {
+    await updateStats($, stats => {
+      stats.fixEdits++
+    })
+  }
+}
+
+// True when the removed lines of `path` hold the words of an alert still open
+// in that file. Removing no words fixes nothing, even an alert that matched
+// only spaces.
+const removesOpen = async ($: EngineInterface, path: string, removed: string[]): Promise<boolean> => {
+  const removedWords = sameWords(removed.join(' '))
+  if (removedWords === '') return false
+  return (await read($, open)).some(alert => alert.file === path && removedWords.includes(sameWords(alert.match)))
 }
 
 // Lints each file with open alerts again and counts how often each alert
@@ -698,46 +731,15 @@ const fold = async ($: EngineInterface): Promise<void> => {
 // the view. A rule's kept rate is a hint about the rule more than the
 // writing: a high one points at noise worth tuning in the config.
 const statsReport = async ($: EngineInterface, project?: string): Promise<string> => {
-  const since = day((await $.clock.now()) - (STATS_DAYS - 1) * DAY_MS)
-  const sessionId = await $.session.id()
   const scope = project ?? 'all projects'
-  const total = emptyStats()
-  // This session's own records, which a project's view shows only when the
-  // session wrote in that project.
-  const current = emptyStats()
-  const weeks = new Map<string, DayStats>()
-  for (const key of await $.store.keys()) {
-    const [prefix, date, from, session] = key.split('/')
-    if (prefix !== 'stats' || !date || !from || (project && from !== project)) continue
-    if (date < since && session !== sessionId) continue
-    const stats = (await $.store.get(key)) as DayStats
-    if (session === sessionId) merge(current, stats)
-    if (date < since) continue
-    merge(total, stats)
-    const week = weekOf(date)
-    if (!weeks.has(week)) weeks.set(week, emptyStats())
-    merge(weeks.get(week) as DayStats, stats)
-  }
+  const { total, current, weeks } = await gather($, project)
 
   const words = wordsOf(total)
   if (words === 0) return `prose-lint: no stats for ${scope} in the last ${STATS_DAYS} days yet.`
 
-  const session = sumCounts(Object.values(current.rules).flatMap(byKind => Object.values(byKind)))
-  const sessionLine =
-    wordsOf(current) > 0
-      ? [
-          `**This session** · ${thousands(wordsOf(current))} words · ${per1000(session.written, wordsOf(current))} alerts and ` +
-            `${per1000(current.fixEdits, wordsOf(current))} fix edits per 1,000 words · ` +
-            `${session.written} written, ${session.fixed} fixed, ${session.kept} kept`,
-          '',
-        ]
-      : []
+  const sessionLine = wordsOf(current) > 0 ? [sessionSummary(current), ''] : []
 
-  const rules = Object.entries(total.rules)
-    .map(([check, byKind]) => ({ check, ...sumCounts(Object.values(byKind)) }))
-    .sort((a, b) => b.written - a.written)
-    .slice(0, 8)
-  const keptRate = (c: Counts) => (c.kept + c.fixed > 0 ? `${Math.round((100 * c.kept) / (c.kept + c.fixed))}%` : '–')
+  const rules = topRules(total, STATS_RULES)
 
   return [
     ...sessionLine,
@@ -755,9 +757,7 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
     '| Rule | Written | Kept | Examples |',
     '| - | - | - | - |',
     ...rules.map(
-      rule =>
-        `| ${rule.check} | ${rule.written} | ${keptRate(rule)} | ` +
-        `${(total.examples[rule.check] ?? []).map(match => `"${match}"`).join(', ')} |`,
+      rule => `| ${ruleCells(rule, total).join(' | ')} |`,
     ),
     '',
     '| Where | Words | Alerts per 1,000 |',
@@ -767,6 +767,127 @@ const statsReport = async ($: EngineInterface, project?: string): Promise<string
       return `| ${kind} | ${thousands(total.words[kind] ?? 0)} | ${per1000(written, total.words[kind] ?? 0)} |`
     }),
   ].join('\n')
+}
+
+// /prose-lint coach: this session's line and the rules Claude writes most, for
+// the user; for Claude alone, how to turn them into proposals.
+const coachReport = async ($: EngineInterface): Promise<{ text: string; context?: string[] }> => {
+  const { total, current, configs } = await gather($)
+  const words = wordsOf(total)
+  if (words < COACH_WORDS) {
+    return {
+      text:
+        `prose-lint: not enough writing yet to coach from: ${thousands(words)} words in the last ${STATS_DAYS} days, ` +
+        `and the coach needs ${thousands(COACH_WORDS)}.`,
+    }
+  }
+  // A command's context waits for the user's next prompt, and a command.run
+  // hook can't submit one (it would wait on the turn the hook holds). A local
+  // command ends no turn either, so a timer submits it once the hook returns,
+  // and Claude answers the table without the user asking.
+  $.clock.after(0, () => void $.prompt.submit({ text: 'Propose changes from the /prose-lint coach table.' }).catch(() => {}))
+  return {
+    context: [coaching(bundledConfig($))],
+    text: [
+      sessionSummary(current),
+      '',
+      `**prose-lint coach** · last ${STATS_DAYS} days · all projects · ${thousands(words)} words`,
+      '',
+      '| Rule | Written | Kept | Examples | Config |',
+      '| - | - | - | - | - |',
+      ...topRules(total, COACH_RULES).map(
+        rule => `| ${[...ruleCells(rule, total), [...(configs.get(rule.check) ?? [])].join(', ')].join(' | ')} |`,
+      ),
+    ].join('\n'),
+  }
+}
+
+// What Claude reads after /prose-lint coach. The evidence decides the kind of
+// change: a rule Claude keeps is noise in the config, a rule Claude writes and
+// fixes is a habit for its instructions. `bundled` is the plugin's own config,
+// which an update overwrites.
+const coaching = (bundled: string): string =>
+  [
+    `The user ran /prose-lint coach. Its table lists the rules you wrote the most alerts of in the last ${STATS_DAYS} days, ` +
+      'across projects. Propose up to three changes the table supports, each with its evidence: the rule, its written ' +
+      'count, its kept rate and the examples. Each change is one of these:',
+    '- A high kept rate means the rule is noise: turn it off or down in the config that ran it.',
+    "- Many written alerts with a low kept rate mean a habit: add a line to your instructions (CLAUDE.md) that stops it.",
+    "- Examples that are the project's own terms: add them to the vocabulary of the config that ran the rule.",
+    'Find CLAUDE.md and the config files yourself. ' +
+      `"${BUNDLED}" is the plugin's own config, ${bundled}, which a plugin update overwrites, so a change to it ` +
+      "starts by copying it and its styles folder to Vale's global config folder: `vale ls-dirs` names it. " +
+      'Tell the user what the copy costs: it then runs in every project without its own config, and later ' +
+      "updates to the plugin's rules stop reaching them. " +
+      "A project's .vale.ini belongs to its team: say so when you propose a change to one.",
+    'Number the proposals and ask the user which to apply. Apply only the changes the user picks, and change no file ' +
+      'before they pick.',
+  ].join('\n')
+
+// A rule's row in the stats and coach tables: the rule, its written alerts,
+// its kept rate (the share of its alerts with a verdict that Claude kept) and
+// its example matches.
+const ruleCells = (rule: { check: string } & Counts, stats: DayStats): string[] => {
+  const judged = rule.kept + rule.fixed
+  return [
+    rule.check,
+    String(rule.written),
+    judged > 0 ? `${Math.round((100 * rule.kept) / judged)}%` : '–',
+    (stats.examples[rule.check] ?? []).map(match => `"${match}"`).join(', '),
+  ]
+}
+
+// The `count` rules Claude wrote the most alerts of, with their counts summed
+// across kinds.
+const topRules = (stats: DayStats, count: number): ({ check: string } & Counts)[] =>
+  Object.entries(stats.rules)
+    .map(([check, byKind]) => ({ check, ...sumCounts(Object.values(byKind)) }))
+    .sort((a, b) => b.written - a.written)
+    .slice(0, count)
+
+// The stats of the last STATS_DAYS days, for every project or one: summed,
+// by week, and this session's own records, which a project's view counts
+// only when the session wrote in that project. A record keeps its configs but
+// not which rule each ran, so `configs` gives a rule every config of each
+// record it appears in: exact while a record ran one config.
+const gather = async ($: EngineInterface, project?: string) => {
+  const since = day((await $.clock.now()) - (STATS_DAYS - 1) * DAY_MS)
+  const sessionId = await $.session.id()
+  const total = emptyStats()
+  const current = emptyStats()
+  const weeks = new Map<string, DayStats>()
+  const configs = new Map<string, Set<string>>()
+  for (const key of await $.store.keys()) {
+    const [prefix, date, from, session] = key.split('/')
+    if (prefix !== 'stats' || !date || !from || (project && from !== project)) continue
+    if (date < since && session !== sessionId) continue
+    const stats = (await $.store.get(key)) as DayStats
+    if (session === sessionId) merge(current, stats)
+    if (date < since) continue
+    merge(total, stats)
+    const week = weekOf(date)
+    if (!weeks.has(week)) weeks.set(week, emptyStats())
+    merge(weeks.get(week) as DayStats, stats)
+    for (const check of Object.keys(stats.rules)) {
+      const ran = configs.get(check) ?? new Set()
+      for (const config of stats.configs) ran.add(config)
+      configs.set(check, ran)
+    }
+  }
+  return { total, current, weeks, configs }
+}
+
+// This session's line: its words, its rates per 1,000 words, and its alerts'
+// verdicts.
+const sessionSummary = (current: DayStats): string => {
+  const words = wordsOf(current)
+  if (words === 0) return '**This session** · no prose written yet'
+  const session = sumCounts(Object.values(current.rules).flatMap(byKind => Object.values(byKind)))
+  return (
+    `**This session** · ${thousands(words)} words · ${per1000(session.written, words)} alerts and ` +
+    `${per1000(current.fixEdits, words)} fix edits per 1,000 words · ` +
+    `${session.written} written, ${session.fixed} fixed, ${session.kept} kept`
+  )
 }
 
 const DAY_MS = 86_400_000
@@ -913,29 +1034,23 @@ const report = (linted: Linted[], cwd: string): string => {
   return lines.join('\n')
 }
 
-// The alerts Claude's note shows: errors first, so the MAX_ALERTS cut never
-// hides one, then the rest in file order. The stats open only these.
-const forNote = (found: ValeAlert[]): ValeAlert[] =>
-  [...found]
-    .sort((a, b) => Number(b.Severity === 'error') - Number(a.Severity === 'error') || byPosition(a, b))
-    .slice(0, MAX_ALERTS)
-
 // The note Claude reads after a flagged edit, terse because it costs context
-// each time. Errors encode hard rules, so they have no way out; Claude keeps
-// any other alert only by telling the user why, so a quiet reply means it
-// fixed them all.
+// each time. It lists every alert, in file order within each section: later
+// edits report only the lines they add, so an alert left out would never
+// reach Claude. Errors encode hard rules, so they have no way out; Claude
+// keeps any other alert only by telling the user why, so a quiet reply means
+// it fixed them all.
 const describe = (found: ValeAlert[], configLabel: string): string => {
-  const shown = forNote(found)
+  const inOrder = [...found].sort(byPosition)
   const row = (a: ValeAlert) => `- ${a.Line}:${a.Span[0]} ${a.Message}`
-  const errors = shown.filter(a => a.Severity === 'error').map(row)
-  const others = shown.filter(a => a.Severity !== 'error').map(row)
-  const more = found.length > MAX_ALERTS ? `\n(${found.length - MAX_ALERTS} more not shown)` : ''
+  const errors = inOrder.filter(a => a.Severity === 'error').map(row)
+  const others = inOrder.filter(a => a.Severity !== 'error').map(row)
 
   return [
     `Vale (${configLabel}). Don't mention fixes.`,
     ...(errors.length > 0 ? ['Must fix:', ...errors] : []),
     ...(others.length > 0 ? ['Fix, or tell the user why not:', ...others] : []),
-  ].join('\n') + more
+  ].join('\n')
 }
 
 const basename = (path: string): string => path.slice(path.lastIndexOf('/') + 1)

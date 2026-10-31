@@ -114,8 +114,8 @@ class Session:
             self.changed = time.time()
 
     def type(self, text):
-        # A character at a time: one write of the whole text can land as a paste,
-        # which the prompt shows as "[Pasted text]" instead of the words.
+        # One write per character, since one write of the whole text can land as
+        # a paste, which the prompt shows as "[Pasted text]" instead of the words.
         for ch in text:
             os.write(self.fd, ch.encode())
             self.pump(0.005)

@@ -1,4 +1,13 @@
 {
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "git config core.hooksPath .githooks" }
+        ]
+      }
+    ]
+  },
   "sandbox": {
     "excludedCommands": [
       "claude plugin test mods/prose-lint",

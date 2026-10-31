@@ -1,0 +1,40 @@
+# Runs scripts/gates.sh, the same gates as .githooks/pre-commit, on every push
+# and pull request, so a PR's check doesn't rest on the author's local hook.
+name: gates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gates-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CLAUDE_CODE_VERSION: 2.1.301
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install the claude CLI
+        run: npm install -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"
+
+      - name: Install Vale
+        run: |
+          sh scripts/install-vale.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Run every gate
+        run: sh scripts/gates.sh
