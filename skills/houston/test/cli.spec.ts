@@ -353,6 +353,15 @@ describe("pr status", () => {
     for (const gone of ["body", "pr", "mergeState"]) expect(gone in s).toBe(false);
   });
 
+  test("a page that answers nothing reads as no items", async () => {
+    routes({ [`GET repos/o/r/commits/${SHA}/check-runs`]: "" });
+    const r = await run(["pr", "status", "7", "--repo", "o/r", "--json"]);
+    expect(r.err).toBe("");
+    expect(json<PrStatus>(r.out)).toMatchObject({
+      checks: { failing: [], pending: [], passing: 0 },
+    });
+  });
+
   test("cloud sessions read review threads from the ccr route", async () => {
     routes({
       "GET repos/o/r/pulls/7/ccr/review_threads": [{ is_resolved: false }],

@@ -126,7 +126,7 @@ export function blockedByRefs(body: string, repo: string): string[] {
 function closing(prs: GhPull[], id: string): string[] {
   const { repo } = parseId(id);
   return prs
-    .filter((p) => ticketsOfPr({ body: p.body, headRef: p.head?.ref ?? "" }, repo).includes(id))
+    .filter((p) => ticketsOfPr({ body: p.body, headRef: p.head.ref }, repo).includes(id))
     .map((p) => p.html_url);
 }
 

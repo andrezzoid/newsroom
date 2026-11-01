@@ -18,10 +18,12 @@ function partial(actual: unknown, expected: unknown): boolean {
   return Object.entries(expected).every(([k, e]) => partial(has[k], e));
 }
 
-// Whether a string holds a substring, or a list an item.
+// Whether a string holds an item's text, or a list the item. Fails on any
+// other value, so a missing one never passes a negated match.
 function contains(actual: unknown, item: unknown): boolean {
-  if (typeof actual === "string") return typeof item === "string" && actual.includes(item);
-  return Array.isArray(actual) && (actual as unknown[]).includes(item);
+  if (typeof actual === "string") return actual.includes(String(item));
+  assert.ok(Array.isArray(actual), `expected a string or a list, got ${JSON.stringify(actual)}`);
+  return (actual as unknown[]).includes(item);
 }
 
 // What the matchers below need actual to be, checked as node:assert would.
