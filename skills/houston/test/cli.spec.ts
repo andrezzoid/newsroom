@@ -974,15 +974,19 @@ describe(PR_OPEN, () => {
 });
 
 // `git commit -a` runs the pre-commit gates with GIT_INDEX_FILE naming a
-// temporary index of this clone. This runs the pr open tests again in a child
-// test run under the same variable, pointed at a copy of this clone's index.
+// temporary index of this clone, and with GIT_DIR too when the clone is a
+// worktree. This runs the pr open tests again in a child test run under both:
+// a copy of this clone's index, and a throwaway repository standing in for the
+// clone's own, so a regression can't push or switch branches in the real one.
 // It sits outside that suite, or the child would start it again, and so on.
 test("the pull request tests pass under a git hook's GIT_INDEX_FILE, and leave that index as it was", () => {
   const real = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "index"], {
     cwd: import.meta.dirname,
     encoding: "utf8",
   }).stdout.trim();
-  const index = join(mkdtempSync(join(tmpdir(), "houston-index-")), "index");
+  const caller = mkdtempSync(join(tmpdir(), "houston-caller-"));
+  spawnSync("git", ["init", "-q", caller]);
+  const index = join(caller, "index");
   copyFileSync(real, index);
   const before = readFileSync(index);
   // NODE_TEST_CONTEXT would make the child report to this run instead of its stdout.
@@ -990,7 +994,10 @@ test("the pull request tests pass under a git hook's GIT_INDEX_FILE, and leave t
   const r = spawnSync(
     process.execPath,
     ["--test", "--test-reporter=tap", `--test-name-pattern=^${PR_OPEN}`, import.meta.filename],
-    { encoding: "utf8", env: { ...env, GIT_INDEX_FILE: index } },
+    {
+      encoding: "utf8",
+      env: { ...env, GIT_DIR: join(caller, ".git"), GIT_INDEX_FILE: index },
+    },
   );
   expect(r.stdout).toMatch(/^# pass [1-9]/m);
   expect(r.stdout).toMatch(/^# fail 0$/m);
