@@ -4,6 +4,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
+  copyFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -21,8 +22,21 @@ import { claimLog } from "../scripts/tickets.ts";
 import { expect } from "./expect.ts";
 import { githubIssue, linearIssue } from "./fixtures.ts";
 
+// Git sets GIT_INDEX_FILE, GIT_DIR and the like for its hooks, so under the
+// pre-commit gates every git command these tests run, and every CLI they
+// start, would read and write this clone instead of its own scratch repo.
+// Drop the variables git itself drops before it runs a command in another
+// repository. The CLI keeps them on purpose: a real caller who sets one means it.
+for (const name of spawnSync("git", ["rev-parse", "--local-env-vars"], { encoding: "utf8" })
+  .stdout.split("\n")
+  .filter(Boolean)) {
+  delete process.env[name];
+}
+
 const CLI = join(import.meta.dirname, "..", "scripts", "cli.ts");
 const FAKE_GH = join(import.meta.dirname, "fake-gh.ts");
+// The pr open suite's title, which the GIT_INDEX_FILE test reruns by name.
+const PR_OPEN = "pr open";
 const SHA = "c".repeat(40);
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
 
@@ -726,7 +740,7 @@ describe("pr reply and resolve", () => {
   });
 });
 
-describe("pr open", () => {
+describe(PR_OPEN, () => {
   const PR = { number: 41, html_url: "https://github.com/o/r/pull/41" };
   const opened = () => sent("POST", "repos/o/r/pulls");
   const bodyFile = (text: string) => {
@@ -957,6 +971,30 @@ describe("pr open", () => {
     expect(r.err).toContain("ENG-404");
     expect(pushedOrOpened()).toEqual([]);
   });
+});
+
+// `git commit -a` runs the pre-commit gates with GIT_INDEX_FILE naming a
+// temporary index of this clone. This runs the pr open tests again in a child
+// test run under the same variable, pointed at a copy of this clone's index.
+// It sits outside that suite, or the child would start it again, and so on.
+test("the pull request tests pass under a git hook's GIT_INDEX_FILE, and leave that index as it was", () => {
+  const real = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "index"], {
+    cwd: import.meta.dirname,
+    encoding: "utf8",
+  }).stdout.trim();
+  const index = join(mkdtempSync(join(tmpdir(), "houston-index-")), "index");
+  copyFileSync(real, index);
+  const before = readFileSync(index);
+  // NODE_TEST_CONTEXT would make the child report to this run instead of its stdout.
+  const { NODE_TEST_CONTEXT: _, ...env } = process.env;
+  const r = spawnSync(
+    process.execPath,
+    ["--test", "--test-reporter=tap", `--test-name-pattern=^${PR_OPEN}`, import.meta.filename],
+    { encoding: "utf8", env: { ...env, GIT_INDEX_FILE: index } },
+  );
+  expect(r.stdout).toMatch(/^# pass [1-9]/m);
+  expect(r.stdout).toMatch(/^# fail 0$/m);
+  expect(readFileSync(index).equals(before)).toBe(true);
 });
 
 describe("Linear tickets", () => {
