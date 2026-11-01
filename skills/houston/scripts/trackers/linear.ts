@@ -59,10 +59,12 @@ export async function linear<T>(
     headers: { "Content-Type": "application/json", ...auth },
     body: JSON.stringify({ query, variables }),
   });
-  const json: any = await res.json().catch(() => ({}));
+  // A GraphQL answer: data T on success, errors when Linear refused the query.
+  // An answer that is not JSON reads as empty.
+  const json = (await res.json().catch(() => ({}))) as { data?: T; errors?: { message: string }[] };
   if (!res.ok || json.errors) {
     throw new LinearError(
-      `Linear: ${json.errors?.map((e: any) => e.message).join("; ") ?? `HTTP ${res.status}`}`,
+      `Linear: ${json.errors?.map((e) => e.message).join("; ") ?? `HTTP ${res.status}`}`,
     );
   }
   return json.data as T;
@@ -198,7 +200,7 @@ export type LinearIssue = {
 type WithComments = LinearIssue & {
   comments: { nodes: { id: string; body: string; createdAt: string }[] };
 };
-type WithHistory = LinearIssue & {
+export type WithHistory = LinearIssue & {
   history: { nodes: { createdAt: string; addedLabelIds: string[] | null }[] };
 };
 

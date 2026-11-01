@@ -17,7 +17,8 @@ const stdin = args.includes("--input") ? readFileSync(0, "utf8") : null;
 appendFileSync(join(dir, "calls.jsonl"), JSON.stringify({ args, stdin }) + "\n");
 
 const file = join(dir, "routes.json");
-const routes: Record<string, any> = JSON.parse(readFileSync(file, "utf8"));
+// Each route's answer: JSON, or a string printed as it is.
+const routes = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
 const [command, path] = args;
 if (command !== "api" || !path) process.exit(2);
 const flag = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
@@ -43,11 +44,11 @@ if (!key) {
 
 let body = routes[key];
 if (body === "$append") {
-  const list: any[] = (routes[`GET ${bare}`] ??= []);
+  const list = (routes[`GET ${bare}`] ??= []) as unknown[];
   body = {
     id: 9000 + list.length,
     created_at: new Date().toISOString(),
-    ...JSON.parse(stdin ?? "{}"),
+    ...(JSON.parse(stdin ?? "{}") as object),
   };
   list.push(body);
   writeFileSync(file, JSON.stringify(routes));

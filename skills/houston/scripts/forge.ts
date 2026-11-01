@@ -7,7 +7,15 @@
 // and a pull request or issue is a Ref to one.
 
 import { setTimeout as sleep } from "node:timers/promises";
-import { attributed, type PrFacts, status, type Status } from "./pr.ts";
+import {
+  attributed,
+  type CheckRun,
+  type CommitStatus,
+  type PrFacts,
+  type Review,
+  status,
+  type Status,
+} from "./pr.ts";
 import { git, inCloud, run } from "./proc.ts";
 
 const GH = process.env.HOUSTON_GH ?? "gh";
@@ -22,7 +30,12 @@ export function gh(args: string[], input?: string): string {
 
 type ApiOpts = { method?: string; body?: unknown };
 
-export function api<T>(path: string, opts: ApiOpts = {}): T {
+// The JSON that `gh api` answers, as the declared type T: the one place a
+// response becomes typed, so the compiler checks every read after it. Nothing
+// checks the JSON against T at run time. T declares only the fields the CLI
+// reads, and marks optional each field the CLI already does without. A route
+// that answers nothing reads as null, whatever T says.
+export function api<T = unknown>(path: string, opts: ApiOpts = {}): T {
   const args = ["api", path];
   if (opts.method) args.push("--method", opts.method);
   let input: string | undefined;
@@ -34,11 +47,18 @@ export function api<T>(path: string, opts: ApiOpts = {}): T {
   return (out.trim() ? JSON.parse(out) : null) as T;
 }
 
-export function paginate<T>(path: string, pick: (page: any) => T[] = (p) => p, maxPages = 10): T[] {
+// Every item of a list route, 100 to a page, up to maxPages pages. A route
+// whose page is an object rather than a list, Page, names the list with pick.
+export function paginate<T, Page = T[]>(
+  path: string,
+  pick?: (page: Page) => T[],
+  maxPages = 10,
+): T[] {
   const sep = path.includes("?") ? "&" : "?";
   const all: T[] = [];
   for (let page = 1; page <= maxPages; page++) {
-    const batch = pick(api<any>(`${path}${sep}per_page=100&page=${page}`)) ?? [];
+    const body = api<Page>(`${path}${sep}per_page=100&page=${page}`);
+    const batch = (pick ? pick(body) : (body as T[] | null)) ?? [];
     all.push(...batch);
     if (batch.length < 100) break;
   }
@@ -46,6 +66,45 @@ export function paginate<T>(path: string, pick: (page: any) => T[] = (p) => p, m
 }
 
 export type Ref = { repo: string; number: number };
+
+// What GitHub's REST routes answer, as far as the CLI reads it.
+
+// A pull request as the list routes return it.
+export type GhPull = {
+  number: number;
+  node_id: string;
+  html_url: string;
+  title: string;
+  body: string | null;
+  state: "open" | "closed";
+  draft?: boolean;
+  updated_at?: string;
+  merged_at: string | null;
+  head: { sha: string; ref: string };
+  base: { ref: string };
+};
+// One pull request, which adds what GitHub computes for it alone. mergeable is
+// null while GitHub still computes it.
+type GhPullDetail = GhPull & {
+  merged?: boolean;
+  mergeable: boolean | null;
+  mergeable_state?: string;
+};
+type GhRepo = {
+  default_branch: string;
+  allow_squash_merge?: boolean;
+  allow_merge_commit?: boolean;
+};
+// A comment in the conversation of an issue or pull request, or, with a path,
+// on a pull request's diff.
+type GhComment = {
+  id: number;
+  body: string | null;
+  created_at: string;
+  user: { login: string } | null;
+};
+type GhReviewComment = GhComment & { path?: string };
+type GhReview = Review & { body: string | null; submitted_at: string };
 
 // owner/name from an owner/name spec, a remote, or any GitHub URL under the
 // repository, as a pull request's.
@@ -89,11 +148,12 @@ export function resolvePr(arg: string | undefined, repo: string | null): Ref {
   if (arg) throw new GhError(`not a PR number or URL: ${arg}`);
   const branch = currentBranch();
   if (!branch) throw new GhError("detached HEAD: pass a PR number");
-  const pulls = api<any[]>(
-    `repos/${repo}/pulls?head=${ownerOf(repo)}:${encodeURIComponent(branch)}&state=all&per_page=5`,
-  );
-  if (!pulls?.length) throw new GhError(`no pull request for branch ${branch}`);
-  return { repo, number: pulls[0].number };
+  const [pull] =
+    api<GhPull[] | null>(
+      `repos/${repo}/pulls?head=${ownerOf(repo)}:${encodeURIComponent(branch)}&state=all&per_page=5`,
+    ) ?? [];
+  if (!pull) throw new GhError(`no pull request for branch ${branch}`);
+  return { repo, number: pull.number };
 }
 
 // A failed lookup is not cached: the next call retries.
@@ -109,21 +169,28 @@ export function viewer(): string | null {
   return viewerCache;
 }
 
+// A JSON object's fields, or undefined for anything else.
+function fields(v: unknown): Record<string, unknown> | undefined {
+  return typeof v === "object" && v !== null ? (v as Record<string, unknown>) : undefined;
+}
+
 // The ccr route's payload shape is not documented, so accept the plausible
 // field names and give up (null) rather than guess when none is present.
 function countUnresolved(payload: unknown): number | null {
-  const p = payload as any;
-  const list: any[] | null = Array.isArray(p)
-    ? p
-    : (p?.threads ?? p?.review_threads ?? p?.reviewThreads?.nodes ?? p?.nodes ?? null);
+  const p = fields(payload);
+  const list: unknown = Array.isArray(payload)
+    ? payload
+    : (p?.threads ?? p?.review_threads ?? fields(p?.reviewThreads)?.nodes ?? p?.nodes ?? null);
   if (!Array.isArray(list)) return null;
   let open = 0;
-  for (const t of list) {
+  for (const thread of list as unknown[]) {
+    const t = fields(thread);
+    const state = t?.state;
     const resolved =
       t?.is_resolved ??
       t?.isResolved ??
       t?.resolved ??
-      (typeof t?.state === "string" ? t.state.toLowerCase() === "resolved" : undefined);
+      (typeof state === "string" ? state.toLowerCase() === "resolved" : undefined);
     if (typeof resolved !== "boolean") return null;
     if (!resolved) open++;
   }
@@ -149,7 +216,18 @@ const THREAD_STATES_QUERY = `query($owner:String!,$name:String!,$number:Int!){re
 const THREADS_QUERY = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved comments(first:100){nodes{databaseId}}}}}}}`;
 const RESOLVE_MUTATION = `mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}`;
 
-function threadsViaGraphql({ repo, number }: Ref, query: string): any[] {
+// A review thread as the GraphQL queries above ask for it: comments only from
+// THREADS_QUERY.
+type GqlThread = {
+  id: string;
+  isResolved: boolean;
+  comments?: { nodes: { databaseId: number }[] };
+};
+type GqlThreads = {
+  data?: { repository?: { pullRequest?: { reviewThreads?: { nodes?: GqlThread[] } } } };
+};
+
+function threadsViaGraphql({ repo, number }: Ref, query: string): GqlThread[] {
   const [owner = "", name = ""] = repo.split("/");
   const out = gh([
     "api",
@@ -163,7 +241,8 @@ function threadsViaGraphql({ repo, number }: Ref, query: string): any[] {
     "-F",
     `number=${number}`,
   ]);
-  const nodes = JSON.parse(out)?.data?.repository?.pullRequest?.reviewThreads?.nodes;
+  const nodes = (JSON.parse(out) as GqlThreads | null)?.data?.repository?.pullRequest?.reviewThreads
+    ?.nodes;
   // An answer without threads must not read as a pull request with none open.
   if (!Array.isArray(nodes)) throw new GhError("GraphQL returned no review threads");
   return nodes;
@@ -197,7 +276,7 @@ export function resolveThread(pr: Ref, commentId: number): void {
       }),
     () => {
       const thread = threadsViaGraphql(pr, THREADS_QUERY).find((t) =>
-        t?.comments?.nodes?.some((c: any) => c?.databaseId === commentId),
+        t?.comments?.nodes?.some((c) => c?.databaseId === commentId),
       );
       if (!thread) throw new GhError("no review thread holds it");
       if (!thread.isResolved)
@@ -221,7 +300,7 @@ export function convertToDraft(pr: Ref): void {
         "-f",
         `query=${DRAFT_MUTATION}`,
         "-f",
-        `id=${api<any>(`repos/${pr.repo}/pulls/${pr.number}`).node_id}`,
+        `id=${api<GhPull>(`repos/${pr.repo}/pulls/${pr.number}`).node_id}`,
       ]),
   );
 }
@@ -245,8 +324,8 @@ export function replyTo(pr: Ref, commentId: number, body: string): void {
 function prFacts(pr: Ref): PrFacts {
   const { number } = pr;
   const base = `repos/${pr.repo}`;
-  const pull = api<any>(`${base}/pulls/${number}`);
-  const sha: string = pull.head.sha;
+  const pull = api<GhPullDetail>(`${base}/pulls/${number}`);
+  const sha = pull.head.sha;
   return {
     number,
     url: pull.html_url,
@@ -261,9 +340,14 @@ function prFacts(pr: Ref): PrFacts {
     headRef: pull.head.ref,
     baseRef: pull.base.ref,
     updatedAt: pull.updated_at ?? new Date().toISOString(),
-    checkRuns: paginate<any>(`${base}/commits/${sha}/check-runs`, (p) => p.check_runs, 3),
-    statuses: api<any>(`${base}/commits/${sha}/status`)?.statuses ?? [],
-    reviews: paginate<any>(`${base}/pulls/${number}/reviews`),
+    checkRuns: paginate<CheckRun, { check_runs: CheckRun[] }>(
+      `${base}/commits/${sha}/check-runs`,
+      (p) => p.check_runs,
+      3,
+    ),
+    statuses:
+      api<{ statuses?: CommitStatus[] } | null>(`${base}/commits/${sha}/status`)?.statuses ?? [],
+    reviews: paginate<GhReview>(`${base}/pulls/${number}/reviews`),
     unresolvedThreads: pull.state === "open" ? unresolvedThreads(pr) : 0,
   };
 }
@@ -286,7 +370,7 @@ export async function pullStatus(pr: Ref): Promise<Status> {
 export function openPr(repo: string, title: string, body: string): Ref & { url: string } {
   const head = currentBranch();
   if (!head) throw new Error("detached HEAD: check out the branch the pull request comes from");
-  const base = api<any>(`repos/${repo}`).default_branch;
+  const base = api<GhRepo>(`repos/${repo}`).default_branch;
   if (head === base)
     throw new Error(`${head} is the default branch: open the pull request from a feature branch`);
   // The full ref name keeps a branch such as --force from reading as an option.
@@ -300,7 +384,7 @@ export function openPr(repo: string, title: string, body: string): Ref & { url: 
     const push = run("git", ["push", "-u", "origin", ref]);
     if (push.code !== 0) throw new Error(`git push: ${push.stderr.trim()}`);
   }
-  const pull = api<any>(`repos/${repo}/pulls`, {
+  const pull = api<GhPull>(`repos/${repo}/pulls`, {
     method: "POST",
     body: { title, head, base, body, draft: false },
   });
@@ -310,11 +394,11 @@ export function openPr(repo: string, title: string, body: string): Ref & { url: 
 // Merges at the head the caller checked, the way the repository allows:
 // squash where it can, else a merge commit, else rebase. Returns the method.
 export function merge(pr: Ref, sha: string): "squash" | "merge" | "rebase" {
-  const allows = api<any>(`repos/${pr.repo}`);
+  const allows = api<GhRepo | null>(`repos/${pr.repo}`);
   const method =
     allows?.allow_squash_merge !== false
       ? "squash"
-      : allows.allow_merge_commit !== false
+      : allows?.allow_merge_commit !== false
         ? "merge"
         : "rebase";
   api(`repos/${pr.repo}/pulls/${pr.number}/merge`, {
@@ -328,7 +412,7 @@ export type Comment = { id: string; body: string; createdAt: string };
 
 // The conversation on a pull request or issue, oldest first: where reports go.
 export function comments(on: Ref): Comment[] {
-  return paginate<any>(`repos/${on.repo}/issues/${on.number}/comments`).map((c) => ({
+  return paginate<GhComment>(`repos/${on.repo}/issues/${on.number}/comments`).map((c) => ({
     id: String(c.id),
     body: c.body ?? "",
     createdAt: c.created_at,
@@ -341,15 +425,15 @@ export function lastWord(pr: Ref): string | null {
   const { number } = pr;
   const base = `repos/${pr.repo}`;
   const all = [
-    ...paginate<any>(`${base}/issues/${number}/comments`).map((c) => ({
+    ...paginate<GhComment>(`${base}/issues/${number}/comments`).map((c) => ({
       at: c.created_at,
       body: c.body,
     })),
-    ...paginate<any>(`${base}/pulls/${number}/comments`).map((c) => ({
+    ...paginate<GhReviewComment>(`${base}/pulls/${number}/comments`).map((c) => ({
       at: c.created_at,
       body: c.body,
     })),
-    ...paginate<any>(`${base}/pulls/${number}/reviews`)
+    ...paginate<GhReview>(`${base}/pulls/${number}/reviews`)
       .filter((v) => v.body)
       .map((v) => ({ at: v.submitted_at, body: v.body })),
   ];
@@ -361,8 +445,14 @@ export type Merged = Ref & { url: string; title: string; mergedAt: string };
 // Pull requests merged since a moment, read from the 300 most recently
 // updated closed ones: enough for a week.
 export function mergedSince(repo: string, since: string): Merged[] {
-  return paginate<any>(`repos/${repo}/pulls?state=closed&sort=updated&direction=desc`, (p) => p, 3)
-    .filter((p) => p.merged_at && Date.parse(p.merged_at) >= Date.parse(since))
+  return paginate<GhPull>(
+    `repos/${repo}/pulls?state=closed&sort=updated&direction=desc`,
+    undefined,
+    3,
+  )
+    .filter((p): p is GhPull & { merged_at: string } =>
+      Boolean(p.merged_at && Date.parse(p.merged_at) >= Date.parse(since)),
+    )
     .map((p) => ({
       repo,
       number: p.number,
@@ -374,7 +464,7 @@ export function mergedSince(repo: string, since: string): Merged[] {
 
 // The first line of each review comment on a pull request's diff.
 export function reviewComments(pr: Ref): { author: string; path: string; text: string }[] {
-  return paginate<any>(`repos/${pr.repo}/pulls/${pr.number}/comments`).map((c) => ({
+  return paginate<GhReviewComment>(`repos/${pr.repo}/pulls/${pr.number}/comments`).map((c) => ({
     author: c.user?.login ?? "?",
     path: c.path ?? "",
     text: (
@@ -390,8 +480,9 @@ export function reviewComments(pr: Ref): { author: string; path: string; text: s
 export function openPrs(repo: string, branch: string, linked: string[]): string[] {
   const urls = new Set<string>();
   try {
-    for (const p of api<any[]>(`repos/${repo}/pulls?head=${ownerOf(repo)}:${branch}&state=open`) ??
-      [])
+    for (const p of api<GhPull[] | null>(
+      `repos/${repo}/pulls?head=${ownerOf(repo)}:${branch}&state=open`,
+    ) ?? [])
       urls.add(p.html_url);
   } catch {
     // no such branch or no access: no open pull request we can see
@@ -400,7 +491,7 @@ export function openPrs(repo: string, branch: string, linked: string[]): string[
     const pr = parsePrUrl(url);
     if (!pr || urls.has(url)) continue;
     try {
-      if (api<any>(`repos/${pr.repo}/pulls/${pr.number}`).state === "open") urls.add(url);
+      if (api<GhPull>(`repos/${pr.repo}/pulls/${pr.number}`).state === "open") urls.add(url);
     } catch {
       // unreadable: not counted as open
     }
