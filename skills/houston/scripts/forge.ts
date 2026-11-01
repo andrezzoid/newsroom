@@ -224,12 +224,15 @@ function eitherRoute<T>(what: string, viaCcr: () => T, viaGraphql: () => T): T {
 const THREAD_STATES_QUERY = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}`;
 type ThreadState = { isResolved: boolean };
 const THREADS_QUERY = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved comments(first:100){nodes{databaseId}}}}}}}`;
-type Thread = ThreadState & { id: string; comments: { nodes: { databaseId: number }[] } };
+type Thread = ThreadState & {
+  id: string;
+  comments: { nodes: ({ databaseId: number } | null)[] | null } | null;
+};
 const RESOLVE_MUTATION = `mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}`;
 
 // The review threads of a pull request, each as the query asks for it: T is
-// that query's thread type.
-function threadsViaGraphql<T>({ repo, number }: Ref, query: string): T[] {
+// that query's thread type. GraphQL's schema lets any node be null.
+function threadsViaGraphql<T>({ repo, number }: Ref, query: string): (T | null)[] {
   const [owner = "", name = ""] = repo.split("/");
   const out = gh([
     "api",
@@ -244,7 +247,7 @@ function threadsViaGraphql<T>({ repo, number }: Ref, query: string): T[] {
     `number=${number}`,
   ]);
   const answer = JSON.parse(out) as {
-    data?: { repository?: { pullRequest?: { reviewThreads?: { nodes?: T[] } } } | null };
+    data?: { repository?: { pullRequest?: { reviewThreads?: { nodes?: (T | null)[] } } } | null };
   } | null;
   const nodes = answer?.data?.repository?.pullRequest?.reviewThreads?.nodes;
   // An answer without threads must not read as a pull request with none open.
@@ -280,7 +283,7 @@ export function resolveThread(pr: Ref, commentId: number): void {
       }),
     () => {
       const thread = threadsViaGraphql<Thread>(pr, THREADS_QUERY).find((t) =>
-        t.comments.nodes.some((c) => c.databaseId === commentId),
+        t?.comments?.nodes?.some((c) => c?.databaseId === commentId),
       );
       if (!thread) throw new GhError("no review thread holds it");
       if (!thread.isResolved)

@@ -632,6 +632,15 @@ describe("pr reply and resolve", () => {
     expect(graphqlCalls()).toEqual([]);
   });
 
+  test("resolve skips a thread GraphQL answers as null, or with no comments", async () => {
+    const t1 = { id: "T1", isResolved: false, comments: { nodes: [{ databaseId: 55 }] } };
+    const nodes = [null, { id: "T0", isResolved: true, comments: { nodes: null } }, t1];
+    routes({ GRAPHQL: { data: { repository: { pullRequest: { reviewThreads: { nodes } } } } } });
+    const r = await run(["pr", "resolve", "7", "--repo", "o/r", "--comment", "55"]);
+    expect(r.err).toBe("");
+    expect(graphqlCalls().find((c) => c.includes("resolveReviewThread"))).toContain("id=T1");
+  });
+
   test("resolve fails, naming the comment, when no route resolves its thread", async () => {
     routes({
       GRAPHQL: { data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } },
