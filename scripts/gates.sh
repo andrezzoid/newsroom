@@ -5,6 +5,7 @@
 cd "$(dirname "$0")/.." || exit 2
 claude plugin validate . &&
   claude plugin test mods/prose-lint &&
+  claude plugin test mods/diagrams &&
   sh mods/prose-lint/vale/test.sh &&
   node --test --test-reporter=dot 'skills/houston/test/*.spec.ts' || exit 1
 
