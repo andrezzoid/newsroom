@@ -26,6 +26,19 @@
       }
     ]
   },
+  "overrides": [
+    {
+      "files": ["skills/houston/**/*.ts"],
+      "rules": {
+        "typescript/no-explicit-any": "error",
+        "typescript/no-unsafe-member-access": "error",
+        "typescript/no-unsafe-assignment": "error",
+        "typescript/no-unsafe-return": "error",
+        "typescript/no-unsafe-argument": "error",
+        "typescript/no-unsafe-call": "error"
+      }
+    }
+  ],
   "env": {
     "builtin": true
   }

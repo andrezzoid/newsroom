@@ -21,6 +21,8 @@ import { expectedSkills, parseArgs } from "../scripts/cli.ts";
 import { claimLog } from "../scripts/tickets.ts";
 import { expect } from "./expect.ts";
 import { githubIssue, linearIssue } from "./fixtures.ts";
+import type { LinearIssue, WithHistory } from "../scripts/trackers/linear.ts";
+import type { TicketComment } from "../scripts/trackers/types.ts";
 
 // Git sets GIT_INDEX_FILE, GIT_DIR and the like for its hooks, so under the
 // pre-commit gates every git command these tests run, and every CLI they
@@ -40,13 +42,22 @@ const PR_OPEN = "pr open";
 const SHA = "c".repeat(40);
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
 
-type LinearCall = { op: string; variables: any; auth: string | undefined };
+// A GraphQL request's variables, typed where the mock Linear reads them.
+type Variables = {
+  [name: string]: unknown;
+  after?: string;
+  id?: string;
+  name?: string;
+  body?: string;
+};
+type LinearCall = { op: string; variables: Variables; auth: string | undefined };
+type LinearComment = TicketComment & { user?: { name: string } };
 let linearCalls: LinearCall[] = [];
-let linearIssues: any[] = [];
-let doneIssues: any[] = [];
+let linearIssues: LinearIssue[] = [];
+let doneIssues: WithHistory[] = [];
 // Comments on ENG-1, or on whichever ticket a test names in commentsFor.
-let issueComments: any[] = [];
-let commentsFor: Record<string, any[]> = {};
+let issueComments: LinearComment[] = [];
+let commentsFor: Record<string, LinearComment[]> = {};
 // Labels the mock workspace lacks.
 let missingLabels: string[] = [];
 // Linear pages every issue list; a test shrinks the page to make the CLI follow the cursor.
@@ -58,7 +69,7 @@ let linearTeams = ["ENG"];
 // Linear answers an unknown issue with an error instead of null.
 let notFoundAsError = false;
 
-function page(nodes: any[], after: string | null | undefined) {
+function page<T>(nodes: T[], after: string | null | undefined) {
   const start = after ? Number(after) : 0;
   const end = start + pageSize;
   return {
@@ -67,7 +78,7 @@ function page(nodes: any[], after: string | null | undefined) {
   };
 }
 
-function answer(op: string, variables: any): { status: number; body: unknown } {
+function answer(op: string, variables: Variables): { status: number; body: unknown } {
   const data = (d: unknown) => ({ status: 200, body: { data: d } });
   switch (op) {
     case "HoustonOpen":
@@ -85,7 +96,7 @@ function answer(op: string, variables: any): { status: number; body: unknown } {
         };
       return data({
         issue: found
-          ? { ...found, comments: { nodes: commentsFor[variables.id] ?? issueComments } }
+          ? { ...found, comments: { nodes: commentsFor[variables.id ?? ""] ?? issueComments } }
           : null,
       });
     }
@@ -110,7 +121,7 @@ function answer(op: string, variables: any): { status: number; body: unknown } {
     case "HoustonComment":
       issueComments.push({
         id: `c-${issueComments.length}`,
-        body: variables.body,
+        body: variables.body ?? "",
         createdAt: new Date().toISOString(),
         user: { name: "André" },
       });
@@ -118,7 +129,7 @@ function answer(op: string, variables: any): { status: number; body: unknown } {
     case "HoustonLabel":
       return data({
         issueLabels: {
-          nodes: missingLabels.includes(variables.name)
+          nodes: missingLabels.includes(variables.name ?? "")
             ? []
             : [{ id: `lbl-${variables.name}`, name: variables.name, team: null }],
         },
@@ -138,7 +149,7 @@ const server = createServer((req, res) => {
   let raw = "";
   req.on("data", (c) => (raw += c));
   req.on("end", () => {
-    const { query, variables } = JSON.parse(raw);
+    const { query, variables } = JSON.parse(raw) as { query: string; variables: Variables };
     const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "?";
     linearCalls.push({ op, variables, auth: req.headers.authorization });
     const { status, body } = linearDown
@@ -196,7 +207,8 @@ function routes(over: Record<string, unknown> = {}) {
   };
   writeFileSync(join(dir, "routes.json"), JSON.stringify(all));
 }
-const current = () => JSON.parse(readFileSync(join(dir, "routes.json"), "utf8"));
+const current = () =>
+  JSON.parse(readFileSync(join(dir, "routes.json"), "utf8")) as Record<string, unknown>;
 
 function ghCalls(): { args: string[]; stdin: string | null }[] {
   try {
@@ -204,7 +216,7 @@ function ghCalls(): { args: string[]; stdin: string | null }[] {
       .trim()
       .split("\n")
       .filter(Boolean)
-      .map((l) => JSON.parse(l));
+      .map((l) => JSON.parse(l) as { args: string[]; stdin: string | null });
   } catch {
     return [];
   }
@@ -213,7 +225,35 @@ function ghCalls(): { args: string[]; stdin: string | null }[] {
 const sent = (method: string, path: string) =>
   ghCalls()
     .filter((c) => c.args[1] === path && c.args.includes(method))
-    .map((c) => JSON.parse(c.stdin ?? "null"));
+    .map((c) => JSON.parse(c.stdin ?? "null") as Record<string, unknown>);
+// The CLI's --json output, declared as far as these tests read it.
+type Listed = { id: string; repo: string | null };
+type Next = { ready: Listed[]; skipped: unknown };
+type Mission = {
+  id: string;
+  phase: string;
+  openPrs: string[];
+  plan: { kind: string; text: string }[];
+  comments: { body: string }[];
+};
+type InboxItem = { id: string; repo?: string; why: string; pr?: string; session?: string };
+type Inbox = { human: InboxItem[]; agent: InboxItem[] };
+type Stats = {
+  done: {
+    tickets: { id: string; readyToDoneHours: number | null }[];
+    merged: { number: number }[];
+  };
+  wrong: {
+    handBacks: { where: string; title: string }[];
+    needsYou: { where: string }[];
+    reverts: { number: number }[];
+    reviewComments: unknown;
+  };
+  open: { id: string; ageDays: number }[];
+};
+type PrStatus = { mergeableState: string; unresolvedThreads: number | null; blockers: string[] };
+const json = <T>(out: string) => JSON.parse(out) as T;
+
 const ops = (op: string) => linearCalls.filter((c) => c.op === op).map((c) => c.variables);
 
 // Async on purpose: the mock Linear answers from this same process. Runs in
@@ -312,7 +352,7 @@ describe("pr status", () => {
     const r = await run(["pr", "status", "--json", "7", "--repo", "o/r"]);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
-    const s = JSON.parse(r.out);
+    const s = json<PrStatus>(r.out);
     expect(s).toMatchObject({
       number: 7,
       state: "open",
@@ -327,6 +367,24 @@ describe("pr status", () => {
     for (const gone of ["body", "pr", "mergeState"]) expect(gone in s).toBe(false);
   });
 
+  test("a check-runs page without its list reads as no checks", async () => {
+    routes({ [`GET repos/o/r/commits/${SHA}/check-runs`]: { total_count: 0 } });
+    const r = await run(["pr", "status", "7", "--repo", "o/r", "--json"]);
+    expect(r.err).toBe("");
+    expect(json<PrStatus>(r.out)).toMatchObject({
+      checks: { failing: [], pending: [], passing: 0 },
+    });
+  });
+
+  test("a page that answers nothing reads as no items", async () => {
+    routes({ [`GET repos/o/r/commits/${SHA}/check-runs`]: "" });
+    const r = await run(["pr", "status", "7", "--repo", "o/r", "--json"]);
+    expect(r.err).toBe("");
+    expect(json<PrStatus>(r.out)).toMatchObject({
+      checks: { failing: [], pending: [], passing: 0 },
+    });
+  });
+
   test("cloud sessions read review threads from the ccr route", async () => {
     routes({
       "GET repos/o/r/pulls/7/ccr/review_threads": [{ is_resolved: false }],
@@ -336,12 +394,12 @@ describe("pr status", () => {
       CLAUDE_CODE_REMOTE: "true",
     });
     expect(r.code).toBe(0);
-    expect(JSON.parse(r.out).unresolvedThreads).toBe(1);
+    expect(json<PrStatus>(r.out).unresolvedThreads).toBe(1);
   });
 
   test("threads neither route can read block a merge instead of counting as none", async () => {
     routes({ GRAPHQL: { data: { repository: null } } });
-    const s = JSON.parse((await run(["pr", "status", "7", "--repo", "o/r", "--json"])).out);
+    const s = json<PrStatus>((await run(["pr", "status", "7", "--repo", "o/r", "--json"])).out);
     expect(s.unresolvedThreads).toBe(null);
     expect(s.blockers).toContain("review threads could not be read");
   });
@@ -586,6 +644,15 @@ describe("pr reply and resolve", () => {
       ghCalls().filter((c) => c.args[1] === "repos/o/r/pulls/7/ccr/comments/55/resolve"),
     ).toHaveLength(1);
     expect(graphqlCalls()).toEqual([]);
+  });
+
+  test("resolve skips a thread GraphQL answers as null, or with no comments", async () => {
+    const t1 = { id: "T1", isResolved: false, comments: { nodes: [{ databaseId: 55 }] } };
+    const nodes = [null, { id: "T0", isResolved: true, comments: { nodes: null } }, t1];
+    routes({ GRAPHQL: { data: { repository: { pullRequest: { reviewThreads: { nodes } } } } } });
+    const r = await run(["pr", "resolve", "7", "--repo", "o/r", "--comment", "55"]);
+    expect(r.err).toBe("");
+    expect(graphqlCalls().find((c) => c.includes("resolveReviewThread"))).toContain("id=T1");
   });
 
   test("resolve fails, naming the comment, when no route resolves its thread", async () => {
@@ -1026,8 +1093,8 @@ describe("Linear tickets", () => {
     const r = await run(["mission", "next", "--json"]);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
-    const d = JSON.parse(r.out);
-    expect(d.ready.map((t: any) => t.id)).toEqual(["ENG-1"]);
+    const d = json<Next>(r.out);
+    expect(d.ready.map((t) => t.id)).toEqual(["ENG-1"]);
     expect(d.ready[0]).toMatchObject({
       tracker: "linear",
       repo: "andrezzoid/app",
@@ -1061,7 +1128,7 @@ describe("Linear tickets", () => {
     ];
     const r = await run(["mission", "next", "--json"]);
     expect(r.err).toBe("");
-    expect(JSON.parse(r.out).ready.map((t: any) => [t.id, t.repo])).toEqual([
+    expect(json<Next>(r.out).ready.map((t) => [t.id, t.repo])).toEqual([
       ["ENG-1", "andrezzoid/app"],
     ]);
   });
@@ -1070,7 +1137,7 @@ describe("Linear tickets", () => {
     pageSize = 1;
     linearIssues.push(linearIssue({ id: "u2", identifier: "ENG-2" }));
     const r = await run(["mission", "next", "--json"]);
-    expect(JSON.parse(r.out).ready.map((t: any) => t.id)).toEqual(["ENG-1", "ENG-2"]);
+    expect(json<Next>(r.out).ready.map((t) => t.id)).toEqual(["ENG-1", "ENG-2"]);
     expect(ops("HoustonOpen")).toHaveLength(2);
   });
 
@@ -1104,13 +1171,13 @@ describe("Linear tickets", () => {
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
     expect(ops("HoustonAddLabel")).toEqual([{ id: "uuid-1", labelId: "lbl-in-progress" }]);
-    expect(ops("HoustonUpdate")[0].input).toEqual({ assigneeId: "me", stateId: "s-doing" });
-    expect(issueComments[0].body).toMatch(/^Claimed by local session sess-1 on .+\.$/);
+    expect(ops("HoustonUpdate")[0]?.input).toEqual({ assigneeId: "me", stateId: "s-doing" });
+    expect(issueComments[0]?.body).toMatch(/^Claimed by local session sess-1 on .+\.$/);
   });
 
   test("a cloud session's claim links the session", async () => {
     await run(["mission", "start", "ENG-1"], { CLAUDE_CODE_REMOTE_SESSION_ID: "cse_abc" });
-    expect(issueComments[0].body).toBe(
+    expect(issueComments[0]?.body).toBe(
       "Claimed by [a cloud session](https://claude.ai/code/session_abc).",
     );
   });
@@ -1132,7 +1199,7 @@ describe("Linear tickets", () => {
     expect(refused.err).toContain("--take-over");
     expect(ops("HoustonComment")).toEqual([]);
     expect((await run(["mission", "start", "--take-over", "ENG-1"])).code).toBe(0);
-    expect(issueComments.at(-1).body).toContain(
+    expect(issueComments.at(-1)?.body).toContain(
       "Takes over from [a cloud session](https://claude.ai/code/session_x), claimed 2026-09-01 10:00.",
     );
     expect(ops("HoustonAddLabel")).toEqual([]);
@@ -1220,12 +1287,12 @@ describe("Linear tickets", () => {
     const r = await run(["mission", "hold", "ENG-1", "--body-file", report]);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
-    expect(ops("HoustonComment")[0].body).toContain(
+    expect(ops("HoustonComment")[0]?.body).toContain(
       "## Handed back · acceptance line 2 cannot hold",
     );
     expect(ops("HoustonRemoveLabel").map((v) => v.labelId)).toEqual(["lbl-0", "lbl-1"]);
     expect(ops("HoustonAddLabel")).toEqual([{ id: "uuid-1", labelId: "lbl-ready-for-human" }]);
-    expect(ops("HoustonUpdate")[0].input).toEqual({ stateId: "s-todo" });
+    expect(ops("HoustonUpdate")[0]?.input).toEqual({ stateId: "s-todo" });
   });
 
   test("hold and revise post only a report of their own kind", async () => {
@@ -1245,9 +1312,9 @@ describe("Linear tickets", () => {
     const r = await run(["mission", "revise", "ENG-1", "--body-file", revision]);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
-    const d = JSON.parse((await run(["mission", "show", "ENG-1", "--json"])).out);
-    expect(d.plan.map((p: any) => p.kind)).toEqual(["body", "revised"]);
-    expect(d.plan[1].text).toContain("drop the CSV export");
+    const d = json<Mission>((await run(["mission", "show", "ENG-1", "--json"])).out);
+    expect(d.plan.map((p) => p.kind)).toEqual(["body", "revised"]);
+    expect(d.plan[1]?.text).toContain("drop the CSV export");
   });
 
   test("followup files an unlabelled follow-up in the ticket's team, linked back to it", async () => {
@@ -1284,13 +1351,13 @@ describe("Linear tickets", () => {
       body: claimLog("local session s1 on mac", null),
       createdAt: hoursAgo(1),
     });
-    const d = JSON.parse((await run(["mission", "show", "ENG-1", "--json"])).out);
+    const d = json<Mission>((await run(["mission", "show", "ENG-1", "--json"])).out);
     expect(d).toMatchObject({
       phase: "iterate",
       openPrs: [],
       claimedBy: "local session s1 on mac",
     });
-    expect(d.comments.map((c: any) => c.body)).toEqual(["Claimed by local session s1 on mac."]);
+    expect(d.comments.map((c) => c.body)).toEqual(["Claimed by local session s1 on mac."]);
   });
 });
 
@@ -1337,8 +1404,8 @@ describe("GitHub Issues tickets", () => {
     const r = await run(["mission", "next", "--json"], gh);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
-    const d = JSON.parse(r.out);
-    expect(d.ready.map((t: any) => t.id)).toEqual(["o/r#12"]);
+    const d = json<Next>(r.out);
+    expect(d.ready.map((t) => t.id)).toEqual(["o/r#12"]);
     expect(d.ready[0]).toMatchObject({
       tracker: "github",
       repo: "o/r",
@@ -1353,8 +1420,8 @@ describe("GitHub Issues tickets", () => {
   });
 
   test("an issue a reporter labelled bug is still new until triage gives it a state", async () => {
-    const d = JSON.parse((await run(["inbox", "--human", "--json"], gh)).out);
-    expect(d.human.map((i: any) => [i.id, i.why])).toEqual([["o/r#16", "new, needs triage"]]);
+    const d = json<Inbox>((await run(["inbox", "--human", "--json"], gh)).out);
+    expect(d.human.map((i) => [i.id, i.why])).toEqual([["o/r#16", "new, needs triage"]]);
   });
 
   test("a repo whose CLAUDE.md names GitHub Issues joins without HOUSTON_GITHUB_REPOS", async () => {
@@ -1368,7 +1435,7 @@ describe("GitHub Issues tickets", () => {
       path,
     );
     expect(r.err).toBe("");
-    expect(JSON.parse(r.out).ready.map((t: any) => t.id)).toEqual(["o/r#12"]);
+    expect(json<Next>(r.out).ready.map((t) => t.id)).toEqual(["o/r#12"]);
   });
 
   test("inside a clone whose AGENTS.md names GitHub Issues, preflight and inbox use its issues", async () => {
@@ -1405,7 +1472,7 @@ describe("GitHub Issues tickets", () => {
     });
     const inbox = await run(["inbox", "--agent", "--json"], { LINEAR_API_KEY: "" }, path);
     expect(inbox.err).toBe("");
-    expect(JSON.parse(inbox.out).agent.map((i: any) => i.id)).toEqual(["o/r#12"]);
+    expect(json<Inbox>(inbox.out).agent.map((i) => i.id)).toEqual(["o/r#12"]);
   });
 
   test("preflight counts a skill linked into the clone's own .claude/skills as installed", async () => {
@@ -1428,7 +1495,7 @@ describe("GitHub Issues tickets", () => {
     expect(r.code).toBe(0);
     expect(sent("POST", "repos/o/r/issues/12/assignees")).toEqual([{ assignees: ["andrezzoid"] }]);
     expect(sent("POST", "repos/o/r/issues/12/labels")).toEqual([{ labels: ["in-progress"] }]);
-    expect(sent("POST", "repos/o/r/issues/12/comments")[0].body).toMatch(
+    expect(sent("POST", "repos/o/r/issues/12/comments")[0]?.body).toMatch(
       /^Claimed by a local session on .+\.$/,
     );
   });
@@ -1460,12 +1527,12 @@ describe("GitHub Issues tickets", () => {
       gh,
     );
     expect(r.err).toBe("");
-    expect(JSON.parse(r.out).id).toBe("o/r#12");
+    expect(json<Mission>(r.out).id).toBe("o/r#12");
     const pr = await run(
       ["mission", "show", "#12", "--repo", "https://github.com/o/r/pull/5", "--json"],
       gh,
     );
-    expect(JSON.parse(pr.out).id).toBe("o/r#12");
+    expect(json<Mission>(pr.out).id).toBe("o/r#12");
   });
 
   test("show is in babysit while a pull request from its branch is open", async () => {
@@ -1475,7 +1542,7 @@ describe("GitHub Issues tickets", () => {
         { number: 7, html_url: "https://github.com/o/r/pull/7" },
       ],
     });
-    const d = JSON.parse((await run(["mission", "show", "o/r#12", "--json"], gh)).out);
+    const d = json<Mission>((await run(["mission", "show", "o/r#12", "--json"], gh)).out);
     expect(d.phase).toBe("babysit");
     expect(d.openPrs).toEqual(["https://github.com/o/r/pull/7"]);
   });
@@ -1488,9 +1555,21 @@ describe("GitHub Issues tickets", () => {
       ],
       "GET repos/o/r/pulls/8": pull(8),
     });
-    const d = JSON.parse((await run(["mission", "show", "o/r#12", "--json"], gh)).out);
+    const d = json<Mission>((await run(["mission", "show", "o/r#12", "--json"], gh)).out);
     expect(d.phase).toBe("babysit");
     expect(d.openPrs).toEqual(["https://github.com/o/r/pull/8"]);
+  });
+
+  test("show reads an open pull request without a head by its body alone", async () => {
+    const { head: _, ...headless } = pull(8, { body: "Closes #12" });
+    routes({
+      ...current(),
+      "GET repos/o/r/pulls?state=open": [headless],
+      "GET repos/o/r/pulls/8": pull(8),
+    });
+    const r = await run(["mission", "show", "o/r#12", "--json"], gh);
+    expect(r.err).toBe("");
+    expect(json<Mission>(r.out).openPrs).toEqual(["https://github.com/o/r/pull/8"]);
   });
 
   test("show finds a pull request that closes the issue on any closing line, in any form closedBy reads", async () => {
@@ -1505,7 +1584,7 @@ describe("GitHub Issues tickets", () => {
       "GET repos/o/r/pulls/9": pull(9),
       "GET repos/o/r/pulls/10": pull(10),
     });
-    const d = JSON.parse((await run(["mission", "show", "o/r#12", "--json"], gh)).out);
+    const d = json<Mission>((await run(["mission", "show", "o/r#12", "--json"], gh)).out);
     expect(d.openPrs).toEqual([
       "https://github.com/o/r/pull/8",
       "https://github.com/o/r/pull/9",
@@ -1530,7 +1609,7 @@ describe("GitHub Issues tickets", () => {
     });
     const r = await run(["inbox", "--human", "--json"], gh);
     expect(r.err).toBe("");
-    expect(JSON.parse(r.out).human.map((i: any) => [i.id, i.why])).toEqual([
+    expect(json<Inbox>(r.out).human.map((i) => [i.id, i.why])).toEqual([
       ["o/r#17", "waiting on your decision: Handed back · line 2 cannot hold"],
     ]);
     expect(ghCalls().filter((c) => c.args[1] === "repos/o/r/issues/17")).toEqual([]);
@@ -1547,10 +1626,10 @@ describe("GitHub Issues tickets", () => {
     const next = await run(["mission", "next", "--json"], env);
     expect(next.code).toBe(0);
     expect(next.err).toContain("Linear: Account disabled");
-    expect(JSON.parse(next.out).ready.map((t: any) => t.id)).toEqual(["o/r#12"]);
+    expect(json<Next>(next.out).ready.map((t) => t.id)).toEqual(["o/r#12"]);
     const inbox = await run(["inbox", "--human", "--json"], env);
     expect(inbox.code).toBe(0);
-    expect(JSON.parse(inbox.out).human.map((i: any) => i.id)).toEqual(["o/r#16"]);
+    expect(json<Inbox>(inbox.out).human.map((i) => i.id)).toEqual(["o/r#16"]);
     const stats = await run(["stats", "--json"], env);
     expect(stats.code).toBe(0);
     expect(stats.err.match(/skipped linear/g)).toHaveLength(1);
@@ -1582,7 +1661,7 @@ describe("GitHub Issues tickets", () => {
       "repos/o/r/issues/12/labels/in-progress",
     ]);
     expect(sent("POST", "repos/o/r/issues/12/labels")).toEqual([{ labels: ["ready-for-human"] }]);
-    expect(sent("POST", "repos/o/r/issues/12/comments")[0].body).toBe(
+    expect(sent("POST", "repos/o/r/issues/12/comments")[0]?.body).toBe(
       "**Handed back · acceptance line 2 cannot hold**",
     );
   });
@@ -1726,8 +1805,8 @@ describe("inbox", () => {
     const r = await run(["inbox", "--json"]);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
-    const d = JSON.parse(r.out);
-    expect(d.human.map((i: any) => [i.id, i.why, i.pr ?? null, i.session ?? null])).toEqual([
+    const d = json<Inbox>(r.out);
+    expect(d.human.map((i) => [i.id, i.why, i.pr ?? null, i.session ?? null])).toEqual([
       ["ENG-2", "new, needs triage", null, null],
       ["ENG-3", "new, needs triage", null, null],
       ["ENG-4", "waiting on more information", null, null],
@@ -1751,7 +1830,7 @@ describe("inbox", () => {
         "local session s8 on mac",
       ],
     ]);
-    expect(d.agent.map((i: any) => [i.id, i.why, i.pr ?? null, i.session ?? null])).toEqual([
+    expect(d.agent.map((i) => [i.id, i.why, i.pr ?? null, i.session ?? null])).toEqual([
       [
         "ENG-9",
         "its pull request fails test, no signal for over 3h",
@@ -1760,7 +1839,7 @@ describe("inbox", () => {
       ],
       ["ENG-1", "ready to build", null, null],
     ]);
-    expect(d.agent[1].repo).toBe("andrezzoid/app");
+    expect(d.agent[1]?.repo).toBe("andrezzoid/app");
   });
 
   test("--human and --agent each show one list", async () => {
@@ -1804,8 +1883,8 @@ describe("inbox", () => {
         { created_at: hoursAgo(6), body: "Why not reuse the parser?" },
       ],
     });
-    const d = JSON.parse((await run(["inbox", "--agent", "--json"])).out);
-    expect(d.agent.map((i: any) => [i.id, i.why])).toEqual([
+    const d = json<Inbox>((await run(["inbox", "--agent", "--json"])).out);
+    expect(d.agent.map((i) => [i.id, i.why])).toEqual([
       [
         "ENG-10",
         "its pull request has 1 open thread(s) waiting on an answer, no signal for over 3h",
@@ -1825,11 +1904,11 @@ describe("inbox", () => {
       "GET repos/o/r/pulls/7/reviews": [],
       "GET repos/o/r/pulls/10/reviews": [],
     });
-    const d = JSON.parse((await run(["inbox", "--json"])).out);
-    expect(d.agent.map((i: any) => [i.id, i.why])).toEqual([
+    const d = json<Inbox>((await run(["inbox", "--json"])).out);
+    expect(d.agent.map((i) => [i.id, i.why])).toEqual([
       ["ENG-7", "its pull request is behind main, no signal for over 3h"],
     ]);
-    expect(d.human.map((i: any) => [i.id, i.why])).toEqual([
+    expect(d.human.map((i) => [i.id, i.why])).toEqual([
       ["ENG-10", "its pull request waits on a required review"],
     ]);
   });
@@ -1844,8 +1923,8 @@ describe("inbox", () => {
         check_runs: [{ id: 1, name: "test", status: "completed", conclusion: "failure" }],
       },
     });
-    const d = JSON.parse((await run(["inbox", "--json"])).out);
-    expect(d.agent.map((i: any) => i.why)).toEqual([
+    const d = json<Inbox>((await run(["inbox", "--json"])).out);
+    expect(d.agent.map((i) => i.why)).toEqual([
       "its pull request is behind main, fails test, no signal for over 3h",
     ]);
   });
@@ -1942,22 +2021,22 @@ describe("stats", () => {
     const r = await run(["stats", "--json"]);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
-    const d = JSON.parse(r.out);
-    expect(d.done.tickets.map((t: any) => [t.id, t.readyToDoneHours])).toEqual([
+    const d = json<Stats>(r.out);
+    expect(d.done.tickets.map((t) => [t.id, t.readyToDoneHours])).toEqual([
       ["ENG-1", 26],
       ["ENG-2", null],
     ]);
-    expect(d.done.merged.map((p: any) => p.number)).toEqual([21, 22]);
-    expect(d.wrong.handBacks.map((x: any) => [x.where, x.title])).toEqual([
+    expect(d.done.merged.map((p) => p.number)).toEqual([21, 22]);
+    expect(d.wrong.handBacks.map((x) => [x.where, x.title])).toEqual([
       ["ENG-3", "Handed back · line 2 cannot hold"],
       ["andrezzoid/app#21", "Handed back · kept the old endpoint"],
     ]);
-    expect(d.wrong.needsYou.map((x: any) => x.where)).toEqual(["andrezzoid/app#21"]);
-    expect(d.wrong.reverts.map((p: any) => p.number)).toEqual([22]);
+    expect(d.wrong.needsYou.map((x) => x.where)).toEqual(["andrezzoid/app#21"]);
+    expect(d.wrong.reverts.map((p) => p.number)).toEqual([22]);
     expect(d.wrong.reviewComments).toEqual([
       { pr: "andrezzoid/app#21", author: "claude", path: "src/a.ts", text: "Missing null check" },
     ]);
-    expect(d.open.map((t: any) => [t.id, t.ageDays])).toEqual([["ENG-3", 10]]);
+    expect(d.open.map((t) => [t.id, t.ageDays])).toEqual([["ENG-3", 10]]);
   });
 
   test("reads when a GitHub issue became ready from its label events", async () => {
@@ -1989,7 +2068,7 @@ describe("stats", () => {
       LINEAR_API_KEY: "",
     });
     expect(r.err).toBe("");
-    expect(JSON.parse(r.out).done.tickets.map((t: any) => [t.id, t.readyToDoneHours])).toEqual([
+    expect(json<Stats>(r.out).done.tickets.map((t) => [t.id, t.readyToDoneHours])).toEqual([
       ["o/r#11", 26],
     ]);
   });

@@ -1,3 +1,4 @@
+import type { GhIssue } from "../scripts/trackers/github.ts";
 import type { LinearIssue } from "../scripts/trackers/linear.ts";
 import type { Ticket } from "../scripts/trackers/types.ts";
 
@@ -53,7 +54,7 @@ export function linearIssue(
 }
 
 // A GitHub REST issue as `gh api repos/o/r/issues/12` returns it.
-export function githubIssue(over: Record<string, unknown> & { labels?: string[] } = {}): any {
+export function githubIssue(over: Partial<GhIssue> & { labels?: string[] } = {}): GhIssue {
   const { labels, ...rest } = over;
   return {
     number: 12,

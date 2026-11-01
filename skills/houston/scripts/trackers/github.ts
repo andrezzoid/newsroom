@@ -3,7 +3,7 @@
 // GitHub has no workflow states: an open issue labelled in-progress is
 // started, any other open issue is queued.
 
-import { api, comments, paginate, viewer as forgeViewer } from "../forge.ts";
+import { api, comments, type GhPull, paginate, viewer as forgeViewer } from "../forge.ts";
 import { CLAIMED_LABEL, HUMAN_LABEL, READY_LABEL, ticketsOfPr } from "../tickets.ts";
 import {
   GITHUB_ISSUE,
@@ -34,18 +34,41 @@ const ISSUE_REF = new RegExp(
   "g",
 );
 
+// A GitHub issue as the REST routes return it, as far as the tracker reads it.
+// Optional fields are the ones the tracker already does without.
+export type GhIssue = {
+  number: number;
+  title: string;
+  body?: string | null;
+  html_url: string;
+  repository_url?: string;
+  state: "open" | "closed";
+  state_reason?: string | null;
+  // GitHub's schema allows a label as a bare name too.
+  labels?: (string | { name: string })[];
+  created_at: string;
+  updated_at?: string;
+  closed_at?: string | null;
+  assignees?: { login: string }[];
+  // Present on most hosts: the sub-issues and how many are closed.
+  sub_issues_summary?: { total?: number; completed?: number } | null;
+  // Present when the issue is a pull request.
+  pull_request?: unknown;
+};
+type GhIssueEvent = { event: string; label?: { name?: string }; created_at: string };
+
 function repoOfUrl(url: string | undefined, fallback: string): string {
   const m = /repos\/([\w.-]+\/[\w.-]+)$/.exec(url ?? "");
   return (m?.[1] ?? fallback).toLowerCase();
 }
 
 export function toTicket(
-  issue: any,
+  issue: GhIssue,
   repo: string,
   blockers: TicketRef[] = [],
   me: string | null = null,
 ): Ticket {
-  const labels: string[] = (issue.labels ?? []).map((l: any) =>
+  const labels = (issue.labels ?? []).map((l) =>
     String(typeof l === "string" ? l : l.name).toLowerCase(),
   );
   const closed = issue.state === "closed";
@@ -76,7 +99,7 @@ export function toTicket(
     openChildren: subs ? Math.max(0, (subs.total ?? 0) - (subs.completed ?? 0)) : 0,
     prs: [],
     closes: `Closes #${issue.number}`,
-    assignees: (issue.assignees ?? []).map((a: any) => ({ name: a.login, me: a.login === me })),
+    assignees: (issue.assignees ?? []).map((a) => ({ name: a.login, me: a.login === me })),
   };
 }
 
@@ -100,7 +123,7 @@ export function blockedByRefs(body: string, repo: string): string[] {
 
 // The pull requests, of those given, that close the issue: a closing line in
 // the body, or an issue-<n>- branch.
-function closing(prs: any[], id: string): string[] {
+function closing(prs: GhPull[], id: string): string[] {
   const { repo } = parseId(id);
   return prs
     .filter((p) => ticketsOfPr({ body: p.body, headRef: p.head?.ref ?? "" }, repo).includes(id))
@@ -129,11 +152,12 @@ export class GithubTracker implements Tracker {
     this.scope = `issues in ${this.repos.join(", ")}`;
   }
 
-  private blockers(repo: string, issue: any): TicketRef[] {
+  private blockers(repo: string, issue: GhIssue): TicketRef[] {
     const refs = new Map<string, TicketRef>();
     try {
-      for (const b of api<any[]>(`repos/${repo}/issues/${issue.number}/dependencies/blocked_by`) ??
-        []) {
+      for (const b of api<GhIssue[] | null>(
+        `repos/${repo}/issues/${issue.number}/dependencies/blocked_by`,
+      ) ?? []) {
         const r = repoOfUrl(b.repository_url, repo);
         refs.set(`${r}#${b.number}`, {
           id: `${r}#${b.number}`,
@@ -148,7 +172,7 @@ export class GithubTracker implements Tracker {
       if (refs.has(id)) continue;
       try {
         const ref = parseId(id);
-        const b = api<any>(`repos/${ref.repo}/issues/${ref.number}`);
+        const b = api<GhIssue>(`repos/${ref.repo}/issues/${ref.number}`);
         refs.set(id, { id, title: b.title, done: b.state === "closed" });
       } catch {
         refs.set(id, { id, title: "(unreadable)", done: false });
@@ -159,12 +183,12 @@ export class GithubTracker implements Tracker {
 
   // The issue payload carries a sub-issue summary on most hosts; ask the
   // sub-issues route when it does not, since a parent must never read as a slice.
-  private full(repo: string, issue: any): Ticket {
+  private full(repo: string, issue: GhIssue): Ticket {
     const t = toTicket(issue, repo, this.blockers(repo, issue), forgeViewer());
     if (!issue.sub_issues_summary) {
       try {
         t.openChildren = (
-          api<any[]>(`repos/${repo}/issues/${issue.number}/sub_issues`) ?? []
+          api<GhIssue[] | null>(`repos/${repo}/issues/${issue.number}/sub_issues`) ?? []
         ).filter((s) => s.state === "open").length;
       } catch {
         // no sub-issues on this host
@@ -173,15 +197,15 @@ export class GithubTracker implements Tracker {
     return t;
   }
 
-  private issues(repo: string, query: string): any[] {
-    return paginate<any>(`repos/${repo}/issues?${query}`).filter((i) => !i.pull_request);
+  private issues(repo: string, query: string): GhIssue[] {
+    return paginate<GhIssue>(`repos/${repo}/issues?${query}`).filter((i) => !i.pull_request);
   }
 
   async open(): Promise<Ticket[]> {
     const me = forgeViewer();
     const out: Ticket[] = [];
     for (const repo of this.repos) {
-      const prs = paginate<any>(`repos/${repo}/pulls?state=open`);
+      const prs = paginate<GhPull>(`repos/${repo}/pulls?state=open`);
       for (const i of this.issues(repo, "state=open")) {
         let t = toTicket(i, repo, [], me);
         if (t.state === "queued" && t.labels.includes(READY_LABEL)) t = this.full(repo, i);
@@ -194,15 +218,15 @@ export class GithubTracker implements Tracker {
 
   async get(id: string): Promise<{ ticket: Ticket; comments: TicketComment[] }> {
     const { repo, number } = parseId(id);
-    let issue: any;
+    let issue: GhIssue;
     try {
-      issue = api<any>(`repos/${repo}/issues/${number}`);
+      issue = api<GhIssue>(`repos/${repo}/issues/${number}`);
     } catch (e) {
       throw /HTTP 404\b/.test((e as Error).message) ? new NotFound(`no GitHub issue ${id}`) : e;
     }
     if (issue.pull_request) throw new NotFound(`${id} is a pull request, not an issue`);
     const ticket = this.full(repo, issue);
-    ticket.prs = closing(paginate<any>(`repos/${repo}/pulls?state=open`), ticket.id);
+    ticket.prs = closing(paginate<GhPull>(`repos/${repo}/pulls?state=open`), ticket.id);
     return { ticket, comments: comments({ repo, number }) };
   }
 
@@ -231,7 +255,7 @@ export class GithubTracker implements Tracker {
 
   async create(from: Ticket, title: string, body: string): Promise<string> {
     const { repo } = parseId(from.id);
-    return `${repo}#${api<any>(`repos/${repo}/issues`, { method: "POST", body: { title, body } }).number}`;
+    return `${repo}#${api<GhIssue>(`repos/${repo}/issues`, { method: "POST", body: { title, body } }).number}`;
   }
 
   async handBack(id: string): Promise<{ labelled: boolean }> {
@@ -260,9 +284,9 @@ export class GithubTracker implements Tracker {
     const out: { ticket: Ticket; readyAt: string | null }[] = [];
     for (const repo of this.repos) {
       for (const i of this.issues(repo, `state=closed&since=${since}`)) {
-        if (i.state_reason === "not_planned" || Date.parse(i.closed_at) < Date.parse(since))
+        if (i.state_reason === "not_planned" || Date.parse(i.closed_at ?? "") < Date.parse(since))
           continue;
-        const labelled = paginate<any>(`repos/${repo}/issues/${i.number}/events`).filter(
+        const labelled = paginate<GhIssueEvent>(`repos/${repo}/issues/${i.number}/events`).filter(
           (e) => e.event === "labeled" && e.label?.name?.toLowerCase() === READY_LABEL,
         );
         out.push({
