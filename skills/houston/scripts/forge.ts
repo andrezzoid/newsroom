@@ -53,18 +53,18 @@ export function api<T = unknown>(path: string, opts: ApiOpts = {}): T {
 export function paginate<T>(path: string, opts?: { maxPages?: number }): T[];
 export function paginate<T, Page>(
   path: string,
-  opts: { pick: (page: Page) => T[]; maxPages?: number },
+  opts: { pick: (page: Page) => T[] | undefined; maxPages?: number },
 ): T[];
 export function paginate<T, Page>(
   path: string,
-  { pick, maxPages = 10 }: { pick?: (page: Page) => T[]; maxPages?: number } = {},
+  { pick, maxPages = 10 }: { pick?: (page: Page) => T[] | undefined; maxPages?: number } = {},
 ): T[] {
   const sep = path.includes("?") ? "&" : "?";
   const all: T[] = [];
   for (let page = 1; page <= maxPages; page++) {
     const body = api<Page | null>(`${path}${sep}per_page=100&page=${page}`);
     // Without pick, the first overload made the page a list of T.
-    const batch = body === null ? [] : pick ? pick(body) : (body as T[]);
+    const batch = body === null ? [] : pick ? (pick(body) ?? []) : (body as T[]);
     all.push(...batch);
     if (batch.length < 100) break;
   }
@@ -86,12 +86,13 @@ export type GhPull = {
   draft?: boolean;
   updated_at?: string;
   merged_at: string | null;
-  head: { sha: string; ref: string };
+  head?: { sha: string; ref: string };
   base: { ref: string };
 };
 // One pull request, which adds what GitHub computes for it alone. mergeable is
 // null while GitHub still computes it.
 type GhPullDetail = GhPull & {
+  head: { sha: string; ref: string };
   merged?: boolean;
   mergeable: boolean | null;
   mergeable_state?: string;
@@ -110,7 +111,8 @@ type GhComment = {
   user: { login: string } | null;
 };
 type GhReviewComment = GhComment & { path?: string };
-type GhReview = Review & { body: string | null; submitted_at: string };
+// submitted_at is missing on a review still pending.
+type GhReview = Review & { body: string | null; submitted_at?: string };
 
 // owner/name from an owner/name spec, a remote, or any GitHub URL under the
 // repository, as a pull request's.
@@ -342,10 +344,13 @@ function prFacts(pr: Ref): PrFacts {
     headRef: pull.head.ref,
     baseRef: pull.base.ref,
     updatedAt: pull.updated_at ?? new Date().toISOString(),
-    checkRuns: paginate<CheckRun, { check_runs: CheckRun[] }>(`${base}/commits/${sha}/check-runs`, {
-      pick: (p) => p.check_runs,
-      maxPages: 3,
-    }),
+    checkRuns: paginate<CheckRun, { check_runs?: CheckRun[] }>(
+      `${base}/commits/${sha}/check-runs`,
+      {
+        pick: (p) => p.check_runs,
+        maxPages: 3,
+      },
+    ),
     statuses:
       api<{ statuses?: CommitStatus[] } | null>(`${base}/commits/${sha}/status`)?.statuses ?? [],
     reviews: paginate<GhReview>(`${base}/pulls/${number}/reviews`),
@@ -436,7 +441,7 @@ export function lastWord(pr: Ref): string | null {
     })),
     ...paginate<GhReview>(`${base}/pulls/${number}/reviews`)
       .filter((v) => v.body)
-      .map((v) => ({ at: v.submitted_at, body: v.body })),
+      .map((v) => ({ at: v.submitted_at ?? "", body: v.body })),
   ];
   return all.sort((x, y) => Date.parse(x.at) - Date.parse(y.at)).at(-1)?.body ?? null;
 }

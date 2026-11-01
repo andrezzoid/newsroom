@@ -353,6 +353,15 @@ describe("pr status", () => {
     for (const gone of ["body", "pr", "mergeState"]) expect(gone in s).toBe(false);
   });
 
+  test("a check-runs page without its list reads as no checks", async () => {
+    routes({ [`GET repos/o/r/commits/${SHA}/check-runs`]: { total_count: 0 } });
+    const r = await run(["pr", "status", "7", "--repo", "o/r", "--json"]);
+    expect(r.err).toBe("");
+    expect(json<PrStatus>(r.out)).toMatchObject({
+      checks: { failing: [], pending: [], passing: 0 },
+    });
+  });
+
   test("a page that answers nothing reads as no items", async () => {
     routes({ [`GET repos/o/r/commits/${SHA}/check-runs`]: "" });
     const r = await run(["pr", "status", "7", "--repo", "o/r", "--json"]);
@@ -1495,6 +1504,18 @@ describe("GitHub Issues tickets", () => {
     const d = json<Mission>((await run(["mission", "show", "o/r#12", "--json"], gh)).out);
     expect(d.phase).toBe("babysit");
     expect(d.openPrs).toEqual(["https://github.com/o/r/pull/8"]);
+  });
+
+  test("show reads an open pull request without a head by its body alone", async () => {
+    const { head: _, ...headless } = pull(8, { body: "Closes #12" });
+    routes({
+      ...current(),
+      "GET repos/o/r/pulls?state=open": [headless],
+      "GET repos/o/r/pulls/8": pull(8),
+    });
+    const r = await run(["mission", "show", "o/r#12", "--json"], gh);
+    expect(r.err).toBe("");
+    expect(json<Mission>(r.out).openPrs).toEqual(["https://github.com/o/r/pull/8"]);
   });
 
   test("show finds a pull request that closes the issue on any closing line, in any form closedBy reads", async () => {
