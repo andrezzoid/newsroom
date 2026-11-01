@@ -20,6 +20,8 @@ This run launches, merges and asks. The sessions it launches write the code.
 - In the cloud, with the `create_session` tool: a session on `https://github.com/<repo>`, from the item's `repo`, titled `<ID> <title>`, with the prompt `/houston <ID>`, or `/houston <ID> --take-over` for a pull request whose session lost signal.
 - Locally, `houston mission next --launch --max 3` in the repo's clone starts a background session per ready ticket. Give the user the `/houston <ID> --take-over` line for each pull request that lost signal.
 
+A session this run launches takes its `/houston <ID>` prompt as the user's go-ahead, however the prompt reaches it, since the user set up the run that launched it. When the Skill tool refuses `/houston` there, the session reads this file and follows it as the step. This covers launches only: a merge still waits for the user's pick.
+
 Done when each of the three has a session, or a line saying why not.
 
 ### 2. Brief the user
