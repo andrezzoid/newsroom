@@ -964,21 +964,25 @@ const COMMANDS: Record<string, Command> = {
   },
 };
 
-// A flag is a switch unless its usage line follows it with a space and a
-// value, as in "--max N", so `start --take-over ENG-1` keeps ENG-1 as the
-// ticket instead of swallowing it.
+// The flags a usage line names, each true when it takes a value. A flag takes
+// a value when its usage line follows it with a space and a value, as in
+// "--max N"; any other flag is a switch. A command takes these flags and no
+// other, so a renamed or mistyped flag stops the command instead of being
+// ignored.
+const flagsIn = (usage: string) =>
+  new Map(
+    [...usage.matchAll(/--([a-z-]+)( [^[(|-])?/g)].map((m) => [m[1] ?? "", m[2] !== undefined]),
+  );
+
+// Every switch, so that parsing, which runs before the command is known,
+// leaves the word after one alone: `start --take-over ENG-1` keeps ENG-1 as
+// the ticket instead of swallowing it.
 const SWITCHES = new Set([
   "help",
   ...Object.values(COMMANDS).flatMap((c) =>
-    [...c.usage.matchAll(/--([a-z-]+)(?![a-z-]| [^[(|-])/g)].map((m) => m[1] ?? ""),
+    [...flagsIn(c.usage)].flatMap(([flag, valued]) => (valued ? [] : [flag])),
   ),
 ]);
-
-// A command takes every flag its usage line names and no other, so a renamed
-// or mistyped flag stops the command instead of being ignored. --help needs
-// no entry, since main answers it before any command runs.
-const flagsOf = (c: Command) =>
-  new Set([...c.usage.matchAll(/--([a-z-]+)/g)].map((m) => m[1] ?? ""));
 
 const ABOUT_AT = 48;
 const ABOUT_WIDTH = 62;
@@ -1019,10 +1023,11 @@ export async function main(argv: string[]): Promise<number> {
     return group && !a.flags.help ? 64 : 0;
   }
   try {
-    const flags = flagsOf(command);
+    // --help never gets here: it printed the help above.
+    const flags = flagsIn(command.usage);
     const unknown = Object.keys(a.flags).find((k) => !flags.has(k));
     if (unknown) throw new Usage(`${name} does not take --${unknown}`);
-    const bare = Object.keys(a.flags).find((k) => a.flags[k] === true && !SWITCHES.has(k));
+    const bare = Object.keys(a.flags).find((k) => a.flags[k] === true && flags.get(k));
     if (bare) throw new Usage(`--${bare} takes a value`);
     return await command.run(a);
   } catch (e) {
