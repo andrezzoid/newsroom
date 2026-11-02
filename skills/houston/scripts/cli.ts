@@ -1026,9 +1026,9 @@ export async function main(argv: string[]): Promise<number> {
     // --help never gets here: it printed the help above.
     const flags = flagsIn(command.usage);
     const unknown = Object.keys(a.flags).find((k) => !flags.has(k));
-    if (unknown) throw new Usage(`${name} does not take --${unknown}`);
+    if (unknown !== undefined) throw new Usage(`${name} does not take --${unknown}`);
     const bare = Object.keys(a.flags).find((k) => a.flags[k] === true && flags.get(k));
-    if (bare) throw new Usage(`--${bare} takes a value`);
+    if (bare !== undefined) throw new Usage(`--${bare} takes a value`);
     return await command.run(a);
   } catch (e) {
     if (e instanceof Usage) {

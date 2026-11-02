@@ -2165,6 +2165,12 @@ test("a flag the command does not take is a usage error, with or without a value
     expect(r.code).toBe(64);
     expect(r.err).toBe(`mission next does not take --dispatch\n${usage}`);
   }
+  // A flag with no name is no flag the command takes either.
+  for (const form of [["--=yes"], ["--"]]) {
+    const r = await run(["mission", "next", ...form]);
+    expect(r.code).toBe(64);
+    expect(r.err).toBe(`mission next does not take --\n${usage}`);
+  }
   // A flag another command takes is still not this one's.
   const r = await run(["preflight", "--repo", "o/r"]);
   expect(r.code).toBe(64);
