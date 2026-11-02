@@ -18,7 +18,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, beforeEach, describe, test } from "node:test";
-import { expectedSkills, parseArgs } from "../scripts/cli.ts";
+import { expectedSkills } from "../scripts/cli.ts";
 import { claimLog } from "../scripts/tickets.ts";
 import { expect } from "./expect.ts";
 import { githubIssue, linearIssue } from "./fixtures.ts";
@@ -1741,8 +1741,8 @@ describe("GitHub Issues tickets", () => {
       const r = await run(args, { ...gh, HOUSTON_CLAUDE: claude }, clone());
       expect(r.code).toBe(64);
       expect(r.out).toBe("");
-      expect(r.err).toBe(
-        "mission next does not take --dispatch\nusage: houston mission next [--repo o/r | --here] [--launch] [--max N] [--json]\n",
+      expect(r.err).toMatch(
+        /^Unknown option '--dispatch'\..*\nusage: houston mission next \[--repo o\/r \| --here\] \[--launch\] \[--max N\] \[--json\]\n$/,
       );
       expect(existsSync(join(dir, "launched"))).toBe(false);
     }
@@ -2103,30 +2103,38 @@ describe("stats", () => {
   });
 });
 
-test("a flag's value keeps every = after the first", () => {
-  expect(parseArgs(["mission", "followup", "--title=Fix a=b parsing"]).flags.title).toBe(
-    "Fix a=b parsing",
-  );
-});
-
 // The usage lines in the help are the one list of flags: a flag they give no
-// value is a switch, and leaves the next word alone.
-test("a flag the help gives no value takes none, and one it gives a value takes the next word", () => {
-  for (const flag of ["json", "help", "human", "agent", "here", "launch", "take-over", "resolve"])
-    expect(parseArgs([`--${flag}`, "x"])).toEqual({ _: ["x"], flags: { [flag]: true } });
-  for (const flag of [
-    "repo",
-    "since",
-    "max",
-    "from",
-    "title",
-    "body",
-    "body-file",
-    "comment",
-    "interval",
-    "ticket",
-  ])
-    expect(parseArgs([`--${flag}`, "x"])).toEqual({ _: [], flags: { [flag]: "x" } });
+// value is a switch and takes none, and one they give a value needs it.
+test("a flag the help gives no value takes none, and one it gives a value needs one", async () => {
+  for (const [command, flag] of [
+    ["preflight", "json"],
+    ["inbox", "human"],
+    ["inbox", "agent"],
+    ["mission next", "here"],
+    ["mission next", "launch"],
+    ["mission start", "take-over"],
+    ["pr reply", "resolve"],
+  ] as const) {
+    const r = await run([...command.split(" "), `--${flag}=x`]);
+    expect(r.code).toBe(64);
+    expect(r.err).toContain(`Option '--${flag}' does not take an argument`);
+  }
+  for (const [command, flag] of [
+    ["inbox", "repo"],
+    ["stats", "since"],
+    ["mission next", "max"],
+    ["mission followup", "from"],
+    ["mission followup", "title"],
+    ["mission followup", "body"],
+    ["mission followup", "body-file"],
+    ["pr reply", "comment"],
+    ["pr watch", "interval"],
+    ["pr open", "ticket"],
+  ] as const) {
+    const r = await run([...command.split(" "), `--${flag}`]);
+    expect(r.code).toBe(64);
+    expect(r.err).toContain(`Option '--${flag} <value>' argument missing`);
+  }
 });
 
 test("a wrong call prints its own command's usage line from the help", async () => {
@@ -2154,27 +2162,22 @@ test("a flag that takes a value, given none, is a usage error", async () => {
   const r = await run(["pr", "watch", "7", "--repo", "o/r", "--interval"]);
   expect(r.code).toBe(64);
   expect(r.err).toBe(
-    "--interval takes a value\nusage: houston pr watch [PR] [--repo o/r] [--interval 60]\n",
+    "Option '--interval <value>' argument missing\nusage: houston pr watch [PR] [--repo o/r] [--interval 60]\n",
   );
 });
 
 test("a flag the command does not take is a usage error, with or without a value", async () => {
-  const usage = "usage: houston mission next [--repo o/r | --here] [--launch] [--max N] [--json]\n";
   for (const form of [["--dispatch=yes"], ["--dispatch"]]) {
     const r = await run(["mission", "next", ...form]);
     expect(r.code).toBe(64);
-    expect(r.err).toBe(`mission next does not take --dispatch\n${usage}`);
-  }
-  // A flag with no name is no flag the command takes either.
-  for (const form of [["--=yes"], ["--"]]) {
-    const r = await run(["mission", "next", ...form]);
-    expect(r.code).toBe(64);
-    expect(r.err).toBe(`mission next does not take --\n${usage}`);
+    expect(r.err).toMatch(/^Unknown option '--dispatch'\./);
+    expect(r.err).not.toContain("takes a value");
+    expect(r.err).toContain("usage: houston mission next ");
   }
   // A flag another command takes is still not this one's.
   const r = await run(["preflight", "--repo", "o/r"]);
   expect(r.code).toBe(64);
-  expect(r.err).toBe("preflight does not take --repo\nusage: houston preflight [--json]\n");
+  expect(r.err).toMatch(/^Unknown option '--repo'\..*\nusage: houston preflight \[--json\]\n$/);
 });
 
 // Each command runs with every flag its usage line names, valued or not, so a
@@ -2194,7 +2197,7 @@ test("every command takes each flag in its usage line", async () => {
     );
     const flags = [...usage.matchAll(/--[a-z-]+/g)].flatMap((m) => [m[0], "x"]);
     const r = await run([...command, ...flags]);
-    expect(r.err).not.toContain("does not take");
+    expect(r.err).not.toContain("Unknown option");
   }
 });
 

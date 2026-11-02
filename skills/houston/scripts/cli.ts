@@ -8,6 +8,7 @@ import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
+import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 import * as forge from "./forge.ts";
 import { type BlockerCode, byAgent, fingerprint, mergeBlockers, type Status } from "./pr.ts";
 import { inCloud, run } from "./proc.ts";
@@ -52,25 +53,10 @@ const CLAUDE = process.env.HOUSTON_CLAUDE ?? "claude";
 // Where /run-skill-generator records how to run the app, for the built-in /run.
 const RUN_SKILLS = ".claude/skills";
 
+// A parsed call: `_` holds the command's words, then its positionals, so a
+// command reads its first positional at _[2]; `flags` holds each flag given,
+// true for a switch.
 type Args = { _: string[]; flags: Record<string, string | true> };
-
-export function parseArgs(argv: string[]): Args {
-  const out: Args = { _: [], flags: {} };
-  const rest = [...argv];
-  for (let a = rest.shift(); a !== undefined; a = rest.shift()) {
-    const next = rest[0];
-    if (a.startsWith("--")) {
-      const eq = a.indexOf("=");
-      const [k, v] = eq < 0 ? [a.slice(2), undefined] : [a.slice(2, eq), a.slice(eq + 1)];
-      if (v !== undefined) out.flags[k] = v;
-      else if (!SWITCHES.has(k) && next !== undefined && !next.startsWith("--")) {
-        out.flags[k] = next;
-        rest.shift();
-      } else out.flags[k] = true;
-    } else out._.push(a);
-  }
-  return out;
-}
 
 const str = (v: string | true | undefined) => (typeof v === "string" ? v : undefined);
 const runtime = () => (inCloud() ? "cloud" : "local");
@@ -964,25 +950,18 @@ const COMMANDS: Record<string, Command> = {
   },
 };
 
-// The flags a usage line names, each true when it takes a value. A flag takes
-// a value when its usage line follows it with a space and a value, as in
-// "--max N"; any other flag is a switch. A command takes these flags and no
-// other, so a renamed or mistyped flag stops the command instead of being
-// ignored.
-const flagsIn = (usage: string) =>
-  new Map(
-    [...usage.matchAll(/--([a-z-]+)( [^[(|-])?/g)].map((m) => [m[1] ?? "", m[2] !== undefined]),
+// The flags a command takes, read from its usage line: a flag takes a value
+// when its usage line follows it with a space and a value, as in "--max N";
+// any other flag is a switch, so `start --take-over ENG-1` keeps ENG-1 as the
+// ticket. Node's parser refuses any other flag, a value given to a switch and
+// a valued flag given none.
+const optionsOf = (c: Command): ParseArgsOptionsConfig =>
+  Object.fromEntries(
+    [...c.usage.matchAll(/--([a-z-]+)( [^[(|-])?/g)].map((m) => [
+      m[1] ?? "",
+      { type: m[2] === undefined ? "boolean" : "string" },
+    ]),
   );
-
-// Every switch, so that parsing, which runs before the command is known,
-// leaves the word after one alone: `start --take-over ENG-1` keeps ENG-1 as
-// the ticket instead of swallowing it.
-const SWITCHES = new Set([
-  "help",
-  ...Object.values(COMMANDS).flatMap((c) =>
-    [...flagsIn(c.usage)].flatMap(([flag, valued]) => (valued ? [] : [flag])),
-  ),
-]);
 
 const ABOUT_AT = 48;
 const ABOUT_WIDTH = 62;
@@ -1012,24 +991,42 @@ Trackers: Linear when LINEAR_API_KEY is set (or \`linear auth login\` locally); 
 the repos in HOUSTON_GITHUB_REPOS, and for a repo whose CLAUDE.md or AGENTS.md says
 "Tracker: GitHub Issues" in its "## Agent skills" block.`;
 
+// The call's flags and positionals, after the command's words. A flag the
+// command does not take is a usage error, as is a switch given a value or a
+// valued flag given none.
+function parseCall(args: string[], c: Command): Args {
+  try {
+    const { values, positionals } = parseArgs({
+      args,
+      options: optionsOf(c),
+      strict: true,
+      allowPositionals: true,
+    });
+    // A switch parses to true, a valued flag to its string: nothing else, as
+    // optionsOf declares neither negation nor repeats.
+    return { _: positionals, flags: values as Args["flags"] };
+  } catch (e) {
+    if ((e as { code?: string }).code?.startsWith("ERR_PARSE_ARGS_"))
+      throw new Usage((e as Error).message);
+    throw e;
+  }
+}
+
 export async function main(argv: string[]): Promise<number> {
-  const a = parseArgs(argv);
-  const [group, sub] = a._;
+  // The command is the first word or two, ahead of its flags and positionals.
+  const [group, sub] = argv;
   // Own keys only, so `houston constructor` is no command.
   const name = [`${group} ${sub}`, group ?? ""].find((n) => Object.hasOwn(COMMANDS, n));
   const command = name ? COMMANDS[name] : undefined;
-  if (!command || a.flags.help) {
+  const help = argv.includes("--help");
+  if (!name || !command || help) {
     console.log(HELP);
-    return group && !a.flags.help ? 64 : 0;
+    return group && !help ? 64 : 0;
   }
   try {
-    // --help never gets here: it printed the help above.
-    const flags = flagsIn(command.usage);
-    const unknown = Object.keys(a.flags).find((k) => !flags.has(k));
-    if (unknown !== undefined) throw new Usage(`${name} does not take --${unknown}`);
-    const bare = Object.keys(a.flags).find((k) => a.flags[k] === true && flags.get(k));
-    if (bare !== undefined) throw new Usage(`--${bare} takes a value`);
-    return await command.run(a);
+    const words = name.split(" ").length;
+    const a = parseCall(argv.slice(words), command);
+    return await command.run({ ...a, _: [...argv.slice(0, words), ...a._] });
   } catch (e) {
     if (e instanceof Usage) {
       console.error(`${e.message ? `${e.message}\n` : ""}usage: houston ${command.usage}`);
