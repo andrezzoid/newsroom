@@ -5,6 +5,7 @@ import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -1723,6 +1724,30 @@ describe("GitHub Issues tickets", () => {
     ]);
   });
 
+  // A mistyped or renamed flag must stop the command before it acts: here
+  // --launch would start a session for o/r#12 if --dispatch were ignored.
+  test("next with a flag it does not take exits 64, names the flag and launches nothing", async () => {
+    const claude = join(dir, "claude");
+    writeFileSync(claude, `#!/bin/sh\ntouch "${join(dir, "launched")}"\necho "started abc123"\n`);
+    chmodSync(claude, 0o755);
+    routes({
+      ...current(),
+      "GET repos/o/r/issues?state=open": [githubIssue({ number: 12 })],
+    });
+    for (const args of [
+      ["mission", "next", "--dispatch", "yes"],
+      ["mission", "next", "--launch", "--dispatch", "yes"],
+    ]) {
+      const r = await run(args, { ...gh, HOUSTON_CLAUDE: claude }, clone());
+      expect(r.code).toBe(64);
+      expect(r.out).toBe("");
+      expect(r.err).toBe(
+        "mission next does not take --dispatch\nusage: houston mission next [--repo o/r | --here] [--launch] [--max N] [--json]\n",
+      );
+      expect(existsSync(join(dir, "launched"))).toBe(false);
+    }
+  });
+
   test("next --launch refuses in a cloud session, which launches with create_session", async () => {
     const r = await run(
       ["mission", "next", "--launch"],
@@ -2131,6 +2156,40 @@ test("a flag that takes a value, given none, is a usage error", async () => {
   expect(r.err).toBe(
     "--interval takes a value\nusage: houston pr watch [PR] [--repo o/r] [--interval 60]\n",
   );
+});
+
+test("a flag the command does not take is a usage error, with or without a value", async () => {
+  const usage = "usage: houston mission next [--repo o/r | --here] [--launch] [--max N] [--json]\n";
+  for (const form of [["--dispatch=yes"], ["--dispatch"]]) {
+    const r = await run(["mission", "next", ...form]);
+    expect(r.code).toBe(64);
+    expect(r.err).toBe(`mission next does not take --dispatch\n${usage}`);
+  }
+  // A flag another command takes is still not this one's.
+  const r = await run(["preflight", "--repo", "o/r"]);
+  expect(r.code).toBe(64);
+  expect(r.err).toBe("preflight does not take --repo\nusage: houston preflight [--json]\n");
+});
+
+// Each command runs with every flag its usage line names, valued or not, so a
+// flag the help shows can never be one the command refuses.
+test("every command takes each flag in its usage line", async () => {
+  const help = (await run(["--help"])).out;
+  const usages = help
+    .split("\n")
+    .filter((l) => l.startsWith("  houston "))
+    .map((l) => l.slice("  houston ".length).split(/ {2,}/)[0] ?? "");
+  expect(usages.length).toBe(16);
+  for (const usage of usages) {
+    const words = usage.split(" ");
+    const command = words.slice(
+      0,
+      words.findIndex((w) => !/^[a-z]+$/.test(w)),
+    );
+    const flags = [...usage.matchAll(/--[a-z-]+/g)].flatMap((m) => [m[0], "x"]);
+    const r = await run([...command, ...flags]);
+    expect(r.err).not.toContain("does not take");
+  }
 });
 
 test("every command that reads --repo lists it in its usage line", async () => {

@@ -877,7 +877,8 @@ async function preflight(a: Args) {
 type Command = { usage: string; about: string; run: (a: Args) => Promise<number> };
 
 // Every command, its usage line and what it does. The help, the usage a
-// wrong call prints and the flags that take no value all come from here.
+// wrong call prints, the flags each command takes and the flags that take no
+// value all come from here.
 const COMMANDS: Record<string, Command> = {
   preflight: {
     usage: "preflight [--json]",
@@ -973,6 +974,12 @@ const SWITCHES = new Set([
   ),
 ]);
 
+// A command takes every flag its usage line names and no other, so a renamed
+// or mistyped flag stops the command instead of being ignored. --help needs
+// no entry, since main answers it before any command runs.
+const flagsOf = (c: Command) =>
+  new Set([...c.usage.matchAll(/--([a-z-]+)/g)].map((m) => m[1] ?? ""));
+
 const ABOUT_AT = 48;
 const ABOUT_WIDTH = 62;
 
@@ -1012,6 +1019,9 @@ export async function main(argv: string[]): Promise<number> {
     return group && !a.flags.help ? 64 : 0;
   }
   try {
+    const flags = flagsOf(command);
+    const unknown = Object.keys(a.flags).find((k) => !flags.has(k));
+    if (unknown) throw new Usage(`${name} does not take --${unknown}`);
     const bare = Object.keys(a.flags).find((k) => a.flags[k] === true && !SWITCHES.has(k));
     if (bare) throw new Usage(`--${bare} takes a value`);
     return await command.run(a);
