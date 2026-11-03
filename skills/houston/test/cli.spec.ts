@@ -20,7 +20,7 @@ import { after, before, beforeEach, describe, test } from "node:test";
 import { expectedSkills, parseArgs } from "../scripts/cli.ts";
 import { claimLog } from "../scripts/tickets.ts";
 import { expect } from "./expect.ts";
-import { githubIssue, linearIssue } from "./fixtures.ts";
+import { githubIssue, linearIssue, transcript } from "./fixtures.ts";
 import type { LinearIssue, WithHistory } from "../scripts/trackers/linear.ts";
 import type { TicketComment } from "../scripts/trackers/types.ts";
 
@@ -807,6 +807,40 @@ describe("pr reply and resolve", () => {
   });
 });
 
+// A Claude Code config folder holding session s-1's transcript, and the
+// variables that make the CLI read it as its own session.
+function inSession(): Record<string, string> {
+  const config = join(dir, "claude");
+  mkdirSync(join(config, "projects", "-w-r"), { recursive: true });
+  writeFileSync(join(config, "projects", "-w-r", "s-1.jsonl"), transcript());
+  return { CLAUDE_CONFIG_DIR: config, CLAUDE_CODE_SESSION_ID: "s-1" };
+}
+
+describe("session", () => {
+  test("prints the setup of the session it runs in", async () => {
+    const r = await run(["session", "--json"], inSession());
+    expect(r.err).toBe("");
+    expect(json<{ session: string; models: string[] }>(r.out)).toMatchObject({
+      session: "s-1",
+      models: ["claude-opus-5-5"],
+    });
+  });
+
+  test("reads the transcript --transcript names", async () => {
+    const path = join(dir, "t.jsonl");
+    writeFileSync(path, transcript({ entrypoint: "cli" }));
+    const r = await run(["session", "--transcript", path]);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("mode          local (cli)");
+  });
+
+  test("outside a session, exits 1 and says how to name a transcript", async () => {
+    const r = await run(["session"]);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("--transcript");
+  });
+});
+
 describe(PR_OPEN, () => {
   const PR = { number: 41, html_url: "https://github.com/o/r/pull/41" };
   const opened = () => sent("POST", "repos/o/r/pulls");
@@ -929,6 +963,18 @@ describe(PR_OPEN, () => {
     );
     expect(r.err).toBe("");
     expect(opened().map((p) => p.body)).toEqual(["Does it.\n\nCloses ENG-1"]);
+  });
+
+  test("in a Claude Code session, stamps its setup on the body, before the closes line", async () => {
+    const r = await run(
+      ["pr", "open", "--ticket", "ENG-1", "--title", "Do it", "--body", "Does it."],
+      inSession(),
+      branch(),
+    );
+    expect(r.err).toBe("");
+    const [body = ""] = opened().map((p) => String(p.body));
+    expect(body).toMatch(/^Does it\.\n\n<details><summary>Setup · Claude Code /);
+    expect(body).toMatch(/<\/details>\n\nCloses ENG-1$/);
   });
 
   test("with --ticket, sends a body that already closes the ticket unchanged", async () => {

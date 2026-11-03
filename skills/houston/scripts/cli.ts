@@ -11,6 +11,7 @@ import { pathToFileURL } from "node:url";
 import * as forge from "./forge.ts";
 import { type BlockerCode, byAgent, fingerprint, mergeBlockers, type Status } from "./pr.ts";
 import { inCloud, run } from "./proc.ts";
+import { currentSetup, describeSetup, readSetup, setupBlock } from "./setup.ts";
 import {
   CLAIMED_LABEL,
   claimable,
@@ -289,6 +290,7 @@ async function prOpen(a: Args) {
   const title = str(a.flags.title);
   if (!title) throw new Usage();
   let body = bodyArg(a);
+  let closes: string | null = null;
   const repo = forge.currentRepo();
   if (!repo) throw new Exit(64, "cannot tell which repository: run inside a clone");
   if (a.flags.ticket !== undefined) {
@@ -304,8 +306,11 @@ async function prOpen(a: Args) {
         `${ticket.id} ships in ${ticket.repo}, not in ${repo}, where the pull request would open`,
       );
     // Only the body counts: a branch named after an issue does not close it.
-    if (!closedBy(body, repo).includes(ticket.id)) body = `${body}\n\n${ticket.closes}`;
+    if (!closedBy(body, repo).includes(ticket.id)) closes = ticket.closes;
   }
+  // The session's setup goes before the closes line, so the body still ends with it.
+  const setup = currentSetup();
+  body = [body, setup && setupBlock(setup), closes].filter(Boolean).join("\n\n");
   const pr = forge.openPr(repo, title, body);
   console.log(`opened #${pr.number} ${pr.url}`);
   return 0;
@@ -874,6 +879,19 @@ async function preflight(a: Args) {
   return checks.some((c) => c.level === "fail") ? 1 : 0;
 }
 
+// The setup behind this session, or behind the transcript --transcript names.
+async function sessionSetup(a: Args) {
+  const file = str(a.flags.transcript);
+  const setup = file ? readSetup(readFileSync(file, "utf8")) : currentSetup();
+  if (!setup)
+    throw new Exit(
+      1,
+      "no transcript for this session: run inside Claude Code, or name one with --transcript",
+    );
+  print(a, setup, () => describeSetup(setup));
+  return 0;
+}
+
 type Command = { usage: string; about: string; run: (a: Args) => Promise<number> };
 
 // Every command, its usage line and what it does. The help, the usage a
@@ -893,6 +911,12 @@ const COMMANDS: Record<string, Command> = {
     usage: "stats [--repo o/r] [--since 7d] [--json]",
     about: "what got done, what went wrong, what is still open",
     run: stats,
+  },
+  session: {
+    usage: "session [--transcript F] [--json]",
+    about:
+      "the setup behind this Claude Code session: harness, model, effort, instructions and skills, as pr open stamps it",
+    run: sessionSetup,
   },
   "mission next": {
     usage: "mission next [--repo o/r | --here] [--launch] [--max N] [--json]",

@@ -70,3 +70,45 @@ export function githubIssue(over: Partial<GhIssue> & { labels?: string[] } = {})
     ...rest,
   };
 }
+
+// A Claude Code transcript, one JSON record per line, shaped like a 2.1.317
+// cloud session's: a user turn, the instructions and skills it loaded, an
+// assistant turn, and a subagent's turn on another model.
+export function transcript(over: { entrypoint?: string; claudeMd?: string } = {}): string {
+  const base = { sessionId: "s-1", entrypoint: over.entrypoint ?? "remote_projects" };
+  return [
+    { ...base, type: "user", version: "2.1.316", message: { role: "user", content: "hi" } },
+    {
+      ...base,
+      type: "attachment",
+      version: "2.1.316",
+      attachment: {
+        type: "instructions",
+        files: [{ path: "/w/r/CLAUDE.md", type: "Project", content: over.claudeMd ?? "# Rules" }],
+      },
+    },
+    {
+      ...base,
+      type: "attachment",
+      attachment: {
+        type: "skill_listing",
+        names: ["tdd", "pr"],
+        digests: ["aaaa", "bbbb"],
+        skillCount: 2,
+      },
+    },
+    { type: "attachment", attachment: { type: "session_context", context: "me@example.com" } },
+    {
+      ...base,
+      type: "assistant",
+      version: "2.1.317",
+      effort: "high",
+      message: { model: "claude-opus-5-5" },
+    },
+    { ...base, type: "assistant", version: "2.1.317", message: { model: "<synthetic>" } },
+    { ...base, type: "assistant", isSidechain: true, message: { model: "claude-haiku-5-5" } },
+  ]
+    .map((r) => JSON.stringify(r))
+    .concat("not json")
+    .join("\n");
+}
