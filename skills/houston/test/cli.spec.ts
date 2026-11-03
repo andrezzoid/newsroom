@@ -2148,6 +2148,17 @@ test("a wrong call prints its own command's usage line from the help", async () 
   );
 });
 
+// A command named in one quoted word, as in "mission next", is one word of
+// the call: its flags start right after it.
+test("a command given as one quoted word keeps the flags after it", async () => {
+  const r = await run(["mission next", "--max", "0"]);
+  expect(r.code).toBe(64);
+  expect(r.err).toContain("--max takes a number of tickets above zero");
+  const show = await run(["mission show", "ENG-1", "--json"]);
+  expect(show.code).toBe(0);
+  expect(show.out).toContain('"id": "ENG-1"');
+});
+
 test("unknown commands print help and exit 64", async () => {
   for (const name of ["frobnicate", "constructor", "__proto__", "tickets", "doctor"]) {
     const r = await run([name]);

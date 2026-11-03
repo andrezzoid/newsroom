@@ -1024,9 +1024,9 @@ export async function main(argv: string[]): Promise<number> {
     return group && !help ? 64 : 0;
   }
   try {
-    const words = name.split(" ").length;
+    const words = name === group ? 1 : 2;
     const a = parseCall(argv.slice(words), command);
-    return await command.run({ ...a, _: [...argv.slice(0, words), ...a._] });
+    return await command.run({ ...a, _: [...name.split(" "), ...a._] });
   } catch (e) {
     if (e instanceof Usage) {
       console.error(`${e.message ? `${e.message}\n` : ""}usage: houston ${command.usage}`);
