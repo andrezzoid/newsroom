@@ -1425,6 +1425,26 @@ describe("GitHub Issues tickets", () => {
     expect(d.human.map((i) => [i.id, i.why])).toEqual([["o/r#16", "new, needs triage"]]);
   });
 
+  test("an issue on a wayfinder map waits on neither the user nor an agent, even when claimed", async () => {
+    routes({
+      ...current(),
+      "GET repos/o/r/issues?state=open": [
+        githubIssue({ number: 17, title: "Map", labels: ["wayfinder:map"] }),
+        githubIssue({
+          number: 18,
+          title: "Which store?",
+          labels: ["wayfinder:grilling", "in-progress"],
+          updated_at: hoursAgo(5),
+        }),
+      ],
+    });
+    const r = await run(["inbox", "--json"], gh);
+    expect(r.err).toBe("");
+    const d = json<Inbox>(r.out);
+    expect(d.human).toEqual([]);
+    expect(d.agent).toEqual([]);
+  });
+
   test("a repo whose CLAUDE.md names GitHub Issues joins without HOUSTON_GITHUB_REPOS", async () => {
     // From a clone of another repo, so --repo o/r reads o/r's default branch.
     const path = clone();

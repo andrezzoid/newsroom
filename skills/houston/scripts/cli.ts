@@ -25,6 +25,7 @@ import {
   latestClaim,
   latestReport,
   nextTickets,
+  onWayfinderMap,
   phaseOf,
   READY_LABEL,
   report,
@@ -586,6 +587,7 @@ async function sortPr(t: Ticket, url: string, session: string | undefined): Prom
 
 // Sorts one ticket into the list for the user, the list for agents, or neither.
 async function sortTicket(t: Ticket): Promise<Sorted> {
+  if (onWayfinderMap(t)) return { human: [], agent: [] };
   const claimed = t.labels.includes(CLAIMED_LABEL);
   if (!t.labels.includes(HUMAN_LABEL) && !claimed) {
     if (t.labels.includes(INFO_LABEL))
