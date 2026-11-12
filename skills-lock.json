@@ -86,6 +86,12 @@
       "skillPath": "skills/engineering/prototype/SKILL.md",
       "computedHash": "d3fc74689bd993e39c44bfae510d014eecffbeec2922764b065377fd1327c0f6"
     },
+    "research": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/research/SKILL.md",
+      "computedHash": "5d85b64ecceed6b3f6d5996dc8af07180be8d1ff11ef3d26eda2acff078fbd39"
+    },
     "retro": {
       "source": "mattpocock/skills",
       "sourceType": "github",
@@ -127,6 +133,12 @@
       "sourceType": "github",
       "skillPath": "skills/productivity/wait-what/SKILL.md",
       "computedHash": "1921c02ea4046fd8f9c219140780233fe6e22e2fe4442961378da2ac31f3f403"
+    },
+    "wayfinder": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/wayfinder/SKILL.md",
+      "computedHash": "22338d9356ef84430c5ca916f2632f226583d9d7366433f62bfde5b1b6781e9e"
     },
     "writing-for-agents": {
       "source": "mattpocock/skills",

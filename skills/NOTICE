@@ -6,7 +6,7 @@ and its editor in the `metadata` of its SKILL.md frontmatter.
 
 | Skills | Source | License |
 |---|---|---|
-| codebase-design, diagnosing-bugs, domain-modeling, grill-me, grill-with-docs, grilling, improve-codebase-architecture, pr, prototype, retro, tdd, to-spec, to-tickets, triage, wait-what, writing-for-agents | https://github.com/mattpocock/skills | MIT, (c) 2026 Matt Pocock |
+| codebase-design, diagnosing-bugs, domain-modeling, grill-me, grill-with-docs, grilling, improve-codebase-architecture, pr, prototype, research, retro, tdd, to-spec, to-tickets, triage, wait-what, wayfinder, writing-for-agents | https://github.com/mattpocock/skills | MIT, (c) 2026 Matt Pocock |
 | langfuse | https://github.com/langfuse/skills | MIT, (c) 2026 Langfuse GmbH |
 | show-me | https://github.com/humanlayer/skills | MIT, (c) 2026 HumanLayer |
 | correct | https://github.com/cursor/plugins (pstack) | MIT, (c) 2026 Lauren Tan |
