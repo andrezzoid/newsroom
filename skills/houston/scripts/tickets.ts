@@ -31,6 +31,11 @@ export const HOUSTON_LABELS = [
   CLAIMED_LABEL,
 ];
 
+// The wayfinder skill drives a map and its decision tickets, by their
+// `wayfinder:` labels, so Houston neither triages nor builds them.
+export const onWayfinderMap = (t: Pick<Ticket, "labels">) =>
+  t.labels.some((l) => l.startsWith("wayfinder:"));
+
 export type Readiness = { ready: true } | { ready: false; reason: string };
 
 // Whether an agent may build the ticket, whichever session holds it now:
