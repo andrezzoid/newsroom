@@ -1425,17 +1425,12 @@ describe("GitHub Issues tickets", () => {
     expect(d.human.map((i) => [i.id, i.why])).toEqual([["o/r#16", "new, needs triage"]]);
   });
 
-  test("an issue on a wayfinder map waits on neither the user nor an agent, even when claimed", async () => {
+  test("an issue on a wayfinder map waits on neither the user nor an agent", async () => {
     routes({
       ...current(),
       "GET repos/o/r/issues?state=open": [
         githubIssue({ number: 17, title: "Map", labels: ["wayfinder:map"] }),
-        githubIssue({
-          number: 18,
-          title: "Which store?",
-          labels: ["wayfinder:grilling", "in-progress"],
-          updated_at: hoursAgo(5),
-        }),
+        githubIssue({ number: 18, title: "Which store?", labels: ["wayfinder:grilling"] }),
       ],
     });
     const r = await run(["inbox", "--json"], gh);
